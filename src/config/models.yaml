@@ -1,0 +1,28 @@
+# DeepeResearch — Default Model Definitions
+# Models supported by LiteLLM for research agent execution.
+
+models:
+  - id: gpt-4o
+    provider: openai
+    display_name: GPT-4o
+    default: true
+
+  - id: gpt-4o-mini
+    provider: openai
+    display_name: GPT-4o Mini
+
+  - id: claude-sonnet-4-20250514
+    provider: anthropic
+    display_name: Claude Sonnet 4
+
+  - id: claude-haiku-3-5
+    provider: anthropic
+    display_name: Claude Haiku 3.5
+
+  - id: ollama/llama3.1
+    provider: ollama
+    display_name: Llama 3.1 (Ollama)
+
+  - id: ollama/mixtral
+    provider: ollama
+    display_name: Mixtral (Ollama)

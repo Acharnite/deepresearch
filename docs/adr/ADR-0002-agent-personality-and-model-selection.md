@@ -1,0 +1,270 @@
+---
+phase:
+  current: 1
+  total: 1
+  status:
+    1: done
+---
+
+# ADR-0002: Agent Personality & Model Selection
+
+## Status
+
+Proposed
+
+**Version:** 1.2
+**Last Updated:** 2026-06-13
+
+## Context
+
+DeepeResearch relies on distinct agent personalities to produce multi-perspective research. Each agent must have a consistent, differentiated voice and methodology. Additionally, users need flexibility in assigning LLM models to agents — different models have different strengths, costs, and personalities of their own.
+
+Beyond the original personality system, the following requirements emerged:
+1. **Custom time budgets** — users want fine-grained control over research depth (not just quick/medium/deep presets)
+2. **Local model support** — Ollama, llama.cpp, vLLM, and OpenAI-compatible endpoints for private/free research
+3. **API key management** — users need a UI for configuring API keys across multiple providers without touching terminal or `.env` files directly
+4. **Provider prefix routing** — model IDs like `opencode/go` should auto-route to the correct provider's API base and API key without manual configuration
+5. **Model connectivity check** — before starting a session, the selected model should be tested with a minimal prompt to verify availability (15s timeout, immediate error on failure)
+6. **Model selector UI** — the web dashboard needs visual model selection: dropdown for "same" mode, per-agent selectors for "manual" mode, info text for "random" mode
+7. **Opencode AI provider** — a new, free-tier provider as the default model, accessible via `OPENCODE_API_KEY`
+
+### Key Forces
+1. **Personality consistency** — agents must maintain their persona across multiple rounds and interactions
+2. **Personality distinctness** — each agent's output must be clearly distinguishable from others
+3. **Model selection modes** — users need different levels of control over which model powers which agent
+4. **Model role-play quality** — some models are better at maintaining personas than others
+5. **Temperature tuning** — temperature must be calibrated per personality for optimal role-play
+6. **Extensibility** — users should be able to add custom profiles
+7. **Custom time budgets** — named presets are insufficient for power users who want precise duration control
+8. **Local models** — Ollama/llama.cpp/vLLM provide free, private alternatives to cloud APIs
+9. **API key management** — 9+ cloud providers need key configuration, preferably through the web UI
+10. **Provider routing** — model IDs should self-describe their provider to simplify multi-provider configuration
+11. **Pre-flight validation** — model unreachability should be detected before a session consumes tokens and time
+12. **Web-first model selection** — the dashboard must provide an intuitive model picker that adapts to the selected mode
+
+### Prior Art / Alternatives Considered
+| Approach | Pros | Cons |
+|----------|------|------|
+| System prompt only | Simple, easy to debug | Insufficient for nuanced personalities |
+| Few-shot examples | Stronger persona enforcement | Token-heavy, expensive |
+| Temperature tuning only | Zero token overhead | Weak differentiation alone |
+| Post-processing | Can correct persona drift | Complex, may distort content |
+| Layered prompt composition | Modular, testable, extensible | More complex prompt structure |
+
+## Decision
+
+### Personality Architecture: Layered Prompt Composition
+
+Each agent's personality is defined by **5 independent prompt components** combined at generation time:
+
+1. **Persona Prompt** — Core identity description ("You are...")
+2. **Methodology** — How the agent approaches research
+3. **Knowledge Base** — What the agent knows (and doesn't)
+4. **Bias Mitigation** — Self-awareness instructions for known biases
+5. **Voice** — Writing style, tone, vocabulary, sentence structure
+
+These components are compiled into a single system prompt per generation call. Components are stored as separate fields in the AgentProfile model for independent testing and modularity.
+
+### Persona Enforcement: Temperature + Voice + Output Structure
+
+| Profile | Temperature | Enforcement Strategy |
+|---------|------------|---------------------|
+| Curious Teenager | 0.85 | Voice instructions + short paragraph constraint |
+| Skeptical Academic | 0.35 | Methodology rules + citation requirement |
+| Creative Artist | 0.90 | Analogies required + metaphorical language |
+| Pragmatic Engineer | 0.45 | Structure: problem → solution → impact |
+| Philosophical Thinker | 0.75 | Ethical framework + "what if" exploration |
+| Data Analyst | 0.30 | Data-first approach + statistical language |
+
+### Model Selection Modes
+
+Three modes controlled via `ModelConfig.mode`:
+
+**Mode A — Same Model (default)**
+- All agents use the same model (e.g., `gpt-4o`)
+- Simplest, most predictable
+- Personality differentiation comes entirely from prompts
+
+**Mode B — Random Assignment (seeded)**
+- Each agent assigned a random model from a configured pool
+- Deterministic when `seed` is set
+- Creates emergent diversity from model differences
+
+**Mode C — Manual Per-Agent (CLI)**
+- User specifies which model each agent uses via CLI wizard or config file
+- Full control for power users
+
+### Assignment Algorithm
+
+1. If mode is `same`: assign `default_model` to all agents
+2. If mode is `manual`: apply per_agent_overrides dict
+3. If mode is `random`: shuffle model pool with seed; assign round-robin
+4. Validate each assigned model is available (pre-flight check)
+5. Fallback to `default_model` if assigned model unavailable
+
+### Profiles: YAML-Based Extensibility
+
+- Built-in profiles stored in `profiles/default.yaml`
+- Fields defined in AgentProfile schema (see Data Model §5)
+- User custom profiles: `~/.deepresearch/profiles/*.yaml`
+- Profiles merged at startup: built-in + user
+- Validation: all required fields present, temperature in [0.0, 1.0]
+
+### Personality Differentiation Validation
+
+To ensure agents are truly distinct, the following automated checks run in CI:
+
+| Test | Method | Target |
+|------|--------|--------|
+| Semantic Similarity | Embedding cosine distance between agent outputs on same topic | Mean pairwise similarity < 0.85 (higher threshold acceptable in Mode A — same model) |
+| Keyword Uniqueness | TF-IDF distinctive terms per agent | Each agent has ≥ 3 unique top keywords |
+| Tonality Variance | Sentiment analysis + formality scores | Statistically significant difference (p < 0.05) |
+
+### Scribe Agent
+
+- No personality profile — fixed neutral academic tone
+- Temperature: 0.3 (low creativity, high consistency)
+- Focus on clarity, structure, and synthesis rather than perspective
+
+### Custom Time Budget: Free-Form Minutes
+
+- Named budgets (quick/medium/deep) remain as presets
+- Custom: `time_budget_seconds` parameter, free-form minutes input via UI
+- Custom budget defaults to single round (like quick mode)
+- Session timeout = budget + 60s grace period, max 3600s (1 hour)
+
+### Local Model Discovery: HTTP Auto-Detect + Manual Config
+
+- **Ollama**: auto-discover via `GET http://localhost:11434/api/tags` using httpx
+- **llama.cpp / vLLM**: manual endpoint configuration (name, URL, type)
+- Endpoints stored in `~/.deepresearch/local_endpoints.json`
+- "Test connection" button validates endpoint before saving
+- Discovered models appear in model selection dropdown alongside cloud providers
+
+### Provider Prefix Routing
+
+The LLMClient (`llm/client.py`) auto-detects the provider from the model ID using `PROVIDER_ROUTES`:
+
+```python
+PROVIDER_ROUTES = {
+    "opencode":   {"api_base": "https://api.opencode.ai/v1",    "api_key_env": "OPENCODE_API_KEY"},
+    "openrouter": {"api_base": "https://openrouter.ai/api/v1",   "api_key_env": "OPENROUTER_API_KEY"},
+    "groq":       {"api_base": "https://api.groq.com/openai/v1", "api_key_env": "GROQ_API_KEY"},
+    "together":   {"api_base": "https://api.together.xyz/v1",    "api_key_env": "TOGETHER_API_KEY"},
+    "deepseek":   {"api_base": "https://api.deepseek.com/v1",    "api_key_env": "DEEPSEEK_API_KEY"},
+    "cohere":     {"api_base": "https://api.cohere.ai/v1",       "api_key_env": "COHERE_API_KEY"},
+    "google":     {"api_base": "https://generativelanguage.googleapis.com/v1", "api_key_env": "GOOGLE_API_KEY"},
+    "anthropic":  {"api_base": "https://api.anthropic.com/v1",   "api_key_env": "ANTHROPIC_API_KEY"},
+    "ollama":     {"api_base": "http://localhost:11434",          "api_key_env": None},
+}
+```
+
+- `LLMClient.__init__` extracts the prefix from the model ID (e.g., `opencode/go` → `opencode`)
+- It looks up the prefix in `PROVIDER_ROUTES` and passes `api_base` + `api_key` to LiteLLM
+- Supports a `provider` override parameter for cases like `openrouter/opencode/go` where the prefix is `openrouter` and the model is passed as-is
+- No manual provider configuration needed — just use the right model ID prefix
+
+### Model Connectivity Check: Pre-Flight Validation
+
+Before a session starts, the `MultiSessionManager.create_session()` runs a connectivity check:
+
+1. **Test model selection**: uses `selected_model` or falls back to `opencode/go`
+2. **Minimal prompt**: sends `"Respond with exactly one word: ok"` with `max_tokens=5`
+3. **Timeout**: 15 seconds (`asyncio.wait_for`)
+4. **On success**: session proceeds as normal
+5. **On failure**: session status is set to `"error"` immediately, error message recorded, no LLM tokens wasted
+
+This prevents silent failures that waste time and tokens. The check is fast and cheap — approximately 5 tokens for the test.
+
+### Model Selector UI (Web Dashboard)
+
+The dashboard provides three UX patterns matching the model selection modes:
+
+- **"Same" mode** (`mode="same"`) — a single `<select id="modelSelector">` dropdown populated from `/api/models`. The default is `opencode/go`.
+- **"Manual" mode** (`mode="manual"`) — per-agent `<select class="agent-model-select">` dropdowns, one for each agent profile. Agent profiles are fetched from `/api/profiles`.
+- **"Random" mode** (`mode="random"`) — info text: "🎲 Random model from configured pool" — no model selection needed.
+
+The model selector is fetched asynchronously on page load. The `/api/models` endpoint returns models from all sources (see Provider Model Auto-Discovery below). Default model (`opencode/go`) is pre-selected.
+
+### Provider Model Auto-Discovery
+
+The `/api/models` endpoint in `server.py` goes beyond the curated `models.yaml`:
+
+1. **Curated models**: loaded from `src/config/models.yaml` (opencode/go, opencode/zen, gpt-4o, etc.)
+2. **Provider API models**: fetched from ALL configured providers via their REST APIs:
+   - `https://api.openai.com/v1/models` (OpenAI)
+   - `https://openrouter.ai/api/v1/models` (OpenRouter)
+   - `https://api.anthropic.com/v1/models` (Anthropic)
+   - `https://api.groq.com/openai/v1/models` (Groq)
+   - `https://api.together.xyz/v1/models` (Together)
+   - `https://api.deepseek.com/v1/models` (DeepSeek)
+   - `https://api.generativelanguage.googleapis.com/v1/models` (Google)
+   - `https://api.cohere.ai/v1/models` (Cohere)
+3. **Ollama local models**: discovered via `GET http://localhost:11434/api/tags` (auto-detected)
+4. **Local endpoints**: manually configured llama.cpp/vLLM endpoints from `~/.deepresearch/local_endpoints.json`
+
+**Caching**: results are cached for 60 seconds to avoid excessive API calls. Each provider API call has a 5-second timeout. Duplicates (same model ID from multiple sources) are de-duplicated — curated `models.yaml` takes precedence.
+
+### Opencode AI Provider
+
+Opencode AI is added as the 9th supported provider:
+
+- **Environment variable**: `OPENCODE_API_KEY`
+- **API base**: `https://api.opencode.ai/v1`
+- **Default model**: `opencode/go` (the new system default)
+- **Secondary model**: `opencode/zen`
+- **OpenRouter access**: also available as `openrouter/opencode/go` and `openrouter/opencode/zen`
+- **Cost**: free tier (cost rate 0.0 in `client.py`)
+- **Settings manager**: registered in `setting_manager.PROVIDERS` dict alongside the 8 existing providers
+
+Becoming the default model means new users can run research immediately with just an Opencode AI key — no other provider configuration needed.
+
+### API Key Management: UI + Local .env File
+
+- Keys stored in `~/.deepresearch/.env`
+- 9 supported providers: OpenAI, Anthropic, Groq, Google, Cohere, Together, DeepSeek, OpenRouter, Opencode AI
+- Environment variables override file values at runtime
+- Keys masked in UI (only prefix shown for identification)
+- Web form for adding/updating keys without terminal access
+
+## Consequences
+
+### Positive
+1. **Modular profiles** — each component independently testable
+2. **Testable differentiation** — automated semantic distance checks in CI
+3. **Model-agnostic** — personality is prompt-defined, not model-defined
+4. **User control** — three model selection modes cover casual to power users
+5. **Bias awareness** — explicit bias_mitigation field in every profile
+6. **Local models** — free, private research without API costs (Ollama/llama.cpp/vLLM)
+7. **Flexible budgets** — custom time budgets from 1 to 60 minutes
+8. **Easy key management** — UI-based API key configuration, no terminal needed
+9. **Provider prefix routing** — no manual provider configuration; just use the right model ID
+10. **Pre-flight connectivity check** — catches unreachable models before sessions waste time and tokens
+11. **Web-first model selection** — intuitive dropdown/per-agent selectors in dashboard
+12. **Model auto-discovery** — users see all available models from all configured providers in one list
+13. **Opencode AI default** — free tier enables immediate research with just one API key
+14. **9 providers** — broadest model selection across cloud and local backends
+
+### Negative
+1. **Token overhead** — 5-component prompt consumes more tokens than single system prompt (~200-300 extra tokens per call)
+2. **Role-play quality varies** — some models are significantly better at maintaining personas (Claude ≥ GPT-4o ≥ Llama 3)
+3. **User profiles may be lower quality** — custom profiles may not produce the intended personality
+4. **.env file security** — user must ensure `~/.deepresearch/.env` has correct file permissions
+5. **Ollama must be running** — auto-discovery requires Ollama service to be active on localhost:11434
+6. **Connectivity check adds latency** — each session start is delayed by up to 15s for the pre-flight test
+7. **Provider API discovery timeout** — if a provider API is slow, model loading may be delayed (5s per provider)
+8. **Model ID prefix collisions** — if a model ID doesn't match any known prefix, it falls through to default OpenAI routing, which may be unexpected
+
+### Neutral
+1. Temperature + Voice combo is the primary personality lever
+2. Profiles are static — no learned personality adaptation across sessions (intentional for v1.0)
+3. Model randomness mode may produce unexpected but interesting combinations
+4. API keys in environment variables is standard industry practice
+5. Custom budget uses single round — deeper research still needs named budgets
+6. Local endpoint configuration is manual for non-Ollama backends
+7. Provider model discovery is best-effort — some provider APIs return different model lists than LiteLLM supports
+8. 60s cache for model lists balances freshness with API call volume
+
+## ADR References
+- **ADR-0001** (Multi-Agent Research Architecture)
+- **ADR-0003** (Web Frontend & Multi-Session Architecture)

@@ -1,0 +1,2186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepeResearch — Research Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #21262d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --orange: #f0883e;
+    --cyan: #39d2c0;
+    --pink: #f778ba;
+    --input-bg: #0d1117;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); min-height: 100vh; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── Header ────────────────────────────────────────── */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .header h1:hover { color: var(--accent); }
+  .header .spacer { margin-left: auto; }
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+
+  /* ── Buttons ───────────────────────────────────────── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 10px 20px; border-radius: 6px;
+    font-size: 14px; font-weight: 600;
+    border: none; cursor: pointer;
+    transition: opacity 0.2s, background 0.2s;
+  }
+  .btn:hover { opacity: 0.9; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-success { background: var(--green); color: #fff; }
+  .btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-icon { padding: 6px 10px; font-size: 16px; background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+  .btn-icon:hover { color: var(--text); border-color: var(--text-muted); }
+
+  /* ── Status Bar ─────────────────────────────────────── */
+  .status-bar {
+    display: flex; gap: 24px;
+    padding: 12px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    font-size: 14px;
+    align-items: center;
+  }
+  .status-item { display: flex; align-items: center; gap: 6px; }
+  .status-label { color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 10px; border-radius: 12px;
+    font-size: 12px; font-weight: 600;
+  }
+  .badge-idle { background: #21262d; color: var(--text-muted); }
+  .badge-configuring { background: #1c3a2e; color: var(--green); }
+  .badge-round1 { background: #1c2a3a; color: var(--accent); }
+  .badge-collaborating { background: #2a1c3a; color: var(--purple); }
+  .badge-followup { background: #2a2a1c; color: var(--yellow); }
+  .badge-round2 { background: #1c3a3a; color: var(--cyan); }
+  .badge-compiling { background: #2a1c2a; color: var(--pink); }
+  .badge-output { background: #1c2a1c; color: var(--green); }
+  .badge-complete { background: #0f2e1a; color: var(--green); }
+  .badge-error { background: #3a1c1c; color: var(--red); }
+  .badge-queued { background: #1c1c3a; color: var(--accent); }
+  .badge-running { background: #1c2a3a; color: var(--accent); }
+  .badge-cancelled { background: #2a2a1c; color: var(--yellow); }
+  .conn-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .conn-dot.connected { background: var(--green); }
+  .conn-dot.disconnected { background: var(--red); }
+  .conn-dot.polling { background: var(--yellow); }
+
+  /* ── Layout ────────────────────────────────────────── */
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 16px 24px;
+  }
+
+  /* ── Card ──────────────────────────────────────────── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: visible;  /* allow dropdowns to overflow */
+  }
+  .card-header {
+    padding: 10px 14px;
+    font-size: 13px; font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+
+  /* ── Session List ──────────────────────────────────── */
+  .session-list { padding: 8px; }
+  .session-row {
+    display: flex; align-items: center;
+    padding: 12px 14px; gap: 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+    border-bottom: 1px solid var(--border);
+  }
+  .session-row:last-child { border-bottom: none; }
+  .session-row:hover { background: var(--surface-2); }
+  .session-indicator { font-size: 10px; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .session-indicator.queued { background: var(--accent); }
+  .session-indicator.running { background: var(--green); animation: pulse 1.5s infinite; }
+  .session-indicator.complete { background: var(--green); }
+  .session-indicator.error { background: var(--red); }
+  .session-indicator.cancelled { background: var(--yellow); }
+  .session-topic { font-size: 14px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .session-status-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+  .session-status-badge.queued { background: #1c1c3a; color: var(--accent); }
+  .session-status-badge.running { background: #1c2a3a; color: var(--accent); }
+  .session-status-badge.complete { background: #0f2e1a; color: var(--green); }
+  .session-status-badge.error { background: #3a1c1c; color: var(--red); }
+  .session-status-badge.cancelled { background: #2a2a1c; color: var(--yellow); }
+  .session-meta { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  .session-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+  .session-empty {
+    text-align: center; padding: 60px 20px; color: var(--text-muted);
+  }
+  .session-empty h3 { font-size: 16px; margin-bottom: 8px; }
+  .session-empty p { font-size: 13px; margin-bottom: 16px; }
+
+  /* ── Control Panel (New Research) ──────────────────── */
+  .control-panel {
+    max-width: 700px;
+    margin: 16px auto;
+    padding: 24px;
+  }
+  .control-panel h2 { font-size: 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+  .form-group { margin-bottom: 16px; }
+  .form-group label {
+    display: block; font-size: 13px; font-weight: 600;
+    color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 6px;
+  }
+  .form-group input[type="text"],
+  .form-group input[type="number"],
+  .form-group input[type="password"] {
+    width: 100%; padding: 10px 12px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-size: 14px;
+    outline: none; transition: border-color 0.2s;
+  }
+  .form-group input[type="text"]:focus,
+  .form-group input[type="number"]:focus,
+  .form-group input[type="password"]:focus { border-color: var(--accent); }
+  .radio-group {
+    display: flex; gap: 12px; flex-wrap: wrap;
+  }
+  .radio-group label {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 400; text-transform: none;
+    letter-spacing: 0; color: var(--text); cursor: pointer;
+    padding: 8px 14px; border: 1px solid var(--border);
+    border-radius: 6px; background: var(--surface-2);
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .radio-group label:hover { border-color: var(--accent); }
+  .radio-group label:has(input:checked) { border-color: var(--accent); background: #1c2a3a; }
+  .radio-group input[type="radio"] { accent-color: var(--accent); }
+  .radio-desc { font-size: 11px; color: var(--text-muted); margin-left: 4px; }
+  .custom-minutes-input { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .custom-minutes-input input { width: 100px; }
+
+  /* ── Model Selectors ──────────────────────────────── */
+  .form-select {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-select:focus { border-color: var(--accent); }
+  .form-select option { background: var(--surface); color: var(--text); }
+  .agent-model-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .agent-model-row:last-child { border-bottom: none; }
+  .agent-model-row span { min-width: 180px; font-size: 14px; }
+  .agent-model-row select { flex: 1; }
+  .model-hint { font-size: 12px; color: var(--text-muted); font-style: italic; padding: 8px 0; }
+
+  /* ── Agent Progress ────────────────────────────────── */
+  .agent-list { padding: 8px; }
+  .agent-row {
+    display: flex; align-items: center;
+    padding: 8px 10px; gap: 10px;
+    border-radius: 6px; transition: background 0.2s;
+  }
+  .agent-row:hover { background: var(--surface-2); }
+  .agent-emoji { font-size: 20px; width: 28px; text-align: center; flex-shrink: 0; }
+  .agent-name { font-size: 13px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .agent-bar-wrap { flex: 2; min-width: 80px; }
+  .agent-bar-bg { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+  .agent-bar-fill { height: 100%; width: 0%; border-radius: 3px; transition: width 0.5s ease, background 0.5s ease; }
+  .agent-bar-fill.done { background: var(--green); }
+  .agent-bar-fill.running { background: var(--accent); }
+  .agent-bar-fill.waiting { background: var(--text-muted); }
+  .agent-bar-fill.failed { background: var(--red); }
+  .agent-pct { font-size: 12px; width: 36px; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .agent-status-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
+
+  /* ── Event Log ─────────────────────────────────────── */
+  .event-log { height: 300px; overflow-y: auto; padding: 8px; }
+  .event-log::-webkit-scrollbar { width: 6px; }
+  .event-log::-webkit-scrollbar-track { background: transparent; }
+  .event-log::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 3px; }
+  .event-entry {
+    display: flex; gap: 8px; align-items: flex-start;
+    padding: 4px 8px; font-size: 13px; border-radius: 4px; line-height: 1.5;
+  }
+  .event-entry:hover { background: var(--surface-2); }
+  .event-time { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; margin-top: 2px; }
+  .event-icon { flex-shrink: 0; }
+  .event-msg { flex: 1; word-break: break-word; }
+
+  /* ── Phase indicator ───────────────────────────────── */
+  .phase-indicator {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px; flex-wrap: wrap;
+  }
+  .phase-step {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 11px; color: var(--text-muted);
+    padding: 4px 8px; border-radius: 4px; white-space: nowrap;
+  }
+  .phase-step.active { color: var(--accent); background: #1c2a3a; }
+  .phase-step.done { color: var(--green); }
+  .phase-step.current { color: #fff; background: var(--accent); }
+  .phase-arrow { color: var(--border); font-size: 10px; }
+
+  /* ── Result View ───────────────────────────────────── */
+  .result-view { max-width: 700px; margin: 16px auto; padding: 24px; text-align: center; }
+  .result-view h2 { font-size: 22px; margin-bottom: 16px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .result-actions { display: flex; gap: 12px; justify-content: center; margin: 20px 0; flex-wrap: wrap; }
+  .result-summary { background: var(--surface-2); border-radius: 8px; padding: 16px; margin-top: 16px; text-align: left; font-size: 13px; line-height: 1.6; }
+  .result-summary dt { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .result-summary dd { margin: 2px 0 10px 0; }
+  .error-view { max-width: 600px; margin: 16px auto; padding: 24px; text-align: center; }
+  .error-view h2 { font-size: 20px; color: var(--red); margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .error-message { background: #3a1c1c; border: 1px solid var(--red); border-radius: 6px; padding: 12px; margin: 12px 0; font-size: 13px; color: var(--text); text-align: left; word-break: break-word; }
+
+  /* ── Settings Panel ────────────────────────────────── */
+  .settings-panel { max-width: 800px; margin: 16px auto; padding: 24px; }
+  .settings-panel h2 { font-size: 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; }
+  .settings-tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .settings-tab {
+    padding: 8px 16px; font-size: 13px; font-weight: 600;
+    color: var(--text-muted); cursor: pointer;
+    border: none; background: transparent;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .settings-tab:hover { color: var(--text); }
+  .settings-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .settings-section { display: none; }
+  .settings-section.active { display: block; }
+  .provider-row {
+    display: flex; align-items: center;
+    padding: 12px 0; gap: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .provider-row:last-child { border-bottom: none; }
+  .provider-name { font-size: 14px; font-weight: 600; min-width: 140px; }
+  .provider-status { font-size: 12px; }
+  .provider-status.configured { color: var(--green); }
+  .provider-status.missing { color: var(--red); }
+  .provider-input { flex: 1; }
+  .provider-input input { width: 100%; padding: 8px 10px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; }
+  .provider-input input:focus { border-color: var(--accent); outline: none; }
+  .provider-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .endpoint-row {
+    display: flex; align-items: center;
+    padding: 10px 0; gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .endpoint-row:last-child { border-bottom: none; }
+  .endpoint-name { font-weight: 600; min-width: 120px; }
+  .endpoint-url { font-size: 12px; color: var(--text-muted); flex: 1; word-break: break-all; }
+  .endpoint-type { font-size: 11px; padding: 2px 8px; border-radius: 4px; background: var(--surface-2); }
+  .add-endpoint-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding: 12px; background: var(--surface-2); border-radius: 6px; }
+  .add-endpoint-form input { padding: 8px 10px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; flex: 1; min-width: 120px; }
+  .add-endpoint-form select { padding: 8px 10px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; }
+  .add-endpoint-form input:focus, .add-endpoint-form select:focus { border-color: var(--accent); outline: none; }
+
+  /* ── Back button ───────────────────────────────────── */
+  .back-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 13px; color: var(--accent); cursor: pointer;
+    background: none; border: none; padding: 4px 0;
+    margin-bottom: 12px;
+  }
+  .back-btn:hover { text-decoration: underline; }
+
+  /* ── Misc ──────────────────────────────────────────── */
+  .conn-status {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; padding: 3px 8px; border-radius: 4px;
+    background: var(--surface-2);
+  }
+  .elapsed { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .text-muted { color: var(--text-muted); }
+  .mt-8 { margin-top: 8px; }
+  .mb-8 { margin-bottom: 8px; }
+  .flex { display: flex; }
+  .flex-center { align-items: center; }
+  .gap-8 { gap: 8px; }
+  .gap-4 { gap: 4px; }
+  .hidden { display: none !important; }
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); }
+  .empty-state h3 { font-size: 16px; margin-bottom: 8px; }
+  .empty-state p { font-size: 13px; }
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; }
+  .stat-card { background: var(--surface-2); border-radius: 6px; padding: 12px; text-align: center; }
+  .stat-value { font-size: 22px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; margin-top: 2px; }
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 16px;
+  }
+  @media (max-width: 900px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    padding: 12px 20px; border-radius: 8px;
+    font-size: 13px; font-weight: 600;
+    z-index: 1000; opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+  .toast-success { background: #0f2e1a; color: var(--green); border: 1px solid var(--green); }
+  .toast-error { background: #3a1c1c; color: var(--red); border: 1px solid var(--red); }
+
+  .log-entry { display:flex; align-items:flex-start; padding:6px 16px; border-bottom:1px solid var(--border); gap:8px; }
+  .log-entry:hover { background: var(--surface-2); }
+  .log-time { color:var(--text-muted); font-size:11px; white-space:nowrap; flex-shrink:0; padding-top:1px; }
+  .log-level { font-size:10px; font-weight:600; padding:1px 5px; border-radius:3px; text-transform:uppercase; flex-shrink:0; min-width:55px; text-align:center; }
+  .log-level.ERROR { background:#f8717140; color:#f87171; }
+  .log-level.WARNING { background:#fbbf2440; color:#fbbf24; }
+  .log-level.INFO { background:#60a5fa40; color:#60a5fa; }
+  .log-level.DEBUG { background:#a78bfa40; color:#a78bfa; }
+  .log-message { flex:1; word-break:break-word; color:var(--text); }
+  .log-logger { color:var(--text-muted); font-size:10px; flex-shrink:0; max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  /* ── Model Picker ───────────────────────────── */
+  .model-picker { position: relative; width: 100%; }
+  .model-picker-trigger {
+    display: flex; align-items: center;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 6px; cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .model-picker-trigger:hover { border-color: var(--accent); }
+  .model-picker-trigger:focus-within { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px rgba(88,166,255,0.3); }
+  .model-picker-input {
+    flex: 1; padding: 8px 12px;
+    background: transparent; border: none;
+    color: var(--text); font-size: 14px;
+    outline: none; cursor: pointer;
+  }
+  .model-picker-input::placeholder { color: var(--text-muted); font-size: 13px; }
+  .model-picker-arrow { padding: 0 10px; color: var(--text-muted); font-size: 12px; transition: transform 0.15s; }
+  .model-picker-arrow.open { transform: rotate(180deg); }
+  .model-picker-dropdown {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    z-index: 100; max-height: 400px; display: flex;
+    flex-direction: column;
+  }
+  .model-picker-search {
+    padding: 8px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .model-picker-search-input {
+    width: 100%; padding: 8px 12px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 4px; font-size: 13px;
+    outline: none; box-sizing: border-box;
+  }
+  .model-picker-search-input:focus { border-color: var(--accent); }
+  .model-picker-search-input::placeholder { color: var(--text-muted); }
+  .model-picker-list { overflow-y: auto; flex: 1; padding: 4px 0; }
+  .model-picker-group-header {
+    padding: 6px 12px 4px; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); border-top: 1px solid var(--border);
+    margin-top: 4px;
+  }
+  .model-picker-group-header:first-child { border-top: none; margin-top: 0; }
+  .model-picker-item {
+    padding: 6px 12px 6px 16px; cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; gap: 8px;
+    color: var(--text); transition: background 0.1s;
+  }
+  .model-picker-item:hover { background: var(--surface-2); }
+  .model-picker-item.selected { background: rgba(88,166,255,0.15); color: var(--accent); }
+  .model-picker-item .model-id { color: var(--text-muted); font-size: 11px; margin-left: auto; font-family: monospace; }
+  .model-picker-empty {
+    padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px;
+  }
+
+  /* ── Mini Picker (manual mode) ──────────────── */
+  .mini-picker { position: relative; flex: 1; }
+  .mini-picker-input {
+    width: 100%; padding: 6px 10px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text); font-size: 13px;
+    cursor: pointer; outline: none; box-sizing: border-box;
+  }
+  .mini-picker-input:hover { border-color: var(--accent); }
+  .mini-picker-input:focus { border-color: var(--accent); }
+  .mini-picker-dropdown {
+    position: absolute; top: calc(100% + 2px); left: 0; right: 0;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 6px; box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    z-index: 100; max-height: 300px; display: flex;
+    flex-direction: column;
+  }
+  .mini-picker-search {
+    margin: 6px; padding: 6px 8px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text); font-size: 12px;
+    outline: none;
+  }
+  .mini-picker-search:focus { border-color: var(--accent); }
+  .mini-picker-list { overflow-y: auto; max-height: 250px; padding: 2px 0; }
+  .mini-group-header {
+    padding: 4px 10px; font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted);
+  }
+  .mini-item {
+    padding: 5px 10px 5px 14px; cursor: pointer; font-size: 12px;
+    color: var(--text); transition: background 0.1s;
+  }
+  .mini-item:hover { background: var(--surface-2); }
+  .mini-item.selected { background: rgba(88,166,255,0.15); color: var(--accent); }
+  .mini-empty { padding: 12px; text-align: center; color: var(--text-muted); font-size: 12px; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     Toast notification
+     ══════════════════════════════════════════════════════ -->
+<div id="toast" class="toast"></div>
+
+<!-- ══════════════════════════════════════════════════════
+     Header
+     ══════════════════════════════════════════════════════ -->
+<div class="header">
+  <h1 id="appTitle" onclick="window.showSessions()">🚀 DeepeResearch</h1>
+  <span class="conn-status" id="connStatus">
+    <span class="conn-dot disconnected" id="connDot"></span>
+    <span id="connLabel">Disconnected</span>
+  </span>
+  <span class="spacer"></span>
+  <div class="header-actions">
+    <button class="btn btn-secondary btn-sm" onclick="window.showSystemLogView()" title="View system log">📋 System Log</button>
+    <button class="btn btn-secondary btn-sm" id="settingsBtn" onclick="window.showSettings()">⚙️ Settings</button>
+    <button class="btn btn-primary btn-sm" id="newResearchBtn" onclick="window.showNewResearch()">+ New Research</button>
+    <button class="btn btn-danger btn-sm hidden" id="cancelBtn" onclick="window.cancelResearch()">✕ Cancel</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     Status Bar (shown in detail view)
+     ══════════════════════════════════════════════════════ -->
+<div class="status-bar hidden" id="statusBar">
+  <div class="status-item">
+    <span class="status-label">State</span>
+    <span class="badge badge-idle" id="stateBadge"><span class="conn-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--text-muted);"></span> IDLE</span>
+  </div>
+  <div class="status-item">
+    <span class="status-label">Topic</span>
+    <span id="topicDisplay" class="text-muted">—</span>
+  </div>
+  <div class="status-item">
+    <span class="status-label">Elapsed</span>
+    <span class="elapsed" id="elapsedDisplay">00:00</span>
+  </div>
+  <div class="status-item">
+    <span class="status-label">Phase</span>
+    <span id="phaseDisplay" class="text-muted">Waiting for session…</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     View: Session List (default)
+     ══════════════════════════════════════════════════════ -->
+<div id="sessionListView" class="container">
+  <div class="card">
+    <div class="card-header">
+      <span>📋 Sessions</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="btn btn-sm btn-secondary" onclick="window.clearAllSessions()" style="font-size:11px;padding:3px 8px;">🗑 Clear All</button>
+        <span id="sessionCount" class="text-muted">0 sessions</span>
+      </div>
+    </div>
+    <div class="session-list" id="sessionList">
+      <div class="session-empty">
+        <h3>No research sessions yet</h3>
+        <p>Click "+ New Research" to start your first session.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     View: New Research Form
+     ══════════════════════════════════════════════════════ -->
+<div id="newResearchView" class="container hidden">
+  <button class="back-btn" onclick="window.showSessions()">← Back to Sessions</button>
+  <div class="control-panel card">
+    <h2>🎛 New Research Session</h2>
+
+    <div class="form-group">
+      <label for="topicInput">Research Topic</label>
+      <input type="text" id="topicInput" placeholder="e.g. What is the future of quantum computing?" />
+    </div>
+
+    <div class="form-group">
+      <label>Time Budget</label>
+      <div class="radio-group" id="budgetRadios">
+        <label><input type="radio" name="time_budget" value="quick" /> <span>⚡ Quick <span class="radio-desc">(2 min)</span></span></label>
+        <label><input type="radio" name="time_budget" value="medium" checked /> <span>🔋 Medium <span class="radio-desc">(5 min)</span></span></label>
+        <label><input type="radio" name="time_budget" value="deep" /> <span>🔬 Deep <span class="radio-desc">(8 min)</span></span></label>
+        <label><input type="radio" name="time_budget" value="custom" /> <span>⏱ Custom</span></label>
+      </div>
+      <div class="custom-minutes-input hidden" id="customMinutesRow">
+        <span class="text-muted" style="font-size:13px;">Minutes:</span>
+        <input type="number" id="customMinutesInput" value="15" min="1" max="60" />
+        <span class="text-muted" style="font-size:12px;">(1–60 min)</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>Model Mode</label>
+      <div class="radio-group">
+        <label><input type="radio" name="model_mode" value="same" checked /> <span>🔄 Same model for all</span></label>
+        <label><input type="radio" name="model_mode" value="random" /> <span>🎲 Random models</span></label>
+        <label><input type="radio" name="model_mode" value="manual" /> <span>✋ Manual selection</span></label>
+      </div>
+    </div>
+
+    <div class="form-group" id="modelSelectorGroup">
+      <label>Model</label>
+      <div class="model-picker" id="modelPicker">
+        <div class="model-picker-trigger" tabindex="0" role="combobox" aria-expanded="false">
+          <input type="text" class="model-picker-input" id="modelPickerInput"
+                 placeholder="Type to search models..." readonly />
+          <span class="model-picker-arrow">▾</span>
+        </div>
+        <div class="model-picker-dropdown hidden" id="modelPickerDropdown">
+          <div class="model-picker-search">
+            <input type="text" class="model-picker-search-input" id="modelPickerSearch"
+                   placeholder="Search models..." autocomplete="off" />
+          </div>
+          <div class="model-picker-list" id="modelPickerList">
+            <div class="model-picker-loading">Loading models...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="randomModelHint" class="model-hint hidden">🎲 Random model from configured pool</div>
+
+    <div id="manualModelSelectors" class="hidden">
+      <div class="form-group">
+        <label>Per-Agent Models</label>
+        <div id="agentModelList">
+          <p class="text-muted" style="font-size:13px;">Loading agent profiles...</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group mt-8">
+      <button class="btn btn-primary" id="startBtn" onclick="window.startResearch()">🚀 Start Research</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     View: Session Detail (progress)
+     ══════════════════════════════════════════════════════ -->
+<div id="detailView" class="container hidden">
+  <button class="back-btn" onclick="window.showSessions()">← Back to Sessions</button>
+
+  <div id="detailHeader" style="margin-bottom:12px;display:flex;align-items:center;gap:12px;">
+    <span id="detailSessionId" class="text-muted" style="font-size:12px;"></span>
+    <span id="detailTopic" style="font-size:16px;font-weight:600;flex:1;"></span>
+    <span id="detailStatusBadge" class="session-status-badge"></span>
+  </div>
+
+  <div class="main-grid" id="progressView">
+    <!-- Left Column -->
+    <div>
+      <div class="card mb-8">
+        <div class="card-header">
+          <span>🤖 Agent Progress</span>
+          <span id="agentCount" class="text-muted">0 agents</span>
+        </div>
+        <div class="agent-list" id="agentList">
+          <div class="empty-state">
+            <h3>No agent data</h3>
+            <p>Waiting for session to start...</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span>📋 Research Pipeline</span>
+        </div>
+        <div class="phase-indicator" id="phaseIndicator">
+          <span class="phase-step" data-phase="IDLE">⏸ Idle</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="CONFIGURING">⚙ Config</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="ROUND1">🔍 Round 1</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="COLLABORATING">🤝 Collaborate</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="FOLLOWUP">❓ Follow-up</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="ROUND2">🔎 Round 2</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="COMPILING">📝 Compile</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="OUTPUT">📄 Output</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="COMPLETE">✅ Done</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column -->
+    <div>
+      <!-- Result View (shown when complete) -->
+      <div id="resultView" class="result-view card hidden" style="margin:0;padding:16px;">
+        <h2 style="font-size:18px;">✅ Research Complete!</h2>
+        <p class="text-muted">Your research paper has been generated.</p>
+        <div class="result-actions">
+          <button class="btn btn-success btn-sm" id="downloadPdfBtn">📕 Download PDF</button>
+          <button class="btn btn-primary btn-sm hidden" id="downloadHtmlBtn">🌐 Download HTML</button>
+        </div>
+        <div class="result-summary" style="margin-top:8px;">
+          <dl id="resultSummary">
+            <dt>Topic</dt><dd id="resultTopic">—</dd>
+            <dt>Output File</dt><dd id="resultFilename">—</dd>
+            <dt>Status</dt><dd id="resultStatus">Complete</dd>
+          </dl>
+        </div>
+      </div>
+
+      <!-- Error View -->
+      <div id="errorView" class="error-view card hidden" style="margin:0;padding:16px;">
+        <h2 style="font-size:16px;">❌ Research Failed</h2>
+        <div class="error-message" id="errorMessage">Unknown error</div>
+      </div>
+
+      <!-- Event Log -->
+      <div class="card">
+        <div class="card-header">
+          <span>📜 Event Log</span>
+          <span id="eventCount" class="text-muted">0 events</span>
+        </div>
+        <div class="event-log" id="eventLog">
+          <div class="empty-state" id="emptyLog">
+            <h3>No events yet</h3>
+            <p>Events will appear here as the research progresses.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     View: Settings
+     ══════════════════════════════════════════════════════ -->
+<div id="settingsView" class="container hidden">
+  <button class="back-btn" onclick="window.showSessions()">← Back to Sessions</button>
+  <div class="settings-panel card">
+    <h2>⚙️ Settings</h2>
+
+    <div class="settings-tabs">
+      <button class="settings-tab active" data-tab="api-keys" onclick="switchSettingsTab('api-keys')">🔑 API Keys</button>
+      <button class="settings-tab" data-tab="local-models" onclick="switchSettingsTab('local-models')">🖥️ Local Models</button>
+      <button class="settings-tab" data-tab="scribe" onclick="switchSettingsTab('scribe')">📝 Scribe</button>
+    </div>
+
+    <!-- API Keys Tab -->
+    <div id="tab-api-keys" class="settings-section active">
+      <p class="text-muted" style="margin-bottom:16px;font-size:13px;">
+        Configure API keys for LLM providers. Keys are stored in <code>~/.deepresearch/.env</code> and are never sent anywhere except the provider's API.
+      </p>
+      <div id="providerList">
+        <div class="text-muted" style="text-align:center;padding:20px;">Loading providers...</div>
+      </div>
+    </div>
+
+    <!-- Local Models Tab -->
+    <div id="tab-local-models" class="settings-section">
+      <p class="text-muted" style="margin-bottom:16px;font-size:13px;">
+        Configure local model endpoints (Ollama, llama.cpp, vLLM, or any OpenAI-compatible server). 
+        Auto-discovered Ollama models appear automatically.
+      </p>
+
+      <div class="card-header" style="border:1px solid var(--border);border-radius:6px;margin-bottom:12px;">
+        <span>🔍 Auto-Discovered (Ollama)</span>
+      </div>
+      <div id="discoveredModels">
+        <div class="text-muted" style="padding:12px;font-size:13px;">Scanning for local models...</div>
+      </div>
+
+      <div class="card-header" style="border:1px solid var(--border);border-radius:6px;margin:12px 0 8px;">
+        <span>📝 Configured Endpoints</span>
+      </div>
+      <div id="endpointList">
+        <div class="text-muted" style="padding:12px;font-size:13px;">Loading endpoints...</div>
+      </div>
+
+      <div class="add-endpoint-form" id="addEndpointForm">
+        <input type="text" id="endpointName" placeholder="Name (e.g. my-llama)" />
+        <input type="text" id="endpointUrl" placeholder="URL (e.g. http://localhost:8080/v1)" />
+        <select id="endpointType">
+          <option value="openai">OpenAI-compatible</option>
+          <option value="ollama">Ollama</option>
+          <option value="llamacpp">llama.cpp</option>
+          <option value="vllm">vLLM</option>
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="window.addEndpoint()">+ Add</button>
+      </div>
+    </div>
+
+    <!-- Scribe Tab -->
+    <div id="tab-scribe" class="settings-section">
+      <p class="text-muted" style="margin-bottom:16px;font-size:13px;">
+        Choose which model the scribe agent uses to compile the final research paper.
+        If not set, the scribe will use the same model as the research agents.
+      </p>
+      <div class="form-group" style="max-width:500px;">
+        <label>Scribe Model</label>
+        <div class="model-picker" id="scribeModelPicker">
+          <div class="model-picker-trigger" tabindex="0"><input type="text" class="model-picker-input" id="scribeModelInput" placeholder="— Use agent model (default) —" readonly /><span class="model-picker-arrow">▾</span></div>
+          <div class="model-picker-dropdown hidden" id="scribeModelDropdown"><div class="model-picker-search"><input type="text" class="model-picker-search-input" id="scribeModelSearch" placeholder="Search models..." autocomplete="off" /></div><div class="model-picker-list" id="scribeModelList"></div></div>
+        <p class="text-muted" style="font-size:12px;margin-top:6px;">
+          The scribe compiles all agent findings into the final research paper.
+          Pick a capable model for best results.
+        </p>
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <button class="btn btn-primary btn-sm" onclick="window.saveScribeModel()">💾 Save</button>
+          <button class="btn btn-secondary btn-sm" onclick="window.clearScribeModel()">🗑 Reset to default</button>
+        </div>
+        <div id="scribeModelStatus" class="text-muted" style="font-size:12px;margin-top:8px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     View: System Log
+     ══════════════════════════════════════════════════════ -->
+<div id="systemLogView" class="container hidden">
+  <div class="card" style="max-width:900px;margin:0 auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);">
+      <h3 style="margin:0;">📋 System Log</h3>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <select id="logLevelFilter" class="form-select" style="width:auto;padding:4px 8px;font-size:12px;">
+          <option value="">All levels</option>
+          <option value="ERROR">ERROR</option>
+          <option value="WARNING">WARNING</option>
+          <option value="INFO">INFO</option>
+          <option value="DEBUG">DEBUG</option>
+        </select>
+        <button class="btn btn-sm btn-secondary" onclick="window.refreshSystemLog()">🔄 Refresh</button>
+        <button class="btn btn-sm btn-danger" onclick="window.clearSystemLog()">🗑 Clear</button>
+      </div>
+    </div>
+    <div id="systemLogContainer" style="padding:0;max-height:600px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.5;">
+      <div class="empty-state" style="padding:40px;">
+        <h3>Loading log...</h3>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     JavaScript
+     ══════════════════════════════════════════════════════ -->
+<script>
+(function() {
+  'use strict';
+
+  // ── Constants ──────────────────────────────────────
+  const STATE_ORDER = ['IDLE','CONFIGURING','ROUND1','COLLABORATING','FOLLOWUP','ROUND2','COMPILING','OUTPUT','COMPLETE'];
+  const STATE_LABELS = {
+    IDLE: 'Idle', CONFIGURING: 'Configuring', ROUND1: 'Round 1',
+    COLLABORATING: 'Collaborating', FOLLOWUP: 'Follow-up',
+    ROUND2: 'Round 2', COMPILING: 'Compiling',
+    OUTPUT: 'Output', COMPLETE: 'Complete'
+  };
+  const EVENT_ICONS = {
+    session_start: '🚀', round_start: '🔵', agent_start: '🔄', agent_complete: '🟣',
+    collaboration_phase: '🤝', scribe_start: '📝', scribe_end: '✅',
+    pdf_generated: '📄', session_end: '🏁', agent_failed: '❌',
+    session_timeout: '⏰', config_validated: '⚙', models_assigned: '📋',
+    session_error: '💥', pipeline_summary: '📊',
+  };
+  const STATE_BADGE_CLASSES = {
+    IDLE: 'badge-idle', CONFIGURING: 'badge-configuring',
+    ROUND1: 'badge-round1', COLLABORATING: 'badge-collaborating',
+    FOLLOWUP: 'badge-followup', ROUND2: 'badge-round2',
+    COMPILING: 'badge-compiling', OUTPUT: 'badge-output',
+    COMPLETE: 'badge-complete'
+  };
+  const STATE_COLORS = {
+    IDLE: '#8b949e', CONFIGURING: '#3fb950', ROUND1: '#58a6ff',
+    COLLABORATING: '#bc8cff', FOLLOWUP: '#d29922',
+    ROUND2: '#39d2c0', COMPILING: '#f778ba',
+    OUTPUT: '#3fb950', COMPLETE: '#3fb950'
+  };
+
+  // ── State ──────────────────────────────────────────
+  let agents = {};
+  let agentNames = {};
+  let agentEmojis = {};
+  let currentState = 'IDLE';
+  let currentTopic = '';
+  let currentSessionId = null;  // Session we are viewing in detail
+  let eventCount = 0;
+  let pollTimer = null;
+  let sseSource = null;
+  let sessionStartTime = null;
+  let elapsedTimer = null;
+  let usePolling = false;
+  let sessionListTimer = null;
+  let systemLogInterval = null;
+
+  // ── DOM refs ───────────────────────────────────────
+  const $ = id => document.getElementById(id);
+  const stateBadge = $('stateBadge');
+  const topicDisplay = $('topicDisplay');
+  const elapsedDisplay = $('elapsedDisplay');
+  const phaseDisplay = $('phaseDisplay');
+  const agentList = $('agentList');
+  const agentCount = $('agentCount');
+  const eventLog = $('eventLog');
+  const eventCountEl = $('eventCount');
+  const emptyLog = $('emptyLog');
+  const connLabel = $('connLabel');
+  const connDot = $('connDot');
+  const statusBar = $('statusBar');
+
+  // Views
+  const sessionListView = $('sessionListView');
+  const newResearchView = $('newResearchView');
+  const detailView = $('detailView');
+  const settingsView = $('settingsView');
+  const systemLogView = $('systemLogView');
+  const sessionList = $('sessionList');
+  const sessionCount = $('sessionCount');
+
+  // Controls
+  const cancelBtn = $('cancelBtn');
+  const startBtn = $('startBtn');
+  const topicInput = $('topicInput');
+  const detailTopic = $('detailTopic');
+  const detailSessionId = $('detailSessionId');
+  const detailStatusBadge = $('detailStatusBadge');
+  const resultView = $('resultView');
+  const errorView = $('errorView');
+  const downloadPdfBtn = $('downloadPdfBtn');
+  const downloadHtmlBtn = $('downloadHtmlBtn');
+  const resultTopic = $('resultTopic');
+  const resultFilename = $('resultFilename');
+  const resultStatus = $('resultStatus');
+  const errorMessage = $('errorMessage');
+  const customMinutesRow = $('customMinutesRow');
+  const customMinutesInput = $('customMinutesInput');
+  const toast = $('toast');
+
+  // ── Helpers ────────────────────────────────────────
+  function timestamp() { return new Date().toTimeString().slice(0, 8); }
+
+  function fmtDuration(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+  }
+
+  function setConnection(label, cls) {
+    connLabel.textContent = label;
+    connDot.className = 'conn-dot ' + cls;
+  }
+
+  function showToast(msg, type) {
+    toast.textContent = msg;
+    toast.className = 'toast ' + (type === 'error' ? 'toast-error' : 'toast-success') + ' show';
+    setTimeout(() => toast.classList.remove('show'), 3000);
+  }
+
+  // ── Elapsed time timer ──────────────────────────────
+  function startElapsedTimer() {
+    sessionStartTime = Date.now();
+    if (elapsedTimer) clearInterval(elapsedTimer);
+    elapsedTimer = setInterval(updateElapsed, 1000);
+    updateElapsed(); // immediate first update
+  }
+
+  function stopElapsedTimer() {
+    if (elapsedTimer) {
+      clearInterval(elapsedTimer);
+      elapsedTimer = null;
+    }
+  }
+
+  function updateElapsed() {
+    if (!sessionStartTime) return;
+    const elapsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+    const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const secs = String(elapsed % 60).padStart(2, '0');
+    elapsedDisplay.textContent = mins + ':' + secs;
+  }
+
+  // ── View switching ─────────────────────────────────
+  function showView(view) {
+    // Stop system log auto-refresh if leaving that view
+    if (view !== systemLogView && systemLogInterval) {
+      clearInterval(systemLogInterval);
+      systemLogInterval = null;
+    }
+    [sessionListView, newResearchView, detailView, settingsView, systemLogView].forEach(v => v.classList.add('hidden'));
+    if (view) view.classList.remove('hidden');
+  }
+
+  window.showSessions = function() {
+    showView(sessionListView);
+    cancelBtn.classList.add('hidden');
+    statusBar.classList.add('hidden');
+    refreshSessionList();
+  };
+
+  window.showNewResearch = function() {
+    showView(newResearchView);
+    cancelBtn.classList.add('hidden');
+    statusBar.classList.add('hidden');
+  };
+
+  window.showSettings = function() {
+    showView(settingsView);
+    cancelBtn.classList.add('hidden');
+    statusBar.classList.add('hidden');
+    loadProviderList();
+    loadDiscoveredModels();
+    loadEndpointList();
+    loadScribeModel();
+  };
+
+  // ── System Log View ─────────────────────────────
+  window.showSystemLogView = function() {
+    showView(systemLogView);
+    refreshSystemLog();
+    // Auto-refresh every 10s
+    if (systemLogInterval) clearInterval(systemLogInterval);
+    systemLogInterval = setInterval(refreshSystemLog, 10000);
+  };
+
+  async function refreshSystemLog() {
+    const container = document.getElementById('systemLogContainer');
+    const level = document.getElementById('logLevelFilter').value;
+
+    try {
+      const resp = await fetch('/api/system/log?limit=200&level=' + encodeURIComponent(level));
+      if (!resp.ok) return;
+      const entries = await resp.json();
+
+      if (entries.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="padding:40px;"><h3>No log entries</h3><p>System log is empty.</p></div>';
+        return;
+      }
+
+      container.innerHTML = entries.map(function(e) {
+        const time = new Date(e.timestamp);
+        const timeStr = time.toLocaleTimeString();
+        const levelClass = e.level;
+        const msg = esc(e.message);
+        const logger = esc(e.logger || '');
+        return '<div class="log-entry">' +
+          '<span class="log-time">' + timeStr + '</span>' +
+          '<span class="log-level ' + levelClass + '">' + levelClass + '</span>' +
+          '<span class="log-message">' + msg + '</span>' +
+          '<span class="log-logger" title="' + logger + '">' + logger + '</span>' +
+        '</div>';
+      }).join('');
+
+      container.scrollTop = 0;
+    } catch (err) {
+      container.innerHTML = '<div class="empty-state" style="padding:40px;"><h3>Failed to load log</h3><p>' + esc(err.message) + '</p></div>';
+    }
+  }
+
+  window.clearSystemLog = async function() {
+    if (!confirm('Clear all log entries?')) return;
+    try {
+      await fetch('/api/system/log/clear', { method: 'POST' });
+      refreshSystemLog();
+    } catch (e) {
+      console.warn('Failed to clear log:', e);
+    }
+  };
+
+  window.refreshSystemLog = refreshSystemLog;
+
+  function showDetail(sessionId) {
+    currentSessionId = sessionId;
+    showView(detailView);
+    statusBar.classList.remove('hidden');
+    resetDetailState();
+
+    // Fetch session info and start SSE
+    fetchSessionDetail(sessionId);
+    connectSessionSSE(sessionId);
+  }
+
+  function resetDetailState() {
+    agents = {};
+    eventCount = 0;
+    currentState = 'IDLE';
+    currentTopic = '';
+    stopElapsedTimer();
+    sessionStartTime = null;
+    updateState('IDLE');
+    phaseDisplay.textContent = 'Loading...';
+    topicDisplay.textContent = '—';
+    elapsedDisplay.textContent = '00:00';
+    renderAgents();
+    eventLog.innerHTML = `<div class="empty-state" id="emptyLog"><h3>No events yet</h3><p>Events will appear here as the research progresses.</p></div>`;
+    eventCountEl.textContent = '0 events';
+    resultView.classList.add('hidden');
+    errorView.classList.add('hidden');
+  }
+
+  // ── Session List ───────────────────────────────────
+  async function refreshSessionList() {
+    try {
+      const resp = await fetch('/api/sessions');
+      if (!resp.ok) return;
+      const sessions = await resp.json();
+      sessionCount.textContent = sessions.length + ' session' + (sessions.length !== 1 ? 's' : '');
+
+      if (sessions.length === 0) {
+        sessionList.innerHTML = `<div class="session-empty">
+          <h3>No research sessions yet</h3>
+          <p>Click "+ New Research" to start your first session.</p>
+        </div>`;
+        return;
+      }
+
+      let html = '';
+      for (const s of sessions) {
+        const indicatorClass = s.status;
+        const timeAgo = s.completed_at ? formatTimeAgo(s.completed_at) : (s.created_at ? formatTimeAgo(s.created_at) : '');
+        let actionsHtml = '';
+        if (s.status === 'complete' && s.session_id) {
+          actionsHtml = `
+            <button class="btn btn-sm btn-success" onclick="event.stopPropagation();downloadSessionPDF('${s.session_id}')">📕 PDF</button>
+            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteSession('${s.session_id}')">🗑 Delete</button>
+          `;
+        } else if (s.status === 'running') {
+          actionsHtml = `<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();cancelSessionId('${s.session_id}')">✕ Cancel</button>`;
+        } else if (s.status === 'error' || s.status === 'cancelled') {
+          actionsHtml = `
+            <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();showDetail('${s.session_id}')">👁 View</button>
+            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteSession('${s.session_id}')">🗑 Delete</button>
+          `;
+        }
+
+        html += `<div class="session-row" onclick="window.showDetail('${s.session_id}')">
+          <span class="session-indicator ${indicatorClass}"></span>
+          <span class="session-topic">${esc(s.topic)}</span>
+          <span class="session-status-badge ${indicatorClass}">${esc(s.status)}</span>
+          <span class="session-meta">${timeAgo}</span>
+          <span class="session-meta">${esc(s.time_budget)}${s.time_budget_seconds ? ' (' + s.time_budget_seconds + 's)' : ''}</span>
+          <div class="session-actions">${actionsHtml}</div>
+        </div>`;
+      }
+      sessionList.innerHTML = html;
+    } catch (err) {
+      console.warn('Failed to refresh session list:', err);
+    }
+  }
+
+  function formatTimeAgo(isoStr) {
+    try {
+      const d = new Date(isoStr);
+      const now = new Date();
+      const diff = Math.floor((now - d) / 1000);
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+      if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+      return Math.floor(diff / 86400) + 'd ago';
+    } catch (e) { return ''; }
+  }
+
+  function esc(s) {
+    if (!s) return '';
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // ── Session Detail ─────────────────────────────────
+  async function fetchSessionDetail(sessionId) {
+    try {
+      const resp = await fetch('/api/sessions/' + sessionId);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      detailTopic.textContent = esc(data.topic);
+      detailSessionId.textContent = 'Session ' + data.session_id;
+      detailStatusBadge.textContent = data.status;
+      detailStatusBadge.className = 'session-status-badge ' + data.status;
+      currentTopic = data.topic || '';
+      topicDisplay.textContent = currentTopic.length > 60 ? currentTopic.slice(0, 60) + '…' : currentTopic;
+
+      if (data.status === 'complete' && data.result) {
+        showResult(data.result, data.topic);
+      } else if (data.status === 'error') {
+        showError(data.error);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch session detail:', err);
+    }
+  }
+
+  function showResult(result, topic) {
+    resultView.classList.remove('hidden');
+    errorView.classList.add('hidden');
+    resultTopic.textContent = topic || '—';
+    resultFilename.textContent = result.pdf_filename || '—';
+    resultStatus.textContent = 'Complete';
+
+    const pdfFile = result.pdf_filename || 'deepresearch_output.pdf';
+    downloadPdfBtn.onclick = function() {
+      window.open('/api/download/' + encodeURIComponent(pdfFile), '_blank');
+    };
+
+    if (result.html_path) {
+      const htmlFile = result.html_path.split('/').pop();
+      downloadHtmlBtn.onclick = function() {
+        window.open('/api/download/' + encodeURIComponent(htmlFile), '_blank');
+      };
+      downloadHtmlBtn.classList.remove('hidden');
+    } else {
+      downloadHtmlBtn.classList.add('hidden');
+    }
+
+    updateState('COMPLETE');
+    phaseDisplay.textContent = 'Complete';
+    statusBar.classList.remove('hidden');
+  }
+
+  function showError(err) {
+    errorView.classList.remove('hidden');
+    resultView.classList.add('hidden');
+    errorMessage.textContent = err || 'Unknown error';
+    updateState('ERROR');
+    phaseDisplay.textContent = 'Error';
+  }
+
+  // ── Session SSE ────────────────────────────────────
+  function connectSessionSSE(sessionId) {
+    if (sseSource) { sseSource.close(); sseSource = null; }
+
+    setConnection('Connecting…', 'disconnected');
+    sseSource = new EventSource('/api/sessions/' + sessionId + '/events');
+
+    sseSource.onopen = function() {
+      setConnection('Live', 'connected');
+      usePolling = false;
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    };
+
+    sseSource.addEventListener('message', function(e) {
+      try {
+        const data = JSON.parse(e.data);
+        processEvent(data);
+      } catch (err) {
+        console.warn('SSE parse error:', err);
+      }
+    });
+
+    sseSource.onerror = function() {
+      setConnection('Disconnected', 'disconnected');
+      sseSource.close();
+      sseSource = null;
+    };
+  }
+
+  // ── Process event ──────────────────────────────────
+  function processEvent(data) {
+    const eventType = data.event_type || 'unknown';
+    const state = data.state || currentState;
+    const topic = data.topic || currentTopic;
+
+    if (topic) currentTopic = topic;
+    if (state) updateState(state);
+
+    if (currentTopic) {
+      topicDisplay.textContent = currentTopic.length > 60 ? currentTopic.slice(0, 60) + '…' : currentTopic;
+    }
+    phaseDisplay.textContent = STATE_LABELS[currentState] || currentState;
+
+    if (eventType === 'session_start') {
+      cancelBtn.classList.remove('hidden');
+      agents = {};
+      startElapsedTimer();
+    }
+
+    if (eventType === 'session_end') {
+      cancelBtn.classList.add('hidden');
+      stopElapsedTimer();
+      // Refresh session in background
+      fetchSessionDetail(currentSessionId);
+      refreshSessionList();
+    }
+
+    if (eventType === 'session_error') {
+      cancelBtn.classList.add('hidden');
+      stopElapsedTimer();
+      showError(data.error || 'Unknown error');
+      refreshSessionList();
+    }
+
+    if (eventType === 'models_assigned' && data.assignments) {
+      console.log('[Agent Debug] models_assigned:', data.assignments ? Object.keys(data.assignments).length + ' agents' : 'NO ASSIGNMENTS');
+      Object.entries(data.assignments).forEach(([id]) => {
+        if (!agents[id]) agents[id] = { progress: 0, status: 'waiting' };
+      });
+      renderAgents();
+    }
+
+    if (eventType === 'round_start') {
+      Object.keys(agents).forEach(id => {
+        agents[id] = { progress: 0, status: 'waiting' };
+      });
+      renderAgents();
+    }
+
+    if (eventType === 'agent_start') {
+      console.log('[Agent Debug] agent_start:', data.agent_id);
+      const aid = data.agent_id;
+      if (!agents[aid]) agents[aid] = {};
+      agents[aid].progress = 0;
+      agents[aid].status = 'running';
+      renderAgents();
+    }
+
+    if (eventType === 'agent_complete') {
+      console.log('[Agent Debug] agent_complete:', data.agent_id);
+      const aid = data.agent_id;
+      if (agents[aid]) { agents[aid].progress = 100; agents[aid].status = 'done'; }
+      renderAgents();
+    }
+
+    if (eventType === 'agent_failed') {
+      const aid = data.agent_id;
+      if (agents[aid]) { agents[aid].progress = 0; agents[aid].status = 'failed'; }
+      renderAgents();
+    }
+
+    if (eventType === 'collaboration_phase') {
+      Object.keys(agents).forEach(id => {
+        if (agents[id].status !== 'done') { agents[id].progress = 100; agents[id].status = 'done'; }
+      });
+      renderAgents();
+    }
+
+    if (eventType === 'scribe_start') {
+      Object.keys(agents).forEach(id => {
+        agents[id].progress = 100; agents[id].status = 'done';
+      });
+      renderAgents();
+    }
+
+    addEvent(eventType, data);
+  }
+
+  // ── Update state badge ─────────────────────────────
+  function updateState(state) {
+    currentState = state || 'IDLE';
+    const label = STATE_LABELS[currentState] || currentState;
+    const cls = STATE_BADGE_CLASSES[currentState] || 'badge-idle';
+    const color = STATE_COLORS[currentState] || '#8b949e';
+    stateBadge.className = 'badge ' + cls;
+    stateBadge.innerHTML = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${color};"></span> ${label}`;
+
+    document.querySelectorAll('.phase-step').forEach(el => {
+      const phase = el.dataset.phase;
+      const idx = STATE_ORDER.indexOf(phase);
+      const curIdx = STATE_ORDER.indexOf(currentState);
+      el.classList.remove('active', 'done', 'current');
+      if (idx < curIdx) el.classList.add('done');
+      else if (idx === curIdx) el.classList.add('current');
+      else el.classList.add('active');
+    });
+  }
+
+  // ── Render agents ──────────────────────────────────
+  function renderAgents() {
+    console.log('[Agent Debug] renderAgents called, agents count:', Object.keys(agents).length);
+    const ids = Object.keys(agents);
+    if (ids.length === 0) {
+      agentList.innerHTML = `<div class="empty-state"><h3>No agent data</h3><p>Waiting for session to start...</p></div>`;
+      agentCount.textContent = '0 agents';
+      return;
+    }
+
+    agentCount.textContent = ids.length + ' agent' + (ids.length !== 1 ? 's' : '');
+    let html = '';
+    for (const id of ids) {
+      const info = agents[id] || {};
+      const pct = info.progress || 0;
+      const status = info.status || 'waiting';
+      const name = agentNames[id] || id;
+      const emoji = agentEmojis[id] || '🤖';
+
+      let barClass = 'agent-bar-fill ';
+      let statusIcon = '';
+      if (status === 'done') { barClass += 'done'; statusIcon = '✅'; }
+      else if (status === 'running') { barClass += 'running'; statusIcon = '🔄'; }
+      else if (status === 'failed') { barClass += 'failed'; statusIcon = '❌'; }
+      else { barClass += 'waiting'; statusIcon = '⏳'; }
+
+      html += `<div class="agent-row">
+        <span class="agent-emoji">${emoji}</span>
+        <span class="agent-name">${esc(name)}</span>
+        <div class="agent-bar-wrap"><div class="agent-bar-bg"><div class="${barClass}" style="width:${pct}%"></div></div></div>
+        <span class="agent-pct">${Math.round(pct)}%</span>
+        <span class="agent-status-icon">${statusIcon}</span>
+      </div>`;
+    }
+    agentList.innerHTML = html;
+  }
+
+  // ── Add event ──────────────────────────────────────
+  function addEvent(eventType, data) {
+    eventCount++;
+    eventCountEl.textContent = eventCount + ' event' + (eventCount !== 1 ? 's' : '');
+
+    const icon = EVENT_ICONS[eventType] || '📌';
+    const time = data.timestamp ? new Date(data.timestamp + 'Z').toTimeString().slice(0, 8) : timestamp();
+
+    let msg = eventType;
+    if (eventType === 'session_start' && data.topic) msg = 'Session started — "' + data.topic + '"';
+    else if (eventType === 'round_start') msg = 'Round ' + data.round + ' started';
+    else if (eventType === 'agent_start') msg = (agentNames[data.agent_id] || data.agent_id) + ' started Round ' + data.round;
+    else if (eventType === 'agent_complete') msg = (agentNames[data.agent_id] || data.agent_id) + ' completed Round ' + data.round;
+    else if (eventType === 'agent_failed') msg = (agentNames[data.agent_id] || data.agent_id) + ' failed: ' + (data.error || 'unknown');
+    else if (eventType === 'collaboration_phase') msg = 'Collaboration phase (' + (data.shared_agent_count || '?') + ' agents)';
+    else if (eventType === 'session_end') msg = 'Session completed';
+    else if (eventType === 'session_error') msg = 'Session failed: ' + (data.error || '');
+    else if (eventType === 'session_timeout') msg = 'Session timed out after ' + (data.timeout || '?') + 's';
+    else if (eventType === 'pdf_generated') msg = 'PDF generated: ' + (data.path || '');
+    else if (eventType === 'scribe_start') msg = 'Scribe compiling final paper';
+    else if (eventType === 'scribe_end') msg = 'Scribe compilation complete';
+    else if (eventType === 'config_validated') msg = 'Configuration validated';
+    else if (eventType === 'models_assigned') msg = 'Models assigned to agents';
+    else if (eventType === 'pipeline_summary') msg = '📊 Pipeline complete: ' + (data.total_agents || '?') + ' agents, ' + (data.failed_agents ? data.failed_agents.length + ' failed' : '0 failed') + ', ' + data.elapsed + 's';
+
+    const empty = document.getElementById('emptyLog');
+    if (empty) empty.remove();
+
+    const entry = document.createElement('div');
+    entry.className = 'event-entry';
+    entry.innerHTML = '<span class="event-icon">' + icon + '</span><span class="event-time">' + time + '</span><span class="event-msg">' + esc(msg) + '</span>';
+    eventLog.appendChild(entry);
+    eventLog.scrollTop = eventLog.scrollHeight;
+  }
+
+  // ── API Calls ──────────────────────────────────────
+  window.startResearch = async function() {
+    const topic = topicInput.value.trim();
+    if (!topic) { showToast('Please enter a research topic.', 'error'); return; }
+
+    const timeBudget = document.querySelector('input[name="time_budget"]:checked').value;
+    const modelMode = document.querySelector('input[name="model_mode"]:checked').value;
+
+    startBtn.disabled = true;
+    startBtn.textContent = '⏳ Starting...';
+
+    const body = { topic: topic, time_budget: timeBudget, model_mode: modelMode };
+
+    // Add model selection
+    if (modelMode === 'same') {
+      body.selected_model = modelPicker ? modelPicker.getValue() : '';
+    } else if (modelMode === 'manual') {
+      const agentModels = {};
+      document.querySelectorAll('.mini-picker-input[data-model-id]').forEach(input => {
+        agentModels[input.dataset.agent] = input.dataset.modelId;
+      });
+      if (Object.keys(agentModels).length > 0) {
+        body.agent_models = agentModels;
+      }
+    }
+
+    // Add custom minutes if custom selected
+    if (timeBudget === 'custom') {
+      const minutes = parseInt(customMinutesInput.value) || 15;
+      body.time_budget_seconds = Math.max(60, Math.min(minutes * 60, 3600));
+    }
+
+    try {
+      const response = await fetch('/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        showToast('Error: ' + (err.error || 'Unknown error'), 'error');
+        startBtn.disabled = false;
+        startBtn.innerHTML = '🚀 Start Research';
+        return;
+      }
+
+      const data = await response.json();
+      showToast('Session started!', 'success');
+
+      // Navigate to session detail
+      window.showDetail(data.session_id);
+
+      // Reset form
+      startBtn.disabled = false;
+      startBtn.innerHTML = '🚀 Start Research';
+
+    } catch (err) {
+      showToast('Network error: ' + err.message, 'error');
+      startBtn.disabled = false;
+      startBtn.innerHTML = '🚀 Start Research';
+    }
+  };
+
+  window.cancelResearch = async function() {
+    if (!currentSessionId) return;
+    try {
+      await fetch('/api/sessions/' + currentSessionId + '/cancel', { method: 'POST' });
+      cancelBtn.classList.add('hidden');
+      showToast('Session cancelled', 'success');
+      refreshSessionList();
+    } catch (err) {
+      console.warn('Cancel failed:', err);
+    }
+  };
+
+  window.cancelSessionId = async function(sessionId) {
+    try {
+      await fetch('/api/sessions/' + sessionId + '/cancel', { method: 'POST' });
+      showToast('Session cancelled', 'success');
+      refreshSessionList();
+    } catch (err) {
+      console.warn('Cancel failed:', err);
+    }
+  };
+
+  window.downloadSessionPDF = async function(sessionId) {
+    // Fetch session detail to get the actual PDF filename (topic-based slug)
+    try {
+      const resp = await fetch('/api/sessions/' + sessionId);
+      if (resp.ok) {
+        const data = await resp.json();
+        const pdfFname = data.result?.pdf_filename || 'research.pdf';
+        // Navigate directly — browser shows it inline with Content-Disposition: inline
+        window.location.href = '/api/download/' + sessionId + '/' + pdfFname;
+      } else {
+        // Fallback
+        window.location.href = '/api/download/' + sessionId + '/research.pdf';
+      }
+    } catch (e) {
+      // Fallback on network error
+      window.location.href = '/api/download/' + sessionId + '/research.pdf';
+    }
+  };
+
+  window.deleteSession = async function(sessionId) {
+    if (!confirm('Delete this session?')) return;
+    try {
+      const resp = await fetch('/api/sessions/' + sessionId, { method: 'DELETE' });
+      if (resp.ok) {
+        showToast('Session deleted', 'success');
+        refreshSessionList();
+        // If currently viewing this session, go back to list
+        if (currentSessionId === sessionId) {
+          window.showSessions();
+        }
+      } else {
+        const data = await resp.json();
+        showToast(data.error || 'Failed to delete', 'error');
+      }
+    } catch (e) {
+      showToast('Failed to delete session: ' + e.message, 'error');
+    }
+  };
+
+  window.clearAllSessions = async function() {
+    if (!confirm('Remove all completed/error/cancelled sessions?')) return;
+    try {
+      const resp = await fetch('/api/sessions/clear-completed', { method: 'POST' });
+      if (resp.ok) {
+        showToast('Completed sessions cleared', 'success');
+        refreshSessionList();
+        window.showSessions();
+      }
+    } catch (e) {
+      showToast('Failed to clear: ' + e.message, 'error');
+    }
+  };
+
+  // ── Custom time budget handler ─────────────────────
+  document.querySelectorAll('input[name="time_budget"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+      customMinutesRow.classList.toggle('hidden', this.value !== 'custom');
+    });
+  });
+
+  // ── Searchable, grouped model picker ──────────
+  class ModelPicker {
+    constructor(containerId, onChange) {
+      this.container = document.getElementById(containerId);
+      this.onChange = onChange;
+      this.selectedModel = null;
+      this.allModels = [];
+      this.filterText = '';
+      this.isOpen = false;
+
+      this._buildDOM();
+      this._bindEvents();
+    }
+
+    _buildDOM() {
+      this.container.innerHTML = `
+        <div class="model-picker-trigger" tabindex="0" role="combobox">
+          <input type="text" class="model-picker-input mp-input" readonly
+                 placeholder="Type to search models..." />
+          <span class="model-picker-arrow mp-arrow">▾</span>
+        </div>
+        <div class="model-picker-dropdown hidden mp-dropdown">
+          <div class="model-picker-search">
+            <input type="text" class="model-picker-search-input mp-search"
+                   placeholder="Search models..." autocomplete="off" />
+          </div>
+          <div class="model-picker-list mp-list"></div>
+        </div>
+      `;
+
+      this.input = this.container.querySelector('.mp-input');
+      this.arrow = this.container.querySelector('.mp-arrow');
+      this.dropdown = this.container.querySelector('.mp-dropdown');
+      this.search = this.container.querySelector('.mp-search');
+      this.list = this.container.querySelector('.mp-list');
+      this.trigger = this.container.querySelector('.model-picker-trigger');
+    }
+
+    _bindEvents() {
+      // Click trigger to open/close
+      this.trigger.addEventListener('click', (e) => {
+        if (e.target === this.search) return;
+        this.isOpen ? this.close() : this.open();
+      });
+
+      // Search input filtering
+      this.search.addEventListener('input', () => {
+        this.filterText = this.search.value;
+        this._render();
+      });
+
+      // Close on click outside
+      document.addEventListener('click', (e) => {
+        if (!this.container.contains(e.target) && this.isOpen) {
+          this.close();
+        }
+      });
+
+      // Keyboard: Escape to close, Enter on focused item
+      this.search.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') this.close();
+        if (e.key === 'Enter') {
+          const first = this.list.querySelector('.model-picker-item:not(.hidden)');
+          if (first) first.click();
+        }
+      });
+
+      // Stop wheel propagation on dropdown
+      this.dropdown.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
+    }
+
+    open() {
+      this.isOpen = true;
+      this.dropdown.classList.remove('hidden');
+      this.arrow.classList.add('open');
+      this.trigger.setAttribute('aria-expanded', 'true');
+      this.search.value = '';
+      this.filterText = '';
+      this._render();
+      setTimeout(() => this.search.focus(), 50);
+    }
+
+    close() {
+      this.isOpen = false;
+      this.dropdown.classList.add('hidden');
+      this.arrow.classList.remove('open');
+      this.trigger.setAttribute('aria-expanded', 'false');
+    }
+
+    setModels(models) {
+      this.allModels = models || [];
+      // Group by provider
+      this._grouped = {};
+      for (const m of models) {
+        const provider = m.provider || 'other';
+        if (!this._grouped[provider]) this._grouped[provider] = [];
+        this._grouped[provider].push(m);
+      }
+      if (!this.isOpen) return;
+      this._render();
+    }
+
+    setValue(modelId) {
+      this.selectedModel = modelId;
+      const found = this.allModels.find(m => m.id === modelId);
+      this.input.value = found ? (found.display_name || found.id) : (modelId || '');
+      this._render();
+    }
+
+    getValue() { return this.selectedModel; }
+
+    _render() {
+      if (!this._grouped) return;
+      const filter = this.filterText.toLowerCase().trim();
+      let html = '';
+      let count = 0;
+
+      for (const [provider, models] of Object.entries(this._grouped)) {
+        const filtered = filter
+          ? models.filter(m => (m.display_name || m.id).toLowerCase().includes(filter) || m.id.toLowerCase().includes(filter))
+          : models;
+
+        if (filtered.length === 0) continue;
+
+        const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
+        html += `<div class="model-picker-group-header">${esc(providerName)}</div>`;
+
+        for (const m of filtered) {
+          const selected = m.id === this.selectedModel ? ' selected' : '';
+          html += `<div class="model-picker-item${selected}" data-model-id="${esc(m.id)}">
+            <span>${esc(m.display_name || m.id)}</span>
+            <span class="model-id">${esc(m.id)}</span>
+          </div>`;
+          count++;
+        }
+      }
+
+      if (count === 0) {
+        html = `<div class="model-picker-empty">${filter ? 'No models match "' + esc(filter) + '"' : 'No models available'}</div>`;
+      }
+
+      this.list.innerHTML = html;
+
+      // Bind click on each item
+      this.list.querySelectorAll('.model-picker-item').forEach(el => {
+        el.addEventListener('click', () => {
+          const id = el.dataset.modelId;
+          this.setValue(id);
+          this.close();
+          if (this.onChange) this.onChange(id);
+        });
+      });
+    }
+  }
+
+  let modelPicker = null;
+
+  async function loadAvailableModels() {
+    try {
+      const resp = await fetch('/api/models');
+      if (!resp.ok) return;
+      const models = await resp.json();
+      window._availableModels = models;
+
+      // Initialize the model picker
+      if (!modelPicker) {
+        modelPicker = new ModelPicker('modelPicker', (modelId) => {
+          modelPicker._selectedForSubmit = modelId;
+        });
+      }
+      modelPicker.setModels(models);
+
+      // Set default selection (first model or default-tagged)
+      const defaultModel = models.find(m => m.default) || models[0];
+      if (defaultModel) {
+        modelPicker.setValue(defaultModel.id);
+      }
+    } catch (err) {
+      console.warn('Failed to load models:', err);
+    }
+  }
+
+  document.querySelectorAll('input[name="model_mode"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+      const isSame = this.value === 'same';
+      const isRandom = this.value === 'random';
+      const isManual = this.value === 'manual';
+
+      document.getElementById('modelSelectorGroup').classList.toggle('hidden', !isSame);
+      document.getElementById('randomModelHint').classList.toggle('hidden', !isRandom);
+      document.getElementById('manualModelSelectors').classList.toggle('hidden', !isManual);
+
+      if (isManual && !document.getElementById('agentModelList').querySelector('.agent-model-row')) {
+        buildManualModelSelectors();
+      }
+    });
+  });
+
+  async function buildManualModelSelectors() {
+    try {
+      const resp = await fetch('/api/profiles');
+      if (!resp.ok) return;
+      const profiles = await resp.json();
+      const models = window._availableModels || [];
+
+      const container = document.getElementById('agentModelList');
+      if (profiles.length === 0) {
+        container.innerHTML = '<p class="text-muted" style="font-size:13px;">No agent profiles available.</p>';
+        return;
+      }
+
+      // Group models by provider
+      const grouped = {};
+      for (const m of models) {
+        const p = m.provider || 'other';
+        if (!grouped[p]) grouped[p] = [];
+        grouped[p].push(m);
+      }
+
+      let html = '';
+      for (const p of profiles) {
+        const pid = esc(p.id);
+        const pname = esc(p.name || p.id);
+        const pemoj = p.emoji || '🤖';
+
+        html += `<div class="agent-model-row">
+          <span>${pemoj} ${pname}</span>
+          <div class="mini-picker" data-agent="${pid}">
+            <input type="text" class="mini-picker-input" readonly
+                   placeholder="Select model..." data-agent="${pid}" />
+            <div class="mini-picker-dropdown hidden">
+              <input type="text" class="mini-picker-search" placeholder="Search..." autocomplete="off" data-agent="${pid}" />
+              <div class="mini-picker-list" data-agent="${pid}"></div>
+            </div>
+          </div>
+        </div>`;
+      }
+      container.innerHTML = html;
+
+      // Initialize each mini picker
+      container.querySelectorAll('.mini-picker').forEach(pickerEl => {
+        initMiniPicker(pickerEl, grouped, models);
+      });
+    } catch (err) {
+      console.warn('Failed to build manual model selectors:', err);
+    }
+  }
+
+  function initMiniPicker(pickerEl, grouped, allModels) {
+    const input = pickerEl.querySelector('.mini-picker-input');
+    const dropdown = pickerEl.querySelector('.mini-picker-dropdown');
+    const search = pickerEl.querySelector('.mini-picker-search');
+    const list = pickerEl.querySelector('.mini-picker-list');
+
+    let isOpen = false;
+    let selectedValue = null;
+
+    function render(filter) {
+      const f = (filter || '').toLowerCase().trim();
+      let html = '';
+      let count = 0;
+
+      for (const [provider, models] of Object.entries(grouped)) {
+        const filtered = f
+          ? models.filter(m => (m.display_name || m.id).toLowerCase().includes(f) || m.id.toLowerCase().includes(f))
+          : models;
+        if (filtered.length === 0) continue;
+
+        const pName = provider.charAt(0).toUpperCase() + provider.slice(1);
+        html += `<div class="mini-group-header">${esc(pName)}</div>`;
+
+        for (const m of filtered) {
+          const sel = m.id === selectedValue ? ' selected' : '';
+          html += `<div class="mini-item${sel}" data-model="${esc(m.id)}">
+            <span>${esc(m.display_name || m.id)}</span>
+          </div>`;
+          count++;
+        }
+      }
+
+      if (count === 0) {
+        html = `<div class="mini-empty">${f ? 'No matches' : 'No models'}</div>`;
+      }
+
+      list.innerHTML = html;
+
+      list.querySelectorAll('.mini-item').forEach(el => {
+        el.addEventListener('click', () => {
+          selectedValue = el.dataset.model;
+          input.dataset.modelId = selectedValue;
+          const found = allModels.find(m => m.id === selectedValue);
+          input.value = found ? (found.display_name || found.id) : selectedValue;
+          dropdown.classList.add('hidden');
+          isOpen = false;
+          list.querySelectorAll('.mini-item').forEach(i => i.classList.remove('selected'));
+          el.classList.add('selected');
+        });
+      });
+    }
+
+    input.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isOpen = !isOpen;
+      dropdown.classList.toggle('hidden', !isOpen);
+      if (isOpen) {
+        search.value = '';
+        render('');
+        setTimeout(() => search.focus(), 50);
+      }
+    });
+
+    search.addEventListener('input', () => render(search.value));
+
+    search.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        dropdown.classList.add('hidden');
+        isOpen = false;
+      }
+    });
+
+    // Close on click outside
+    document.addEventListener('click', (e) => {
+      if (!pickerEl.contains(e.target) && isOpen) {
+        dropdown.classList.add('hidden');
+        isOpen = false;
+      }
+    });
+  }
+
+  // ── Settings: API Keys ─────────────────────────────
+  async function loadProviderList() {
+    try {
+      const resp = await fetch('/api/settings/keys');
+      if (!resp.ok) return;
+      const data = await resp.json();
+
+      let html = '';
+      for (const [id, info] of Object.entries(data)) {
+        const statusClass = info.configured ? 'configured' : 'missing';
+        const statusText = info.configured ? '✅ Configured' : '❌ Missing';
+        const preview = info.key_preview ? ' (' + info.key_preview + ')' : '';
+
+        html += `<div class="provider-row" data-provider="${esc(id)}">
+          <div class="provider-name">${esc(info.name)}</div>
+          <div class="provider-status ${statusClass}">${statusText}${preview}</div>
+          <div class="provider-input">
+            <input type="password" id="key-input-${esc(id)}" placeholder="Paste API key..." />
+          </div>
+          <div class="provider-actions">
+            <button class="btn btn-sm btn-primary" onclick="window.saveApiKey('${esc(id)}')">Save</button>
+            ${info.configured ? `<button class="btn btn-sm btn-danger" onclick="window.deleteApiKey('${esc(id)}')">Delete</button>` : ''}
+          </div>
+        </div>`;
+      }
+      $('providerList').innerHTML = html;
+    } catch (err) {
+      $('providerList').innerHTML = '<div class="text-muted" style="padding:12px;">Failed to load providers.</div>';
+    }
+  }
+
+  window.saveApiKey = async function(provider) {
+    const input = document.getElementById('key-input-' + provider);
+    const key = input.value.trim();
+    if (!key) { showToast('Please enter an API key.', 'error'); return; }
+
+    try {
+      const resp = await fetch('/api/settings/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: provider, key: key }),
+      });
+      if (resp.ok) {
+        showToast('API key saved for ' + provider, 'success');
+        input.value = '';
+        loadProviderList();
+      } else {
+        const err = await resp.json();
+        showToast('Error: ' + (err.error || 'Failed to save'), 'error');
+      }
+    } catch (err) {
+      showToast('Network error', 'error');
+    }
+  };
+
+  window.deleteApiKey = async function(provider) {
+    try {
+      const resp = await fetch('/api/settings/keys/' + provider, { method: 'DELETE' });
+      if (resp.ok) {
+        showToast('API key deleted for ' + provider, 'success');
+        loadProviderList();
+      }
+    } catch (err) {
+      showToast('Network error', 'error');
+    }
+  };
+
+  // ── Settings: Local Models ─────────────────────────
+  async function loadDiscoveredModels() {
+    try {
+      const resp = await fetch('/api/settings/local-models');
+      if (!resp.ok) return;
+      const models = await resp.json();
+
+      const ollamaModels = models.filter(m => m.source === 'ollama');
+
+      let html = '';
+      if (ollamaModels.length === 0) {
+        html = '<div class="text-muted" style="padding:12px;font-size:13px;">No Ollama models detected. Start Ollama to auto-discover.</div>';
+      } else {
+        for (const m of ollamaModels) {
+          html += `<div class="endpoint-row">
+            <span class="endpoint-name">${esc(m.name)}</span>
+            <span class="endpoint-url">${esc(m.endpoint)}</span>
+            <span class="endpoint-type">Ollama</span>
+            ${m.size ? '<span class="text-muted" style="font-size:11px;">' + formatSize(m.size) + '</span>' : ''}
+          </div>`;
+        }
+      }
+      $('discoveredModels').innerHTML = html;
+    } catch (err) {
+      $('discoveredModels').innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">Could not scan for local models.</div>';
+    }
+  }
+
+  function formatSize(bytes) {
+    if (!bytes) return '';
+    const gb = bytes / (1024 * 1024 * 1024);
+    return gb.toFixed(1) + ' GB';
+  }
+
+  async function loadEndpointList() {
+    try {
+      const resp = await fetch('/api/settings/local-models');
+      if (!resp.ok) return;
+      const models = await resp.json();
+      const saved = models.filter(m => m.source !== 'ollama');
+
+      let html = '';
+      if (saved.length === 0) {
+        html = '<div class="text-muted" style="padding:12px;font-size:13px;">No custom endpoints configured.</div>';
+      } else {
+        for (const m of saved) {
+          html += `<div class="endpoint-row">
+            <span class="endpoint-name">${esc(m.name || '?')}</span>
+            <span class="endpoint-url">${esc(m.endpoint || '?')}</span>
+            <span class="endpoint-type">${esc(m.type || '?')}</span>
+            <button class="btn btn-sm btn-secondary" onclick="window.testEndpoint('${esc(m.name)}')">Test</button>
+            <button class="btn btn-sm btn-danger" onclick="window.removeEndpoint('${esc(m.name)}')">✕</button>
+          </div>`;
+        }
+      }
+      $('endpointList').innerHTML = html;
+    } catch (err) {
+      $('endpointList').innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">Failed to load endpoints.</div>';
+    }
+  }
+
+  window.addEndpoint = async function() {
+    const name = $('endpointName').value.trim();
+    const endpoint = $('endpointUrl').value.trim();
+    const type = $('endpointType').value;
+    if (!name || !endpoint) { showToast('Please fill in name and URL.', 'error'); return; }
+
+    try {
+      const resp = await fetch('/api/settings/local-endpoints', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, endpoint, type }),
+      });
+      if (resp.ok) {
+        showToast('Endpoint added!', 'success');
+        $('endpointName').value = '';
+        $('endpointUrl').value = '';
+        loadEndpointList();
+      } else {
+        const err = await resp.json();
+        showToast('Error: ' + (err.error || 'Failed'), 'error');
+      }
+    } catch (err) {
+      showToast('Network error', 'error');
+    }
+  };
+
+  window.removeEndpoint = async function(name) {
+    try {
+      const resp = await fetch('/api/settings/local-endpoints/' + encodeURIComponent(name), { method: 'DELETE' });
+      if (resp.ok) {
+        showToast('Endpoint removed', 'success');
+        loadEndpointList();
+      }
+    } catch (err) {
+      showToast('Network error', 'error');
+    }
+  };
+
+  window.testEndpoint = async function(name) {
+    try {
+      const resp = await fetch('/api/settings/local-endpoints/' + encodeURIComponent(name) + '/test', { method: 'POST' });
+      const data = await resp.json();
+      if (data.status === 'ok') {
+        showToast(data.message || 'Connection OK!', 'success');
+      } else {
+        showToast(data.message || 'Connection failed', 'error');
+      }
+    } catch (err) {
+      showToast('Test failed', 'error');
+    }
+  };
+
+  // ── Settings tab switching ─────────────────────────
+  window.switchSettingsTab = function(tab) {
+    document.querySelectorAll('.settings-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.querySelectorAll('.settings-section').forEach(s => s.classList.toggle('active', s.id === 'tab-' + tab));
+  };
+
+  // ── Scribe Model ───────────────────────────────────
+  let scribeModelPicker = null;
+
+  async function loadScribeModel() {
+    try {
+      const resp = await fetch('/api/settings/scribe-model');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const savedModel = data.scribe_model;
+
+      const models = window._availableModels || [];
+
+      if (!scribeModelPicker) {
+        scribeModelPicker = new ModelPicker('scribeModelPicker', () => {});
+      }
+      scribeModelPicker.setModels(models);
+
+      if (savedModel) {
+        scribeModelPicker.setValue(savedModel);
+        document.getElementById('scribeModelStatus').textContent = '✅ Current: ' + savedModel;
+      } else {
+        scribeModelPicker.setValue('');
+        document.getElementById('scribeModelStatus').textContent = '';
+      }
+    } catch (e) {
+      console.warn('Failed to load scribe model:', e);
+    }
+  }
+
+  window.saveScribeModel = async function() {
+    const model = scribeModelPicker ? scribeModelPicker.getValue() : '';
+    try {
+      const resp = await fetch('/api/settings/scribe-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scribe_model: model }),
+      });
+      if (resp.ok) {
+        document.getElementById('scribeModelStatus').textContent = model ? '✅ Saved: ' + model : '✅ Reset to default';
+        showToast('Scribe model saved!', 'success');
+      }
+    } catch (e) {
+      showToast('Failed to save: ' + e.message, 'error');
+    }
+  };
+
+  window.clearScribeModel = async function() {
+    try {
+      await fetch('/api/settings/scribe-model', { method: 'DELETE' });
+      if (scribeModelPicker) {
+        scribeModelPicker.setValue('');
+      }
+      document.getElementById('scribeModelStatus').textContent = '✅ Reset to default';
+      showToast('Scribe model reset', 'success');
+    } catch (e) {
+      showToast('Failed to reset: ' + e.message, 'error');
+    }
+  };
+
+  // ── Agent profile data ─────────────────────────────
+  async function loadAgentProfiles() {
+    try {
+      const resp = await fetch('/api/agents');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data && data.length > 0) {
+        data.forEach(a => {
+          if (a.id) {
+            agentNames[a.id] = a.name || a.id;
+            agentEmojis[a.id] = a.emoji || '🤖';
+          }
+        });
+      }
+    } catch (err) {}
+  }
+
+  // ── Session list polling ───────────────────────────
+  function startSessionListPolling() {
+    refreshSessionList();
+    sessionListTimer = setInterval(refreshSessionList, 3000);
+  }
+
+  // ── Init ───────────────────────────────────────────
+  loadAgentProfiles();
+  loadAvailableModels();
+  startSessionListPolling();
+
+  window.showDetail = showDetail;
+
+})();
+</script>
+</body>
+</html>

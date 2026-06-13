@@ -1,0 +1,541 @@
+"""ScribeAgent — neutral academic compiler for DeepeResearch.
+
+The scribe receives individual reports from all research agents and
+synthesises them into a coherent, well-structured research paper.
+It operates at a lower temperature (0.3) and uses a neutral persona
+to ensure balanced coverage of all agent perspectives.
+
+The scribe also supports a **clarification protocol**: when it encounters
+ambiguous, contradictory, or insufficiently supported claims, it can ask
+specific agents for clarification before finalising the paper.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any, Callable, Coroutine
+
+from deepresearch.agents.base_agent import BaseAgent
+from deepresearch.llm.client import LLMClient, LLMError
+from deepresearch.models import (
+    ClarificationQuery,
+    ClarificationResponse,
+    Findings,
+    FollowUpQuestions,
+    IndividualReport,
+    PaperSection,
+    ResearchPaper,
+    ResearchTopic,
+    SharedKnowledge,
+)
+
+logger = logging.getLogger(__name__)
+
+# Maximum clarification rounds per agent per session.
+_MAX_CLARIFICATION_ROUNDS = 5
+
+_SCRIBE_SYSTEM_PROMPT = (
+    "You are a professional research editor and synthesiser. Your role is to "
+    "compile individual agent reports into a coherent, well-structured research "
+    "paper. You maintain a neutral, academic tone and give fair weight to all "
+    "perspectives presented by the agents.\n\n"
+    "Structure the paper with:\n"
+    "- A clear title reflecting the research topic\n"
+    "- An abstract summarising key findings across all perspectives\n"
+    "- A methodology note explaining the multi-agent approach\n"
+    "- Per-agent sections presenting each perspective faithfully\n"
+    "- A synthesis section connecting the perspectives and identifying "
+    "themes, agreements, and disagreements\n"
+    "- Key takeaways\n"
+    "- A conclusion\n"
+    "- Appendices for detailed analyses when appropriate"
+)
+
+_COMPILE_FORMAT = """
+Respond with valid JSON **only** — no markdown fences, no explanation:
+{
+  "title": "Research Paper Title",
+  "abstract": "Comprehensive abstract synthesising all perspectives.",
+  "methodology_note": "Multi-agent research methodology description.",
+  "sections": [
+    {
+      "heading": "Introduction",
+      "source_agent_id": null,
+      "content": "Section content here.",
+      "subsections": []
+    },
+    {
+      "heading": "Agent A Perspective",
+      "source_agent_id": "agent-a",
+      "content": "Content from agent A's findings.",
+      "subsections": [
+        {
+          "heading": "Subsection",
+          "source_agent_id": "agent-a",
+          "content": "Subsection content.",
+          "subsections": []
+        }
+      ]
+    }
+  ],
+  "synthesis": "Cross-cutting synthesis connecting all perspectives.",
+  "key_takeaways": ["Takeaway 1", "Takeaway 2", "Takeaway 3"],
+  "conclusion": "Final conclusion drawing everything together.",
+  "appendices": []
+}
+"""
+
+_CLARIFY_FORMAT = """
+Respond with valid JSON **only**:
+{
+  "response": "Clear, concise answer about compilation decisions."
+}
+"""
+
+
+class ScribeAgent(BaseAgent):
+    """Neutral academic compiler that produces the final research paper.
+
+    Unlike ResearchAgent instances the scribe does **not** have a personality
+    profile — it uses a fixed neutral prompt at temperature 0.3.
+    The five BaseAgent lifecycle methods that do not apply to the scribe
+    raise ``NotImplementedError``.
+    """
+
+    def __init__(self, llm_client: LLMClient) -> None:
+        # The scribe has no personality profile.
+        super().__init__(profile=None, llm_client=llm_client)
+        self._system_prompt: str = _SCRIBE_SYSTEM_PROMPT
+
+    # ------------------------------------------------------------------
+    # Scribe-specific API
+    # ------------------------------------------------------------------
+
+    async def compile(
+        self,
+        reports: dict[str, IndividualReport],
+        clarification_fn: Callable[[ClarificationQuery], Coroutine[Any, Any, ClarificationResponse]] | None = None,  # noqa: E501
+    ) -> ResearchPaper:
+        """Synthesise all agent reports into a final research paper.
+
+        The scribe first compiles the paper from the reports, then
+        optionally executes a clarification protocol if a
+        ``clarification_fn`` is provided. The clarifications are
+        identified by prompting the LLM to flag ambiguous or
+        contradictory claims.
+
+        Args:
+            reports: Mapping of ``agent_id → IndividualReport`` from every
+                agent that completed the research lifecycle.
+            clarification_fn: An async callable that accepts a
+                ``ClarificationQuery`` and returns a
+                ``ClarificationResponse``. Typically wired to the
+                orchestrator's ``_handle_clarification``.
+
+        Returns:
+            A structured ``ResearchPaper`` with all required sections.
+        """
+        reports_text = self._format_reports(reports)
+        user_prompt = (
+            "# Compile Research Paper\n\n"
+            f"The following are individual reports from {len(reports)} "
+            f"research agents. Synthesise them into a coherent paper.\n\n"
+            f"{reports_text}\n\n"
+            "Ensure every perspective is represented fairly. "
+            "Highlight areas of agreement and disagreement."
+        )
+        user_prompt += _COMPILE_FORMAT
+
+        try:
+            response = await self.llm.generate(
+                system_prompt=self._system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.3,
+            )
+        except LLMError as exc:
+            logger.warning("Scribe LLM call failed, returning minimal paper. Error: %s", exc)
+            return self._fallback_paper(reports)
+
+        data = self._try_parse_json(response, "compile")
+
+        paper = ResearchPaper(
+            title=data.get("title", "Research Paper"),
+            abstract=data.get("abstract", ""),
+            methodology_note=data.get("methodology_note", ""),
+            sections=self._parse_sections(data.get("sections", [])),
+            synthesis=data.get("synthesis", ""),
+            key_takeaways=data.get("key_takeaways", []),
+            conclusion=data.get("conclusion", ""),
+            appendices=self._parse_sections(data.get("appendices", [])),
+        )
+
+        # ── Clarification Protocol ──────────────────────────────────
+        if clarification_fn is not None:
+            paper = await self._run_clarification_protocol(
+                paper, reports, clarification_fn
+            )
+
+        return paper
+
+    async def _run_clarification_protocol(
+        self,
+        paper: ResearchPaper,
+        reports: dict[str, IndividualReport],
+        clarification_fn: Callable[[ClarificationQuery], Coroutine[Any, Any, ClarificationResponse]],
+    ) -> ResearchPaper:
+        """Run the clarification protocol on a draft paper.
+
+        The scribe reviews the paper for ambiguous or contradictory
+        claims, formulates clarification questions to specific agents,
+        and incorporates the responses (up to
+        ``_MAX_CLARIFICATION_ROUNDS`` per agent).
+        """
+        clarifications_per_agent: dict[str, int] = {}
+        total_rounds = 0
+        max_total_rounds = _MAX_CLARIFICATION_ROUNDS * len(reports)
+
+        while total_rounds < max_total_rounds:
+            # Ask the scribe LLM to identify claims needing clarification.
+            query_data = await self._identify_clarification_needs(
+                paper, reports, clarifications_per_agent
+            )
+            if query_data is None:
+                break  # No more clarifications needed.
+
+            agent_id = query_data.get("agent_id", "")
+            claim = query_data.get("claim", "")
+            context = query_data.get("context", "")
+
+            if not agent_id or not claim:
+                break
+
+            # Enforce per-agent round limit.
+            if clarifications_per_agent.get(agent_id, 0) >= _MAX_CLARIFICATION_ROUNDS:
+                logger.info(
+                    "Max clarifications reached for agent '%s' — skipping",
+                    agent_id,
+                )
+                continue
+
+            # Ask the agent for clarification.
+            response = await self._clarify_claim(
+                claim, agent_id, context, clarification_fn
+            )
+            if response is None:
+                break
+
+            clarifications_per_agent[agent_id] = (
+                clarifications_per_agent.get(agent_id, 0) + 1
+            )
+            total_rounds += 1
+
+            # Incorporate the clarification into the paper by re-compiling.
+            paper = await self._recompile_with_clarification(
+                paper, agent_id, claim, response
+            )
+
+        return paper
+
+    async def _identify_clarification_needs(
+        self,
+        paper: ResearchPaper,
+        reports: dict[str, IndividualReport],
+        clarifications_per_agent: dict[str, int],
+    ) -> dict[str, str] | None:
+        """Ask the scribe LLM to identify claims needing clarification.
+
+        Returns a dict with ``agent_id``, ``claim``, and ``context``,
+        or ``None`` if no further clarifications are needed.
+        """
+        max_per_agent = _MAX_CLARIFICATION_ROUNDS
+
+        clarification_status = (
+            "Current clarification rounds per agent:\n"
+            + "\n".join(
+                f"  - {aid}: {count}/{max_per_agent}"
+                for aid, count in clarifications_per_agent.items()
+            )
+            or "  (none yet)"
+        )
+
+        prompt = (
+            "# Identify Clarification Needs\n\n"
+            "Review the compiled paper and the original agent reports below. "
+            "Identify the **single most important** claim that is ambiguous, "
+            "contradictory across agents, or lacks sufficient support, and "
+            "that has NOT already been clarified.\n\n"
+            "If all claims are sufficiently clear and supported, respond "
+            'with: {"needs_clarification": false}\n\n'
+            "Otherwise respond with:\n"
+            '{\n'
+            '  "needs_clarification": true,\n'
+            '  "agent_id": "id-of-agent-to-ask",\n'
+            '  "claim": "The specific claim that needs clarification",\n'
+            '  "context": "Why this needs clarification"\n'
+            "}\n\n"
+            f"{clarification_status}\n\n"
+            f"## Compiled Paper (Draft)\n"
+            f"Title: {paper.title}\n"
+            f"Abstract: {paper.abstract}\n"
+            f"Synthesis: {paper.synthesis}\n"
+            f"Conclusion: {paper.conclusion}\n\n"
+            "## Agent Reports\n"
+            f"{self._format_reports(reports)}\n"
+        )
+        prompt += """
+Respond with valid JSON **only** — no markdown fences, no explanation.
+"""
+
+        try:
+            response = await self.llm.generate(
+                system_prompt=self._system_prompt,
+                user_prompt=prompt,
+                temperature=0.3,
+            )
+        except LLMError:
+            logger.warning("Clarification identification LLM call failed")
+            return None
+
+        data = self._try_parse_json(response, "clarify_identify")
+        if not data.get("needs_clarification"):
+            return None
+
+        return {
+            "agent_id": data.get("agent_id", ""),
+            "claim": data.get("claim", ""),
+            "context": data.get("context", ""),
+        }
+
+    async def _clarify_claim(
+        self,
+        claim: str,
+        agent_id: str,
+        context: str,
+        clarification_fn: Callable[[ClarificationQuery], Coroutine[Any, Any, ClarificationResponse]],
+    ) -> str | None:
+        """Ask an agent for clarification on a specific claim.
+
+        Args:
+            claim: The specific claim that needs clarification.
+            agent_id: The agent to ask.
+            context: Context explaining why clarification is needed.
+            clarification_fn: The async callable that routes the query.
+
+        Returns:
+            The agent's response string, or ``None`` on failure.
+        """
+        query = ClarificationQuery(
+            agent_id=agent_id,
+            question=f"Regarding the claim: \"{claim}\"\n\n"
+                     f"Context: {context}\n\n"
+                     f"Please clarify or provide more detail.",
+            context=context,
+        )
+        try:
+            response = await clarification_fn(query)
+            return response.response
+        except Exception as exc:
+            logger.warning(
+                "Clarification request to agent '%s' failed: %s",
+                agent_id,
+                exc,
+            )
+            return None
+
+    async def _recompile_with_clarification(
+        self,
+        paper: ResearchPaper,
+        agent_id: str,
+        claim: str,
+        clarification: str,
+    ) -> ResearchPaper:
+        """Re-compile the paper incorporating a clarification response.
+
+        Sends the existing draft plus the new clarification back to the
+        LLM for a targeted revision.
+        """
+        prompt = (
+            "# Revise Paper with Clarification\n\n"
+            "Below is the current draft paper and a clarification "
+            "received from one of the research agents. Revise the paper "
+            "to incorporate this new information where relevant.\n\n"
+            f"## Clarification From Agent '{agent_id}'\n"
+            f"On claim: \"{claim}\"\n"
+            f"Response: \"{clarification}\"\n\n"
+            f"## Current Draft\n"
+            f"Title: {paper.title}\n"
+            f"Abstract: {paper.abstract}\n"
+            f"Synthesis: {paper.synthesis}\n"
+            f"Conclusion: {paper.conclusion}\n"
+        )
+        prompt += _COMPILE_FORMAT
+
+        try:
+            response = await self.llm.generate(
+                system_prompt=self._system_prompt,
+                user_prompt=prompt,
+                temperature=0.3,
+            )
+        except LLMError:
+            logger.warning(
+                "Re-compilation after clarification failed — keeping current draft"
+            )
+            return paper
+
+        data = self._try_parse_json(response, "recompile")
+        if not data:
+            return paper
+
+        return ResearchPaper(
+            title=data.get("title", paper.title),
+            abstract=data.get("abstract", paper.abstract),
+            methodology_note=data.get("methodology_note", paper.methodology_note),
+            sections=self._parse_sections(
+                data.get("sections", [s.model_dump() for s in paper.sections])
+            ),
+            synthesis=data.get("synthesis", paper.synthesis),
+            key_takeaways=data.get("key_takeaways", paper.key_takeaways),
+            conclusion=data.get("conclusion", paper.conclusion),
+            appendices=self._parse_sections(
+                data.get("appendices", [s.model_dump() for s in paper.appendices])
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # Unused abstract methods (scribe is not a research agent)
+    # ------------------------------------------------------------------
+
+    async def research_round_1(self, topic: ResearchTopic) -> Findings:
+        raise NotImplementedError(
+            "ScribeAgent does not perform research rounds."
+        )
+
+    async def review_findings(
+        self, shared: SharedKnowledge
+    ) -> FollowUpQuestions:
+        raise NotImplementedError(
+            "ScribeAgent does not review findings."
+        )
+
+    async def research_round_2(
+        self,
+        topic: ResearchTopic,
+        shared: SharedKnowledge,
+        questions: FollowUpQuestions,
+    ) -> Findings:
+        raise NotImplementedError(
+            "ScribeAgent does not perform research rounds."
+        )
+
+    async def write_report(
+        self, round_1: Findings, round_2: Findings | None
+    ) -> IndividualReport:
+        raise NotImplementedError(
+            "ScribeAgent does not write individual reports."
+        )
+
+    async def clarify(self, query: ClarificationQuery) -> ClarificationResponse:
+        """Answer questions about compilation decisions."""
+        user_prompt = (
+            f"The following clarification has been requested:\n\n"
+            f"\"{query.question}\"\n\n"
+            "Please provide a clear response about your compilation decision."
+        )
+        user_prompt += _CLARIFY_FORMAT
+        try:
+            response = await self.llm.generate(
+                system_prompt=self._system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.3,
+            )
+        except LLMError:
+            logger.warning("Scribe clarify LLM call failed")
+            return ClarificationResponse(
+                agent_id="scribe",
+                response="Unable to answer at this time.",
+            )
+
+        data = self._try_parse_json(response, "clarify")
+        return ClarificationResponse(
+            agent_id="scribe",
+            response=data.get("response", ""),
+        )
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _format_reports(reports: dict[str, IndividualReport]) -> str:
+        """Format agent reports into a structured text block for the prompt."""
+        parts: list[str] = []
+        for agent_id, report in reports.items():
+            sections_text = ""
+            for sec in report.sections:
+                sections_text += f"\n### {sec.heading}\n{sec.content}\n"
+            parts.append(
+                f"---\n"
+                f"## Report from: {agent_id}\n"
+                f"**Title:** {report.title}\n"
+                f"**Perspective Summary:** {report.perspective_summary}\n"
+                f"**Key Insights:**\n"
+                + "\n".join(f"- {i}" for i in report.key_insights)
+                + f"\n**Analysis:**\n{report.analysis}\n"
+                + (
+                    "\n**Open Questions:**\n"
+                    + "\n".join(f"- {q}" for q in report.open_questions)
+                    if report.open_questions
+                    else ""
+                )
+                + sections_text
+            )
+        return "\n".join(parts)
+
+    @staticmethod
+    def _fallback_paper(
+        reports: dict[str, IndividualReport]
+    ) -> ResearchPaper:
+        """Return a minimal paper when the LLM call fails entirely."""
+        return ResearchPaper(
+            title="Research Paper",
+            abstract=f"Synthesis of {len(reports)} agent perspectives "
+            f"(scribe compilation fell back to minimal output).",
+            methodology_note="Multi-agent collaborative research methodology.",
+            sections=[],
+            synthesis="Scribe compilation encountered an error — "
+            "partial results are available in individual reports.",
+            key_takeaways=[f"Analysis from {len(reports)} research agents."],
+            conclusion="Compilation incomplete due to scribe error.",
+        )
+
+    def _try_parse_json(self, response: str, context: str) -> dict[str, Any]:
+        """Parse JSON from an LLM response, returning ``{}`` on failure."""
+        try:
+            return self.llm.parse_json_response(response)
+        except LLMError:
+            logger.warning(
+                "Failed to parse JSON in scribe %s, using fallback", context
+            )
+            return {}
+
+    @staticmethod
+    def _parse_sections(raw: list[dict[str, Any]]) -> list[PaperSection]:
+        """Deep-parse section dicts into PaperSection objects."""
+        sections: list[PaperSection] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            subs = [
+                PaperSection(**s)
+                for s in item.get("subsections", [])
+                if isinstance(s, dict)
+            ]
+            sections.append(
+                PaperSection(
+                    heading=item.get("heading", ""),
+                    source_agent_id=item.get("source_agent_id"),
+                    content=item.get("content", ""),
+                    subsections=subs,
+                )
+            )
+        return sections

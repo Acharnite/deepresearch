@@ -1,0 +1,2 @@
+[console_scripts]
+deepresearch = deepresearch.main:main

@@ -1,0 +1,314 @@
+/* ══════════════════════════════════════════════════════════════════
+   DeepResearch — Academic PDF Stylesheet
+   Designed for WeasyPrint PDF generation with professional
+   academic typesetting.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── Page Setup ─────────────────────────────────────────────────── */
+@page {
+  size: A4;
+  margin: 2.5cm 2cm 2.5cm 2cm;
+  @bottom-center {
+    content: counter(page);
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 9pt;
+    color: #666;
+  }
+}
+
+@page :first {
+  @bottom-center {
+    content: none;
+  }
+}
+
+/* ── Base Typography ────────────────────────────────────────────── */
+body {
+  font-family: "Georgia", "Times New Roman", Times, serif;
+  font-size: 11pt;
+  line-height: 1.6;
+  color: #1a1a1a;
+  margin: 0;
+  padding: 0;
+  orphans: 3;
+  widows: 3;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-weight: 600;
+  color: #111;
+  page-break-after: avoid;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+h1 { font-size: 18pt; }
+h2 { font-size: 14pt; border-bottom: 1px solid #ccc; padding-bottom: 0.3em; }
+h3 { font-size: 12pt; }
+h4 { font-size: 11pt; font-style: italic; }
+
+p {
+  text-align: justify;
+  margin: 0.5em 0;
+}
+
+/* ── Links ──────────────────────────────────────────────────────── */
+a {
+  color: #1a1a1a;
+  text-decoration: none;
+}
+a::after {
+  content: none;
+}
+
+/* ── Cover Page ─────────────────────────────────────────────────── */
+.cover-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  page-break-after: always;
+  padding-top: 8cm;
+}
+
+.cover-title {
+  font-size: 26pt;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 1cm;
+  color: #000;
+}
+
+.cover-date {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 11pt;
+  color: #555;
+  margin-top: 1cm;
+}
+
+.cover-methodology {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 10pt;
+  color: #666;
+  font-style: italic;
+  margin-top: 0.5cm;
+  max-width: 80%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.cover-source {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 9pt;
+  color: #888;
+  margin-top: 2cm;
+}
+
+/* ── Abstract ───────────────────────────────────────────────────── */
+.abstract-section {
+  page-break-after: always;
+}
+
+.abstract-section p {
+  font-style: italic;
+  font-size: 11pt;
+  text-align: justify;
+  margin: 1em 0;
+}
+
+/* ── Table of Contents ─────────────────────────────────────────── */
+.toc-section {
+  page-break-after: always;
+}
+
+.toc {
+  list-style: none;
+  padding-left: 0;
+}
+
+.toc li {
+  margin: 0.4em 0;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 10pt;
+}
+
+.toc ul {
+  list-style: none;
+  padding-left: 1.5em;
+}
+
+.toc a::after {
+  content: leader(".") target-counter(attr(href), page);
+  font-size: 10pt;
+  color: #555;
+}
+
+/* ── Sections ───────────────────────────────────────────────────── */
+.section {
+  page-break-before: always;
+}
+
+.section:first-of-type {
+  page-break-before: avoid;
+}
+
+.subsection {
+  margin-left: 0;
+  margin-top: 1em;
+}
+
+/* ── Source Attribution ─────────────────────────────────────────── */
+.source-note {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 9pt;
+  color: #777;
+  font-style: italic;
+  margin-bottom: 0.8em;
+  border-left: 3px solid #ddd;
+  padding-left: 0.6em;
+}
+
+/* ── Content Blocks ─────────────────────────────────────────────── */
+.content {
+  text-align: justify;
+}
+
+.content p {
+  margin: 0.6em 0;
+}
+
+/* ── Code Blocks ────────────────────────────────────────────────── */
+.content pre,
+.content code {
+  font-family: "SF Mono", "Monaco", "Inconsolata", "Menlo", monospace;
+  font-size: 9pt;
+}
+
+.content pre {
+  background: #f7f7f7;
+  border: 1px solid #e0e0e0;
+  border-radius: 3px;
+  padding: 0.8em;
+  margin: 0.8em 0;
+  line-height: 1.4;
+  overflow-x: auto;
+  page-break-inside: avoid;
+}
+
+.content code {
+  background: #f5f5f5;
+  padding: 0.1em 0.3em;
+  border-radius: 2px;
+  font-size: 9.5pt;
+}
+
+.content pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
+/* ── Blockquotes ────────────────────────────────────────────────── */
+.content blockquote {
+  margin: 0.8em 0;
+  padding: 0.5em 1em;
+  border-left: 4px solid #ccc;
+  color: #555;
+  font-style: italic;
+  background: #fafafa;
+}
+
+/* ── Lists ──────────────────────────────────────────────────────── */
+.content ul, .content ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.content li {
+  margin: 0.3em 0;
+}
+
+/* ── Key Takeaways ──────────────────────────────────────────────── */
+.takeaways-section {
+  page-break-before: always;
+}
+
+.takeaways {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+
+.takeaways li {
+  margin: 0.6em 0;
+  font-size: 11pt;
+}
+
+/* ── Synthesis / Conclusion ─────────────────────────────────────── */
+.synthesis-section,
+.conclusion-section {
+  page-break-before: always;
+}
+
+/* ── Appendices ─────────────────────────────────────────────────── */
+.appendices-section {
+  page-break-before: always;
+}
+
+.appendix {
+  margin-top: 1em;
+}
+
+/* ── Tables ─────────────────────────────────────────────────────── */
+.content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 10pt;
+  page-break-inside: avoid;
+}
+
+.content th,
+.content td {
+  border: 1px solid #ddd;
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
+
+.content th {
+  background: #f5f5f5;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-weight: 600;
+}
+
+.content tr:nth-child(even) {
+  background: #fafafa;
+}
+
+/* ── Images ─────────────────────────────────────────────────────── */
+.content img {
+  max-width: 100%;
+  height: auto;
+  margin: 0.8em 0;
+  page-break-inside: avoid;
+}
+
+/* ── Figures ────────────────────────────────────────────────────── */
+.content figure {
+  margin: 1em 0;
+  text-align: center;
+  page-break-inside: avoid;
+}
+
+.content figcaption {
+  font-size: 9.5pt;
+  font-style: italic;
+  color: #555;
+  margin-top: 0.3em;
+}
+
+/* ── Footnotes ──────────────────────────────────────────────────── */
+.footnote {
+  font-size: 9pt;
+  color: #666;
+}

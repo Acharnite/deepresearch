@@ -1,0 +1,856 @@
+# DeepeResearch — Design Document
+**Version:** 1.1
+**Status:** Active
+**Design Authority:** Architects
+**Last Reviewed:** 2026-06-13
+
+## 1. Purpose & Scope
+
+### Purpose
+DeepeResearch is a multi-agent AI research system that generates comprehensive, multi-perspective research papers on any given topic. Multiple AI agents with distinct personalities, research methodologies, and worldviews collaborate in rounds to produce a nuanced, well-rounded final output that no single-perspective system could match.
+
+### Scope
+**In scope:**
+- Orchestrator agent that manages the full research workflow (topic intake, configuration, round management, compilation trigger)
+- 5–6 research agents with distinct personality profiles (e.g., curious teenager, skeptical academic, creative artist, pragmatic engineer, philosophical thinker, data-driven analyst)
+- Scribe agent that compiles all findings into a coherent research paper
+- Parallel agent execution using asyncio
+- Multi-round research workflow with collaboration and follow-up stages
+- PDF output generation
+- Three model-selection modes: single model for all, random assignment, manual per-agent selection
+- Time-budget integration (agents adapt depth to available time)
+- Web dashboard with real-time SSE streaming, model selector UI, session management (delete/clear), and settings manager
+- Provider prefix routing — model IDs auto-detect API base and key via prefix
+- Provider model auto-discovery — fetches model lists from all configured provider APIs
+- Model connectivity pre-flight check — tests model before session start
+
+**Out of scope:**
+- Persistent cross-session agent memory (agents are stateless per session)
+- External web search or live data fetching (agents use LLM knowledge only)
+- Multi-language output (English only in v1.0)
+- Citation or bibliography generation from external sources
+
+### Stakeholders
+- **End users:** Researchers, writers, students, curious minds who want multi-perspective analysis
+- **Operators:** KodeHold agents running the DeepeResearch pipeline
+- **Developers:** Engineers building and maintaining the system
+
+## 2. Requirements
+
+### Functional Requirements
+
+| ID | Requirement | Priority | Description |
+|----|-------------|----------|-------------|
+| F1 | Topic Input | P0 | User can provide a research topic via CLI argument |
+| F2 | Time Budget | P0 | User can specify a time budget (minutes) for the research session; agents adapt depth accordingly |
+| F3 | Model Selection Modes | P0 | Three modes: (a) same model for all agents, (b) random assignment per agent, (c) manual per-agent selection |
+| F4 | Agent Personalities | P0 | System supports 5–6 distinct research agent personalities out of the box |
+| F5 | Parallel Execution | P0 | Research agents execute in parallel during each round |
+| F6 | Round 1 — Independent Research | P0 | Each agent researches the topic independently and records findings |
+| F7 | Collaboration & Sharing | P0 | After Round 1, agents can see each other's findings |
+| F8 | Round 2 — Refined Research | P0 | Each agent produces a refined individual report informed by shared knowledge |
+| F9 | Scribe Compilation | P0 | A scribe agent compiles all individual reports into a coherent research paper |
+| F10 | PDF Output | P0 | The final research paper is output as a PDF file |
+| F11 | Agent Profiles Listing | P1 | CLI command to list available agent profiles with descriptions |
+| F12 | Model Listing | P1 | CLI command to list available models |
+| F13 | Dry-Run Mode | P1 | CLI flag to validate configuration without executing LLM calls |
+| F14 | Quick Mode | P1 | CLI flag to skip Round 2 for faster results |
+| F15 | Deep Mode | P1 | CLI flag to add Round 3 with deeper investigation |
+| F16 | Cost Estimation | P2 | CLI flag to estimate token cost before running |
+| F17 | Custom Agent Profiles | P2 | User can define custom agent profiles via YAML |
+| F18 | Web Dashboard | P1 | Real-time web UI with SSE streaming to monitor and control research sessions |
+| F19 | Model Selector UI | P1 | Dashboard provides mode-aware model selection: dropdown for "same", per-agent for "manual", info for "random" |
+| F20 | Session Deletion | P1 | DELETE API endpoint + dashboard buttons to delete individual sessions or clear all completed/errored sessions |
+| F21 | Provider Model Auto-Discovery | P1 | /api/models fetches model lists from all configured provider APIs (OpenAI, OpenRouter, Anthropic, Groq, Together, DeepSeek, Google, Cohere) plus Ollama local models |
+| F22 | Model Connectivity Check | P1 | Before starting a session, test the selected model with a minimal prompt (15s timeout); mark session as error immediately on failure |
+| F23 | Opencode AI Provider | P1 | Support Opencode AI as a provider via OPENCODE_API_KEY and opencode/go as default model |
+| F24 | Provider Prefix Routing | P1 | Auto-detect provider from model ID prefix (e.g., opencode/go → Opencode AI API) |
+
+### Non-Functional Requirements
+
+| ID | Requirement | Priority | Description |
+|----|-------------|----------|-------------|
+| N1 | Parallel Execution | P0 | All research agents in a round must execute concurrently; total round time ≈ max(individual agent time) |
+| N2 | Model Agnostic | P0 | System must support multiple LLM providers (OpenAI, Anthropic, Ollama, any LiteLLM-supported) |
+| N3 | Time-Budget Respect | P0 | Agents must respect the configured time budget; each response generation should be capped |
+| N4 | Personality Consistency | P1 | Each agent's output should be distinguishable from others based on tone, methodology, and perspective |
+| N5 | Deterministic Configuration | P1 | Same inputs + same seed → reproducible agent model assignments |
+| N6 | Graceful Degradation | P1 | If one agent fails (timeout/error), the session continues without it; failure is logged |
+| N7 | Async I/O | P0 | All LLM calls use async I/O; no blocking synchronous calls in hot paths |
+| N8 | SSE Streaming | P1 | Dashboard receives real-time updates via Server-Sent Events; events delivered within 1s of state change |
+| N9 | Model Discovery Caching | P1 | Auto-discovered model lists cached for 60s to avoid excessive API calls |
+| N10 | Pre-Flight Validation | P1 | Model connectivity check completes within 15s; unreachable models caught before session start |
+
+## 3. Architecture Overview
+
+### High-Level Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        User CLI                                  │
+│              (argparse + rich)                                   │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Orchestrator                                   │
+│         (session lifecycle, config, model assignment,            │
+│          round management, error handling)                       │
+└───┬──────────┬──────────┬──────────┬──────────┬─────────────────┘
+    │          │          │          │          │
+    ▼          ▼          ▼          ▼          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Research Agent Pool                            │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────┐ │
+│  │ Curious  │ │Skeptical │ │ Creative │ │Pragmatic │ │Philo- │ │
+│  │ Teenager │ │ Academic │ │  Artist  │ │ Engineer │ │sopher │ │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └───────┘ │
+└─────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  Collaboration Bus                                │
+│     (in-memory shared knowledge repository)                      │
+└─────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     Scribe Agent                                  │
+│        (compilation, de-duplication, synthesis,                  │
+│         clarification, tone calibration, PDF rendering)          │
+└─────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │   PDF Output   │
+                    └───────────────┘
+```
+
+### Execution Flow
+
+```
+User        Orchestrator     Research Agents     Scribe       PDF
+ │               │                  │               │          │
+ │──topic────────┤                  │               │          │
+ │──config───────┤                  │               │          │
+ │──time budget──┤                  │               │          │
+ │──model mode───┤                  │               │          │
+ │               │                  │               │          │
+ │               │──assign models──→│               │          │
+ │               │                  │               │          │
+ │               │──Round 1────────→│               │          │
+ │               │  (parallel via   │               │          │
+ │               │   asyncio.gather)│               │          │
+ │               │←───findings──────│               │          │
+ │               │                  │               │          │
+ │               │──share findings──│               │          │
+ │               │  (Collaboration  │               │          │
+ │               │   Bus update)    │               │          │
+ │               │                  │               │          │
+ │               │──Round 2────────→│               │          │
+ │               │  (parallel, with │               │          │
+ │               │   shared context)│               │          │
+ │               │←───reports───────│               │          │
+ │               │                  │               │          │
+ │               │──send reports────│──────────────→│          │
+ │               │                  │               │          │
+ │               │                  │──clarify──────│          │
+ │               │                  │←─respond──────│          │
+ │               │                  │──(up to 5x)───│          │
+ │               │                  │               │          │
+ │               │                  │               │──compile─│
+ │               │                  │               │──render──→│──PDF
+ │               │←─────done────────────────────────────────────│
+ │◄────output────┤                  │               │          │
+```
+
+### Technology Stack
+
+| Technology | Purpose |
+|------------|---------|
+| Python 3.11+ | Runtime |
+| LiteLLM | Unified LLM interface (OpenAI, Anthropic, Ollama, and 100+ providers) |
+| asyncio | Parallel agent execution |
+| Pydantic v2 | Data models, configuration validation |
+| PyYAML | Agent profile definitions |
+| WeasyPrint | HTML+CSS → PDF rendering |
+| Jinja2 | Paper HTML template rendering |
+| argparse + rich | CLI interface |
+| FastAPI + uvicorn | Web server and REST API |
+| SSE (Server-Sent Events) | Real-time streaming to dashboard |
+| httpx | Async HTTP client for model auto-discovery |
+| pytest + pytest-asyncio | Testing |
+
+### Module Structure
+
+```
+workspaces/deepresearch/
+├── pyproject.toml
+├── src/
+│   └── deepresearch/
+│       ├── __init__.py
+│       ├── __main__.py              # Entry point: python -m deepresearch
+│       ├── cli.py                   # CLI argument parsing and dispatch
+│       ├── config.py                # SessionConfig, model assignment logic
+│       ├── orchestrator.py          # Orchestrator finite state machine
+│       │
+│       ├── agents/
+│       │   ├── __init__.py
+│       │   ├── base_agent.py        # Abstract ResearchAgent base class
+│       │   ├── registry.py          # Agent profile registry and discovery
+│       │   ├── research_agent.py    # Concrete research agent implementation
+│       │   └── scribe_agent.py      # Scribe agent (compilation, PDF)
+│       │
+│       ├── models/
+│       │   ├── __init__.py
+│       │   └── schemas.py           # All Pydantic data models
+│       │
+│       ├── collaboration/
+│       │   ├── __init__.py
+│       │   └── bus.py               # CollaborationBus (in-memory)
+│       │
+│       ├── llm/
+│       │   ├── __init__.py
+│       │   └── client.py            # LLMClient (LiteLLM wrapper)
+│       │
+│       ├── prompts/
+│       │   ├── __init__.py
+│       │   ├── research.py          # Research round prompt templates
+│       │   ├── scribe.py            # Scribe compilation prompt templates
+│       │   └── collaboration.py     # Collaboration/sharing prompt templates
+│       │
+│       ├── templates/
+│       │   ├── paper.html            # Jinja2 HTML template for paper
+│       │   └── paper.css             # CSS styling for PDF output
+│       │
+│       ├── web/
+│       │   ├── __init__.py
+│       │   ├── server.py             # FastAPI server (REST + SSE)
+│       │   ├── dashboard.html        # Single-page dark-themed UI
+│       │   ├── event_bus.py          # SSE event bus
+│       │   ├── sessions.py           # MultiSessionManager, SessionInfo
+│       │   ├── session_manager.py    # Legacy singleton session manager
+│       │   ├── settings_manager.py   # API key & local endpoint management
+│       │   └── state.py              # Shared session state
+│       │
+│       └── utils/
+│           ├── __init__.py
+│           ├── token_tracker.py     # Token usage tracking
+│           └── cost_estimator.py    # Cost estimation logic
+│
+├── profiles/
+│   └── default.yaml             # Built-in agent profiles
+│
+└── tests/
+    ├── conftest.py              # Shared fixtures (mock LLM, profiles)
+    ├── test_models.py           # Data model tests
+    ├── test_config.py           # Configuration loading tests
+    ├── test_orchestrator.py     # Orchestrator FSM tests
+    ├── test_agents.py           # Agent execution tests
+    ├── test_collaboration.py    # Collaboration bus tests
+    ├── test_scribe.py           # Scribe compilation tests
+    ├── test_prompts.py          # Prompt builder tests
+    └── test_integration.py      # End-to-end workflow tests
+```
+
+## 4. Component Design
+
+### 4.1 Orchestrator (`src/deepresearch/orchestrator.py`)
+
+The Orchestrator manages the full research session lifecycle as a finite state machine.
+
+**States:**
+
+```
+IDLE → CONFIGURING → ROUND1 → COLLABORATING → FOLLOWUP → ROUND2 → COMPILING → OUTPUT → COMPLETE
+```
+
+| Method | Description |
+|--------|-------------|
+| `run(topic, config)` | Main entry point; runs the full session lifecycle |
+| `configure()` | Parse config, validate, assign models |
+| `assign_models(agents, mode, seed)` | Assign LLM models to agents per selected mode |
+| `run_round(round_num, agents, bus)` | Execute a research round in parallel via asyncio.gather |
+| `share_findings(agents, bus)` | Post-process: aggregate findings into SharedKnowledge |
+| `collect_follow_up_questions(agents)` | Gather follow-up questions from agents after reviewing shared knowledge |
+| `compile_paper(scribe, reports)` | Trigger scribe compilation |
+| `handle_timeout(agent_task, timeout)` | Wrap agent tasks with timeout handling |
+| `recover_agent_failure(failed_agent)` | Log failure, continue without agent if one fails |
+
+**Error Handling:**
+- Agent timeout: `asyncio.wait_for()` per agent with configurable timeout
+- Agent failure: `asyncio.gather(return_exceptions=True)` — failed agents are logged and excluded
+- Configuration error: Raise `ConfigError` with descriptive message before any LLM calls
+- Scribe failure: Retry once, then fail with descriptive error
+
+**Scalability Note:** The single-process asyncio architecture is designed for 5-6 agents per session. Each agent is I/O-bound (LLM API calls), so Python's GIL is not a bottleneck. For future use cases requiring more than 20 agents per session, a distributed architecture (e.g., task queue with worker processes) would be needed. This is explicitly out of scope for v1.0.
+
+### 4.2 Research Agents (`src/deepresearch/agents/base_agent.py`)
+
+**Agent Lifecycle:**
+1. Initialize with profile + model assignment
+2. research_round_1(topic, time_budget) → Findings
+3. formulate_questions(shared_knowledge) → FollowUpQuestions
+4. research_round_2(topic, shared_knowledge, time_budget) → IndividualReport
+5. (optional) clarify(query) → ClarificationResponse
+6. write_report() → IndividualReport
+
+**Abstract Methods (ResearchAgentInterface):**
+
+| Method | Input | Output |
+|--------|-------|--------|
+| `research_round_1` | topic, time_budget | Findings |
+| `formulate_questions` | shared_knowledge | FollowUpQuestions |
+| `research_round_2` | topic, shared_knowledge, time_budget | IndividualReport |
+| `write_report` | — | IndividualReport |
+| `clarify` | query | ClarificationResponse |
+
+**Profile Definition Fields:**
+
+```python
+class AgentProfile(BaseModel):
+    id: str                    # Unique identifier (e.g., "curious_teenager")
+    name: str                  # Display name (e.g., "Curious Teenager")
+    emoji: str                 # Emoji for UI (e.g., "🧑‍🎤")
+    persona_prompt: str        # Core persona description
+    methodology: str           # Research methodology description
+    knowledge_base: str        # Domain expertise description
+    bias_mitigation: str       # Known biases and mitigation strategy
+    voice: str                 # Writing voice/tone instructions
+    temperature: float         # LLM temperature (0.0–1.0)
+```
+
+**Built-in Agent Personalities:**
+
+| ID | Name | Emoji | Approach | Temperature |
+|----|------|-------|----------|-------------|
+| curious_teenager | Curious Teenager | 🧑‍🎤 | Asks "why" repeatedly, explores tangents, excited discovery | 0.85 |
+| skeptical_academic | Skeptical Academic | 🧑‍🏫 | Cites sources, challenges assumptions, rigorous methodology | 0.35 |
+| creative_artist | Creative Artist | 🎨 | Draws analogies, visual thinking, unexpected connections | 0.90 |
+| pragmatic_engineer | Pragmatic Engineer | 🔧 | Focus on practical applications, feasibility, real-world impact | 0.45 |
+| philosophical_thinker | Philosophical Thinker | 🤔 | Explores deeper meaning, ethics, implications for humanity | 0.75 |
+| data_analyst | Data Analyst | 📊 | Looks for patterns, statistics, quantitative evidence | 0.30 |
+
+### 4.3 Scribe Agent (`src/deepresearch/agents/scribe_agent.py`)
+
+**Capabilities:**
+- **Compilation:** Reads all IndividualReport objects and produces a coherent ResearchPaper
+- **De-duplication:** Identifies overlapping content across reports and merges intelligently
+- **Synthesis:** Creates new insights by connecting different perspectives
+- **Clarification Query:** Can ask agents for clarification on ambiguous points
+- **Tone Calibration:** Maintains a neutral academic tone (temperature 0.3)
+- **PDF Rendering:** Renders the final paper via Jinja2 → WeasyPrint pipeline
+
+**Clarification Protocol:**
+1. Scribe identifies gaps or contradictions in individual reports
+2. Scribe sends ClarificationQuery to specific agent(s)
+3. Agent responds with ClarificationResponse
+4. Scribe may iterate — up to 5 rounds of clarification
+5. After limit, scribe proceeds with best available information
+
+**Synthesis Strategy:** To prevent the scribe from becoming a bottleneck when synthesizing multiple diverse perspectives, the scribe follows a structured synthesis pipeline:
+1. **Extraction phase:** Extract key claims, themes, and data points from each agent report
+2. **Comparison phase:** Identify areas of agreement, disagreement, and complementary insights across all reports
+3. **Weaving phase:** Create a narrative that presents each perspective in a logical flow, using the "Synthesis" section to explicitly highlight where agents agree and where they diverge
+4. **Clarification trigger:** If the scribe detects contradictory claims that cannot be resolved through context, it activates the clarification protocol to query the specific agent
+
+This structured approach ensures the scribe handles diversity of perspectives systematically rather than attempting a single-pass summarization.
+
+### 4.4 Collaboration Bus (`src/deepresearch/collaboration/bus.py`)
+
+In-memory shared knowledge repository. Each agent writes to the bus after Round 1; the orchestrator aggregates contributions into SharedKnowledge before Round 2.
+
+```python
+@dataclass
+class CollaborationBus:
+    round_1_findings: dict[str, Findings]    # agent_id → Findings
+    shared_knowledge: SharedKnowledge | None = None
+    round_2_reports: dict[str, IndividualReport] = field(default_factory=dict)
+    follow_up_questions: dict[str, FollowUpQuestions] = field(default_factory=dict)
+    clarification_responses: dict[str, list[ClarificationResponse]] = field(default_factory=dict)
+```
+
+**Echo Prevention:** To prevent agents from simply echoing each other's findings (groupthink), the following safeguards are in place:
+- Agents only receive aggregated shared knowledge (themes, agreements, disagreements, gaps) — not each other's full reports
+- Each agent's personality profile includes a `bias_mitigation` field that warns the agent about its tendencies
+- Agents are prompted to identify what NEW perspective they contribute that others haven't covered
+- In Round 2, each agent receives its own Round 1 findings alongside the shared knowledge, enabling it to see how its perspective differs
+
+The echo prevention is especially important in "Same Model" mode where all agents use the same underlying LLM — the personality prompts and temperature differences are the primary differentiation mechanism.
+
+### 4.5 Model Abstraction Layer (`src/deepresearch/llm/client.py`)
+
+**LLMClient** wraps LiteLLM for all LLM interactions.
+
+**Supported Models:** Any model supported by LiteLLM (OpenAI GPT-4o, Anthropic Claude 3.5 Sonnet, Ollama llama3, Opencode Go, etc.)
+
+**Provider Prefix Routing:**
+The LLMClient automatically detects the provider from the model ID using `PROVIDER_ROUTES`, a dict that maps model ID prefixes (e.g., `opencode`, `openrouter`, `anthropic`, `groq`, `together`, `deepseek`, `cohere`, `google`, `ollama`) to their API base URLs and API key environment variables. For example, `opencode/go` routes to `https://api.opencode.ai/v1` with `OPENCODE_API_KEY`. A `provider` override parameter supports cases like `openrouter/opencode/go` where the prefix differs from the routing logic.
+
+**Features:**
+- Async completion with configurable timeout
+- Automatic retry with exponential backoff
+- Token usage tracking
+- Cost estimation (per-model input/output cost rates, including Opencode AI at 0.0 cost)
+- Model capability inference (supports vision, tool use, etc.)
+
+## 5. Data Model
+
+### Pydantic Models
+
+```python
+class ResearchTopic(BaseModel):
+    """The research topic provided by the user."""
+    title: str
+    description: str | None = None
+    keywords: list[str] = []
+
+class ModelConfig(BaseModel):
+    """Configuration for model assignment to agents."""
+    mode: Literal["same", "random", "manual"] = "same"
+    default_model: str = "opencode/go"
+    per_agent_overrides: dict[str, str] = {}   # agent_id → model
+    seed: int | None = None                      # for reproducible random assignment
+
+class AgentProfile(BaseModel):
+    """Definition of an agent's personality and methodology."""
+    id: str
+    name: str
+    emoji: str
+    persona_prompt: str
+    methodology: str
+    knowledge_base: str
+    bias_mitigation: str
+    voice: str
+    temperature: float = Field(default=0.7, ge=0.0, le=1.0)
+
+class Findings(BaseModel):
+    """Results from a single agent's research round."""
+    agent_id: str
+    round_num: int
+    summary: str
+    key_points: list[str]
+    perspectives: list[str]
+    raw_notes: str | None = None
+
+class SharedKnowledge(BaseModel):
+    """Aggregated knowledge shared with all agents."""
+    all_findings: list[Findings]
+    consensus_points: list[str]
+    conflicting_perspectives: list[tuple[str, str]]  # (perspective_a, perspective_b)
+    unanswered_questions: list[str]
+
+class FollowUpQuestions(BaseModel):
+    """Questions an agent wants to ask other agents."""
+    agent_id: str
+    questions: list[str]
+
+class IndividualReport(BaseModel):
+    """A single agent's final report after Round 2."""
+    agent_id: str
+    title: str
+    sections: list[PaperSection]
+    references: list[str] = []
+    word_count: int = 0
+
+class ClarificationQuery(BaseModel):
+    """A question from the scribe to an agent."""
+    agent_id: str
+    question: str
+    context: str | None = None
+
+class ClarificationResponse(BaseModel):
+    """An agent's response to a clarification query."""
+    agent_id: str
+    answer: str
+
+class ResearchPaper(BaseModel):
+    """The final compiled research paper."""
+    title: str
+    sections: list[PaperSection]
+    agent_contributions: list[AgentContribution]
+    word_count: int
+    generated_at: datetime
+
+class PaperSection(BaseModel):
+    """A section within the final paper."""
+    heading: str
+    level: int = 1  # 1 = h1, 2 = h2, etc.
+    content: str
+    contributors: list[str] = []  # agent_ids
+
+class AgentContribution(BaseModel):
+    """Record of an agent's contribution."""
+    agent_id: str
+    agent_name: str
+    perspective_summary: str
+
+class SessionConfig(BaseModel):
+    """Complete session configuration."""
+    topic: ResearchTopic
+    time_budget_minutes: int = Field(default=30, ge=1, le=480)
+    model_selection: ModelConfig = ModelConfig()
+    selected_model: str = "opencode/go"  # model ID for "same" mode
+    agent_models: dict[str, str] = {}    # agent_id → model for "manual" mode
+    quick_mode: bool = False
+    deep_mode: bool = False
+    dry_run: bool = False
+    output_path: str = "./output"
+    agents: list[str] = []  # selected agent IDs (empty = all)
+```
+
+### Data Flow
+
+```
+User Input ──► ResearchTopic
+                    │
+                    ▼
+          SessionConfig (validated)
+                    │
+                    ▼
+              Orchestrator
+                    │
+                    ├──► CollaborationBus
+                    │       ├── round_1_findings (after Round 1)
+                    │       ├── shared_knowledge (after collaboration)
+                    │       └── round_2_reports (after Round 2)
+                    │
+                    ├──► Round 1: ResearchAgent.research_round_1() → Findings
+                    │
+                    ├──► Collaboration: Orchestrator → SharedKnowledge
+                    │
+                    ├──► Round 2: ResearchAgent.research_round_2() → IndividualReport
+                    │
+                    └──► Compilation: Scribe → ResearchPaper → PDF
+```
+
+## 6. API Design
+
+### 6.1 Internal Component Interfaces
+
+```python
+class ResearchAgentInterface(ABC):
+    @abstractmethod
+    async def research_round_1(self, topic: ResearchTopic, time_budget: int) -> Findings: ...
+    @abstractmethod
+    async def formulate_questions(self, shared_knowledge: SharedKnowledge) -> FollowUpQuestions: ...
+    @abstractmethod
+    async def research_round_2(self, topic: ResearchTopic, 
+                                shared_knowledge: SharedKnowledge,
+                                time_budget: int) -> IndividualReport: ...
+    @abstractmethod
+    async def clarify(self, query: ClarificationQuery) -> ClarificationResponse: ...
+
+class CollaborationBusInterface(ABC):
+    @abstractmethod
+    async def publish_findings(self, agent_id: str, findings: Findings) -> None: ...
+    @abstractmethod
+    async def get_shared_knowledge(self) -> SharedKnowledge: ...
+    @abstractmethod
+    async def publish_report(self, agent_id: str, report: IndividualReport) -> None: ...
+
+
+```
+
+### 6.2 Orchestrator Workflow API
+
+```python
+class Orchestrator:
+    async def run_session(self, config: SessionConfig) -> ResearchPaper: ...
+    async def list_profiles(self) -> list[AgentProfile]: ...
+    async def list_models(self) -> list[str]: ...
+    async def estimate_cost(self, config: SessionConfig) -> CostEstimate: ...
+```
+
+### 6.3 CLI Interface
+
+```bash
+# Run a research session
+python -m deepresearch run "Quantum Computing in Healthcare" --time 30
+
+# List available agent profiles
+python -m deepresearch profiles list
+
+# List available LLM models
+python -m deepresearch models list
+
+# Quick mode (skip Round 2, faster results)
+python -m deepresearch run "Topic" --quick
+
+# Deep mode (add Round 3, more thorough)
+python -m deepresearch run "Topic" --deep
+
+# Random model assignment (deterministic with seed)
+python -m deepresearch run "Topic" --random-models --seed 42
+
+# Manual per-agent model selection
+python -m deepresearch run "Topic" --manual-models
+
+# Specify output path
+python -m deepresearch run "Topic" --output ./my-paper.pdf
+
+# Dry run (validate config only, no LLM calls)
+python -m deepresearch run "Topic" --dry-run
+```
+
+### 6.4 Event Logging
+
+```python
+@dataclass
+class SessionEvent:
+    timestamp: datetime
+    event_type: Literal[
+        "session_start", "session_end",
+        "config_validated", "models_assigned",
+        "round_start", "round_end",
+        "agent_start", "agent_complete", "agent_failed",
+        "collaboration_phase", "follow_up_questions",
+        "scribe_start", "scribe_end",
+        "clarification_query", "clarification_response",
+        "pdf_generated", "error"
+    ]
+    agent_id: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
+```
+
+## 7. Implementation Plan
+
+### Phase 1: Core Infrastructure (2-3 days)
+
+**Deliverables:**
+- `pyproject.toml` with all dependencies
+- Data models (`models/schemas.py`)
+- Config loading and validation (`config.py`)
+- LLM client wrapper (`llm/client.py`)
+- Prompt template files
+- CLI scaffold
+
+**Gate checkpoint:** All data models tested, LLM client returns valid response for each provider.
+
+### Phase 2: Orchestrator (2-3 days)
+
+**Deliverables:**
+- Complete session lifecycle (IDLE → COMPLETE)
+- Configuration flow and model assignment
+- Parallel execution with asyncio.gather
+- Timeout and error handling
+- Event logging
+
+**Gate checkpoint:** Orchestrator runs through full lifecycle with mock agents, all error paths tested.
+
+### Phase 3: Research Agents (2-3 days)
+
+**Deliverables:**
+- `ResearchAgent` base class with abstract methods
+- Agent profile registry
+- Concrete `ResearchAgent` implementation
+- Default agent profiles YAML file
+- Research prompt templates
+
+**Gate checkpoint:** Each agent personality produces distinguishable output on a test topic.
+
+### Phase 4: Collaboration System (1-2 days)
+
+**Deliverables:**
+- `CollaborationBus` implementation
+- Shared knowledge aggregation
+- Follow-up question flow
+- Round 2 execution with shared context
+- Quick mode (skip Round 2)
+
+**Gate checkpoint:** Full 2-round workflow runs end-to-end with all agents.
+
+### Phase 5: Scribe & PDF (2-3 days)
+
+**Deliverables:**
+- Scribe agent implementation
+- Paper structure generation
+- Clarification protocol
+- Jinja2 HTML template
+- CSS styling
+- WeasyPrint PDF rendering
+- Full integration test
+
+**Gate checkpoint:** PDF output generated with proper structure, formatting, and all agent contributions.
+
+### Phase 6: Polish (1-2 days)
+
+**Deliverables:**
+- Token usage tracking
+- Cost estimation
+- Dry-run mode
+- Rich progress indicators
+- Comprehensive error handling
+- Configuration validation improvements
+- Documentation
+
+**Gate checkpoint:** All CLI flags functional, edge cases handled, documentation complete.
+
+## 8. Testing Strategy
+
+### 8.1 Unit Tests
+
+| Test | Description |
+|------|-------------|
+| Data Models | Validate all Pydantic models with valid/invalid input |
+| Config Loading | Test YAML and CLI config parsing |
+| Prompt Builders | Verify prompts contain expected personality markers |
+| Model Assignment | Test same/random/manual modes with seed determinism |
+| Collaboration Bus | Test publish/read/aggregate operations |
+| Cost Estimation | Verify token/cost calculation with known inputs |
+| Custom Profile Validation | YAML parsing, field validation, error handling |
+
+### 8.2 Integration Tests
+
+| Test | Description |
+|------|-------------|
+| Single Agent | One agent completes full research lifecycle |
+| Multi-Agent | All agents run Round 1 in parallel |
+| Full 2-Round | Complete workflow from topic to IndividualReports |
+| Scribe Compilation | Scribe compiles reports into structured paper |
+| Clarification Loop | Scribe → Agent → Scribe clarification round trip |
+| PDF Generation | Full pipeline produces valid PDF |
+
+### 8.3 Mock LLM Fixture
+
+A YAML-based mock LLM fixture provides canned responses for testing:
+
+```yaml
+responses:
+  research_round_1:
+    default: "These are my initial findings on {topic}..."
+  research_round_2:
+    default: "After reviewing other perspectives, I add..."
+```
+
+### 8.4 Personality Differentiation Tests
+
+These personality differentiation tests are intended as CI gates for new profile additions and should be run before merging profile changes.
+
+¹ In "same model" Mode A, a higher threshold (0.85) is acceptable since model-level diversity is absent.
+
+| Test | Method | Target |
+|------|--------|--------|
+| Semantic Distance | Embedding similarity between agent outputs | < 0.85 cosine similarity¹ |
+| Keyword Uniqueness | Distinctive terms per personality | Each agent has unique keywords |
+| Tonality Variance | Sentiment/formality analysis | Agents have statistically different tones |
+
+### 8.5 End-to-End Test
+
+A single test that runs the full pipeline (with mock LLM) and validates the PDF output exists and contains expected sections.
+
+### 8.6 Non-Functional Tests
+
+| Test | Description |
+|------|-------------|
+| Parallel Execution | Verify all agents start within 100ms of each other |
+| Graceful Degradation | One agent timeout → session continues |
+| Time Budget Respect | Agent response truncated by time budget |
+| Model Agnostic | Each supported provider returns expected output shape |
+
+## 9. ADR Index
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| ADR-0001 | Multi-Agent Research Architecture | Proposed |
+| ADR-0002 | Agent Personality & Model Selection | Proposed |
+| ADR-0003 | Web Frontend & Multi-Session Architecture | Proposed |
+
+## 10. Open Questions
+
+| # | Question | Impact | Proposed Investigation |
+|---|----------|--------|----------------------|
+| 1 | Should agents have memory across sessions? | High | Defer to v1.1 — v1.0 agents are stateless |
+| 2 | How should we handle research papers longer than 50 pages? | Medium | PDF pagination + WeasyPrint page break control |
+| 3 | Should the scribe have sub-personalities for different paper sections? | Medium | Investigate in v1.1; v1.0 scribe has fixed neutral tone |
+| 4 | How do we validate research quality? | High | Human evaluation for v1.0; automated metrics research for v1.1 |
+| 5 | Should PDF styling be customizable? | Medium | CSS template override path in v1.1 |
+| 6 | Should quick mode skip collaboration entirely or just Round 2? | Low | v1.0: quick mode skips Round 2 but preserves collaboration |
+| 7 | What is the optimal number of clarification rounds? | Medium | Start with 5, gather usage data for tuning |
+| 8 | Should we include source citations in agent reports? | High | Requires web search — out of scope for v1.0 |
+| 9 | How do we handle model availability at session start? | Resolved | Pre-flight connectivity check implemented — 15s timeout, immediate error on failure |
+| 10 | Should we support streaming output during research rounds? | Resolved | SSE streaming implemented in web dashboard — real-time progress via EventSource |
+
+## 11. Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.1 | 2026-06-13 | Added Opencode AI as default provider, provider prefix routing, model connectivity check, model selector UI, session deletion, provider model auto-discovery, web module in project structure |
+| 1.0 | 2026-06-13 | Initial design document |
+| 0.1 | 2026-06-13 | Template created |
+
+## Appendix A: Agent Profiles (Reference)
+
+### Built-in Agent Personalities
+
+| ID | Name | Emoji | Approach | Tone | Temperature |
+|----|------|-------|----------|------|-------------|
+| curious_teenager | Curious Teenager | 🧑‍🎤 | Asks "why" repeatedly, explores tangents, excited discovery | Energetic, inquisitive, conversational | 0.85 |
+| skeptical_academic | Skeptical Academic | 🧑‍🏫 | Cites sources, challenges assumptions, rigorous methodology | Formal, critical, precise | 0.35 |
+| creative_artist | Creative Artist | 🎨 | Draws analogies, visual thinking, unexpected connections | Imaginative, metaphorical, expressive | 0.90 |
+| pragmatic_engineer | Pragmatic Engineer | 🔧 | Focus on practical applications, feasibility, real-world impact | Direct, practical, solution-oriented | 0.45 |
+| philosophical_thinker | Philosophical Thinker | 🤔 | Explores deeper meaning, ethics, implications for humanity | Contemplative, abstract, reflective | 0.75 |
+| data_analyst | Data Analyst | 📊 | Looks for patterns, statistics, quantitative evidence | Analytical, precise, evidence-based | 0.30 |
+
+### Profile YAML Format
+
+Example: **Curious Teenager** (`profiles/default.yaml`)
+
+```yaml
+- id: curious_teenager
+  name: "Curious Teenager"
+  emoji: "🧑‍🎤"
+  temperature: 0.85
+  persona_prompt: >
+    You are a curious teenager who is excited to learn about new topics.
+    You ask "why" about everything and love exploring tangents and rabbit holes.
+    You approach every topic with wide-eyed wonder and enthusiasm.
+  methodology: >
+    Start with the most basic questions and work outward. Follow every interesting
+    tangent at least two layers deep. Look for surprising or counterintuitive facts.
+    Ask how things connect to everyday life and popular culture.
+  knowledge_base: >
+    General pop culture awareness. Basic high-school level understanding of most
+    academic topics. Deep knowledge of internet culture and memes. Limited
+    specialized vocabulary.
+  bias_mitigation: >
+    Tendency to oversimplify complex topics. May focus on entertaining aspects
+    over important ones. Consciously check: "Am I understanding this correctly,
+    or am I just repeating something cool?"
+  voice: >
+    Energetic and conversational. Uses exclamation points freely. Asks rhetorical
+    questions. Phrases like "Wait, so..." and "That's wild!" and "Here's what I'm
+    wondering..." Keeps paragraphs short and punchy.
+```
+
+Example: **Skeptical Academic** (`profiles/default.yaml`)
+
+```yaml
+- id: skeptical_academic
+  name: "Skeptical Academic"
+  emoji: "🧑‍🏫"
+  temperature: 0.35
+  persona_prompt: >
+    You are a tenured professor known for your rigorous standards and healthy
+    skepticism. You never accept claims at face value. You demand evidence,
+    challenge assumptions, and value methodological rigor above all else.
+    Your questions cut to the heart of whether something is actually true.
+  methodology: >
+    Begin by identifying the core claims. Evaluate each claim against known
+    evidence. Look for methodological flaws, confirmation bias, and logical
+    fallacies. Seek out dissenting viewpoints. Apply Occam's razor.
+    Demand peer-reviewed sources.
+  knowledge_base: >
+    Deep academic knowledge across sciences and humanities. Familiar with
+    research methodologies, statistical analysis, and logical argumentation.
+    Knows the history of ideas and classic debates in each field.
+  bias_mitigation: >
+    Risk of excessive negativity or gatekeeping. May dismiss novel ideas too
+    quickly. Consciously check: "Am I being critical because the idea is weak,
+    or because it challenges my worldview?"
+  voice: >
+    Formal and precise. Uses academic vocabulary appropriately. Prefers
+    hedged language: "This suggests..." rather than "This proves..."
+    Constructs careful arguments with premises and conclusions.
+    Cites imagined sources ("As Smith (2021) argues...").
+```
