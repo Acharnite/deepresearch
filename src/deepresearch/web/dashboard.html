@@ -242,6 +242,21 @@
   .agent-pct { font-size: 12px; width: 36px; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   .agent-status-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
   .scribe-row { border-top: 2px solid var(--border); margin-top: 8px; padding-top: 8px; }
+  .agent-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 16px;
+  }
+
+  /* ── Q&A Panel ──────────────────────────────────── */
+  .qa-panel { margin-top: 8px; padding: 0 4px; }
+  .qa-entry { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 12px; border-bottom: 1px solid var(--border); }
+  .qa-entry:last-child { border-bottom: none; }
+  .qa-time { color: var(--text-muted); font-size: 10px; white-space: nowrap; }
+  .qa-from { color: var(--accent); font-weight: 500; }
+  .qa-arrow { color: var(--text-muted); }
+  .qa-to { color: var(--text); font-weight: 500; }
+  .qa-question { color: var(--text-muted); font-style: italic; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* ── Agent Output (live stream panel) ──────────────── */
   .agent-output { margin: 0 8px 8px 48px; background: var(--surface-2); border-radius: 4px; max-height: 200px; overflow-y: auto; }
@@ -663,6 +678,12 @@
             <p>Waiting for session to start...</p>
           </div>
         </div>
+
+        <!-- Q&A Panel -->
+        <div id="qaPanel" class="qa-panel" style="display:none;">
+          <h4 style="margin:12px 0 8px;font-size:13px;">💬 Questions & Answers</h4>
+          <div id="qaLog"><div class="empty-state"><p>No Q&A yet</p></div></div>
+        </div>
       </div>
 
       <div class="card">
@@ -911,6 +932,45 @@
   let sessionListTimer = null;
   let systemLogInterval = null;
 
+  // ── Q&A Log ────────────────────────────────────────
+  let qaLog = [];
+
+  function addQA(fromAgent, question, toAgent) {
+    qaLog.push({
+      from: fromAgent,
+      question: question,
+      to: toAgent,
+      time: new Date().toLocaleTimeString(),
+    });
+    renderQA();
+  }
+
+  function renderQA() {
+    const container = document.getElementById('qaLog');
+    const panel = document.getElementById('qaPanel');
+    if (!container) return;
+    if (qaLog.length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>No Q&A yet</p></div>';
+      if (panel) panel.style.display = 'none';
+      return;
+    }
+    if (panel) panel.style.display = 'block';
+    let html = '';
+    for (const entry of qaLog.slice(-10)) {  // Show last 10
+      const fromName = agentNames[entry.from] || entry.from;
+      const toName = agentNames[entry.to] || entry.to;
+      const q = entry.question || '';
+      html += `<div class="qa-entry">
+        <span class="qa-time">${entry.time}</span>
+        <span class="qa-from">${fromName}</span>
+        <span class="qa-arrow">→</span>
+        <span class="qa-to">${toName}</span>
+        <span class="qa-question">"${esc(q.substring(0, 60))}${q.length > 60 ? '...' : ''}"</span>
+      </div>`;
+    }
+    container.innerHTML = html;
+  }
+
   // ── DOM refs ───────────────────────────────────────
   const $ = id => document.getElementById(id);
   const stateBadge = $('stateBadge');
@@ -1109,6 +1169,8 @@
     phaseDisplay.textContent = 'Loading...';
     topicDisplay.textContent = '—';
     elapsedDisplay.textContent = '00:00';
+    qaLog = [];
+    renderQA();
     renderAgents();
     eventLog.innerHTML = `<div class="empty-state" id="emptyLog"><h3>No events yet</h3><p>Events will appear here as the research progresses.</p></div>`;
     eventCountEl.textContent = '0 events';
@@ -1310,7 +1372,7 @@
     if (eventType === 'models_assigned' && data.assignments) {
       console.log('[Agent Debug] models_assigned:', data.assignments ? Object.keys(data.assignments).length + ' agents' : 'NO ASSIGNMENTS');
       Object.entries(data.assignments).forEach(([id]) => {
-        if (!agents[id]) agents[id] = { progress: 0, status: 'waiting' };
+        if (!agents[id]) agents[id] = { progress: 0, status: 'waiting', state: 'waiting' };
       });
       renderAgents();
     }
@@ -1342,6 +1404,21 @@
       const aid = data.agent_id;
       if (agents[aid]) { agents[aid].progress = 0; agents[aid].status = 'failed'; }
       renderAgents();
+    }
+
+    if (eventType === 'followup_start') {
+      qaLog = [];
+      renderQA();
+    }
+
+    if (eventType === 'followup_complete' && data.questions) {
+      Object.entries(data.questions).forEach(function([agentId, questions]) {
+        if (Array.isArray(questions)) {
+          questions.forEach(function(q) {
+            addQA(agentId, q, 'All Agents');
+          });
+        }
+      });
     }
 
     if (eventType === 'agent_output') {
@@ -1446,7 +1523,7 @@
         _existingScribe._outputBuffer = '';
     }
     
-    let html = '';
+    let html = '<div class="agent-grid">';
     for (const id of ids) {
       const info = agents[id] || {};
       const pct = info.progress || 0;
@@ -1467,8 +1544,13 @@
         <div class="agent-bar-wrap"><div class="agent-bar-bg"><div class="${barClass}" style="width:${pct}%"></div></div></div>
         <span class="agent-pct">${Math.round(pct)}%</span>
         <span class="agent-status-icon">${statusIcon}</span>
-      </div>
-      <div class="agent-output" id="agent-output-${id}" style="display:none;">
+      </div>`;
+    }
+    html += '</div>';
+
+    // Output panels (outside grid, full width)
+    for (const id of ids) {
+      html += `<div class="agent-output" id="agent-output-${id}" style="display:none;">
         <pre class="agent-output-text"></pre>
       </div>`;
     }

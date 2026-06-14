@@ -822,6 +822,7 @@ class Orchestrator:
         self.state = "FOLLOWUP"
         console.print("\n[bold]Follow-up:[/bold] Collecting follow-up questions")
         logger.info("Follow-up: collecting questions from %d agents", len(active_agents()))
+        self._log_event("followup_start", active_agents=len(active_agents()))
         followup_results = await self.collect_followup_questions(
             {aid: agents[aid] for aid in active_agents()},
             shared,
@@ -829,15 +830,25 @@ class Orchestrator:
         logger.info("Follow-up complete — %d agents responded", len(followup_results))
 
         # Publish follow-up questions to the collaboration bus.
+        qa_questions: dict[str, list[str]] = {}
         for agent_id, questions in followup_results.items():
             if isinstance(questions, FollowUpQuestions):
                 await self.bus.publish_followup(agent_id, questions.questions)
+                if questions.questions:
+                    qa_questions[agent_id] = list(questions.questions)
             else:
                 logger.warning(
                     "Unexpected follow-up result type for agent '%s': %s",
                     agent_id,
                     type(questions).__name__,
                 )
+
+        # Log follow-up complete with Q&A data for dashboard visualization
+        self._log_event(
+            "followup_complete",
+            results=len(followup_results),
+            questions=qa_questions,
+        )
 
         # ── Refinement Phase ──────────────────────────────────────────
         # Give each agent their follow-up questions and let them refine
