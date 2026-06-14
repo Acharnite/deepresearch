@@ -24,7 +24,7 @@ import json as _json
 from deepresearch.web.event_bus import EventBus
 
 logger = logging.getLogger(__name__)
-SESSION_DB_PATH = Path(__file__).resolve().parent.parent.parent / "output" / "sessions_db.json"
+SESSION_DB_PATH = Path(__file__).resolve().parent.parent.parent.parent / "output" / "sessions_db.json"
 
 
 def _load_session_db() -> dict[str, dict]:
@@ -87,6 +87,9 @@ class MultiSessionManager:
 
     def __init__(self, max_sessions: int = 20) -> None:
         self._sessions: dict[str, SessionInfo] = {}
+
+        # Load persisted sessions from disk
+        self._load_sessions_from_disk()
         self._tasks: dict[str, asyncio.Task[Any]] = {}
         self._max = max_sessions
 
@@ -346,6 +349,39 @@ class MultiSessionManager:
                 self._sessions[session_id].status = "cancelled"
             return True
         return False
+
+    def _load_sessions_from_disk(self) -> None:
+        """Restore completed sessions from disk on startup."""
+        db = _load_session_db()
+        for sid, data in db.items():
+            info = SessionInfo(
+                session_id=sid,
+                topic=data.get("topic", ""),
+                status=data.get("status", "complete"),
+                time_budget=data.get("time_budget", "medium"),
+                time_budget_seconds=data.get("time_budget_seconds"),
+                model_mode=data.get("model_mode", "same"),
+                selected_model=data.get("selected_model"),
+                agent_models=data.get("agent_models"),
+                created_at=data.get("created_at", datetime.now().isoformat()),
+                completed_at=data.get("completed_at"),
+                error=data.get("error"),
+            )
+            topic_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', (info.topic or "").lower().strip())[:50] or "research"
+            pdf_path = Path(f"./output/{sid}/{topic_slug}.pdf")
+            if pdf_path.exists():
+                info.result = {"pdf_filename": pdf_path.name, "pdf_path": str(pdf_path)}
+            self._sessions[sid] = info
+        if db:
+            logger.info("Restored %d sessions from disk", len(db))
+
+    def get_all_sessions(self) -> list[SessionInfo]:
+        """Return all sessions, newest first."""
+        return sorted(
+            self._sessions.values(),
+            key=lambda s: s.created_at or "",
+            reverse=True,
+        )
 
     def remove_session(self, session_id: str) -> bool:
         """Remove a session by ID (only if not running/queued). Returns True if removed."""
