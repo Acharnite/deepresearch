@@ -103,6 +103,40 @@ def build_review_prompt(shared_knowledge: SharedKnowledge) -> str:
     )
 
 
+def build_refine_prompt(
+    questions: list[str],
+    current_summary: str,
+    current_key_points: list[str],
+) -> str:
+    """Build the prompt for refining findings based on follow-up questions.
+
+    Args:
+        questions: The follow-up questions from other agents.
+        current_summary: The agent's current findings summary.
+        current_key_points: The agent's current key points.
+
+    Returns:
+        The refinement user prompt.
+    """
+    q_text = "\n".join(f"  - {q}" for q in questions)
+    kp_text = "\n".join(f"  - {kp}" for kp in current_key_points)
+
+    return (
+        f"# Refinement Phase\n\n"
+        f"## Your Current Findings\n"
+        f"Summary: {current_summary}\n\n"
+        f"Key Points:\n{kp_text}\n\n"
+        f"## Follow-Up Questions from Other Agents\n"
+        f"{q_text}\n\n"
+        "## Instructions\n"
+        "Other agents have asked follow-up questions based on shared knowledge. "
+        "Review these questions and refine your findings accordingly. "
+        "Use the web_search tool to find additional information if needed. "
+        "Update your summary, key points, and perspective to reflect "
+        "any new insights gained from addressing these questions."
+    )
+
+
 def build_round_2_prompt(
     topic: str,
     shared_knowledge: SharedKnowledge,

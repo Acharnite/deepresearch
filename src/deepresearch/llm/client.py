@@ -481,6 +481,8 @@ class LLMClient:
             # Tool calls accumulator: list of (id, name, args_json)
             tool_calls: list[tuple[str, str, str]] = []
             text_accumulated = False
+            # Reset full_text for each round — only keep final non-tool output
+            _round_text = ""
 
             try:
                 kwargs["stream"] = True
@@ -493,7 +495,7 @@ class LLMClient:
 
                     # Text content
                     if delta.content:
-                        full_text += delta.content
+                        _round_text += delta.content
                         text_accumulated = True
                         if self.event_callback:
                             await self.event_callback(
@@ -547,8 +549,13 @@ class LLMClient:
                 self._track_usage(response)
 
             if not tool_calls:
-                # No tool calls — this is the final response
+                # No tool calls — this is the final response, keep the text
+                if _round_text:
+                    full_text = _round_text
+                # If _round_text is empty, keep existing full_text (non-streaming fallback)
                 break
+            # Discard intermediate text from rounds with tool calls
+            # (it's just "Let me search..." chatter, not the final JSON)
 
             # Build assistant message with tool calls (required by API spec)
             assistant_tool_calls = [
@@ -662,6 +669,14 @@ class LLMClient:
                 return json.loads(match.group(1).strip())
             except json.JSONDecodeError:
                 pass
+
+        # Try stripping non-JSON text before first { and after last }
+        try:
+            start = response.index("{")
+            end = response.rindex("}")
+            return json.loads(response[start:end+1])
+        except (ValueError, json.JSONDecodeError):
+            pass
 
         raise LLMError("Could not parse JSON from LLM response")
 

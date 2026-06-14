@@ -511,6 +511,7 @@
     <span id="connLabel">Disconnected</span>
   </span>
   <span class="spacer"></span>
+  <span id="versionDisplay" style="font-size:11px;margin-right:8px;font-family:monospace;color:var(--text-muted);">?</span>
   <div class="header-actions">
     <button class="btn btn-secondary btn-sm" onclick="window.showSystemLogView()" title="View system log">📋 System Log</button>
     <button class="btn btn-secondary btn-sm" id="settingsBtn" onclick="window.showSettings()">⚙️ Settings</button>
@@ -848,6 +849,19 @@
 <script>
 (function() {
   'use strict';
+  
+  // ── Version ────────────────────────────────
+  async function loadVersion() {
+    try {
+      const resp = await fetch('/api/version');
+      if (resp.ok) {
+        const data = await resp.json();
+        document.getElementById('versionDisplay').textContent = data.version || '?';
+      }
+    } catch (e) {
+      console.warn('Failed to load version:', e);
+    }
+  }
 
   // ── Constants ──────────────────────────────────────
   const STATE_ORDER = ['IDLE','CONFIGURING','ROUND1','COLLABORATING','FOLLOWUP','ROUND2','COMPILING','OUTPUT','COMPLETE'];
@@ -1346,8 +1360,10 @@
             pre.textContent += panel._outputBuffer || '';
             panel._outputBuffer = '';
             panel._outputTimer = null;
+            // Auto-scroll to bottom
             panel.scrollTop = panel.scrollHeight;
           }, 50);
+        // Auto-scroll to bottom (also called after throttle for immediate responsiveness)
         }
       }
     }
@@ -1508,6 +1524,7 @@
 
   // ── Add event ──────────────────────────────────────
   function addEvent(eventType, data) {
+    if (eventType === "agent_output") return;  // Don't add streaming output to event log
     eventCount++;
     eventCountEl.textContent = eventCount + ' event' + (eventCount !== 1 ? 's' : '');
 
@@ -2291,6 +2308,7 @@
   // ── Init ───────────────────────────────────────────
   loadAgentProfiles();
   loadAvailableModels();
+  loadVersion();
   startSessionListPolling();
 
   window.showDetail = showDetail;

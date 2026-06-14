@@ -20,9 +20,32 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import json as _json
 from deepresearch.web.event_bus import EventBus
 
 logger = logging.getLogger(__name__)
+SESSION_DB_PATH = Path(__file__).resolve().parent.parent.parent / "output" / "sessions_db.json"
+
+
+def _load_session_db() -> dict[str, dict]:
+    """Load persisted session metadata from disk."""
+    try:
+        if SESSION_DB_PATH.exists():
+            return _json.loads(SESSION_DB_PATH.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning("Failed to load session DB: %s", e)
+    return {}
+
+
+def _save_session_db(db: dict[str, dict]) -> None:
+    """Persist session metadata to disk."""
+    try:
+        SESSION_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SESSION_DB_PATH.write_text(_json.dumps(db, indent=2, default=str), encoding="utf-8")
+    except Exception as e:
+        logger.warning("Failed to save session DB: %s", e)
+
+
 
 
 def _slugify(text: str, max_len: int = 50) -> str:
@@ -136,6 +159,16 @@ class MultiSessionManager:
             info.status = "error"
             info.error = f"Model connectivity check failed for '{test_model}': {e}"
             info.completed_at = datetime.now().isoformat()
+            db = _load_session_db()
+            db[info.session_id] = {
+                "topic": info.topic, "status": info.status,
+                "time_budget": info.time_budget, "time_budget_seconds": info.time_budget_seconds,
+                "model_mode": info.model_mode, "selected_model": info.selected_model,
+                "agent_models": info.agent_models,
+                "created_at": info.created_at, "completed_at": info.completed_at,
+                "error": info.error,
+            }
+            _save_session_db(db)
             await info.event_bus.publish({
                 "event_type": "session_error",
                 "session_id": session_id,
@@ -232,6 +265,21 @@ class MultiSessionManager:
             }
             info.status = "complete"
             info.completed_at = datetime.now().isoformat()
+            # Persist to disk so it survives restarts
+            db = _load_session_db()
+            db[info.session_id] = {
+                "topic": info.topic,
+                "status": info.status,
+                "time_budget": info.time_budget,
+                "time_budget_seconds": info.time_budget_seconds,
+                "model_mode": info.model_mode,
+                "selected_model": info.selected_model,
+                "agent_models": info.agent_models,
+                "created_at": info.created_at,
+                "completed_at": info.completed_at,
+                "error": info.error,
+            }
+            _save_session_db(db)
             info.output_path = str(output_path)
 
             await info.event_bus.publish({

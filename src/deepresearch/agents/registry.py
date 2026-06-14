@@ -148,6 +148,14 @@ class AgentRegistry:
                     _questions = await agent.review_findings(first)
                     return _questions
 
+                if isinstance(first, FollowUpQuestions):
+                    # Refinement phase — refine findings from follow-up questions.
+                    if _round_1 is not None:
+                        _round_1 = await agent.refine_findings(first, _round_1)
+                    return _round_1 or Findings(
+                        agent_id=profile.id, round=1, summary="", key_points=[], perspective="",
+                    )
+
                 if isinstance(first, Findings):
                     # Report writing (no Round 2).
                     return await agent.write_report(first, None)

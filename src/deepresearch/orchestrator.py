@@ -2,7 +2,7 @@
 
 Lifecycle:
     IDLE → CONFIGURING → ROUND1 → COLLABORATING → FOLLOWUP
-    → ROUND2 → COMPILING → OUTPUT → COMPLETE
+    → REFINING → ROUND2 → COMPILING → OUTPUT → COMPLETE
 
 The Orchestrator manages configuration, model assignment, parallel agent
 execution, collaboration, and compilation. It accepts injectable callables
@@ -838,6 +838,35 @@ class Orchestrator:
                     agent_id,
                     type(questions).__name__,
                 )
+
+        # ── Refinement Phase ──────────────────────────────────────────
+        # Give each agent their follow-up questions and let them refine
+        # their findings with an additional web search if needed.
+        # This happens BEFORE the Round 2 decision so refined findings
+        # are used for both the Round 2 question and final reports.
+        self.state = "REFINING"
+        console.print("\n[bold]Refinement:[/bold] Agents refining findings from questions")
+        self._log_event("refinement_start")
+        _refined_count = 0
+        for agent_id, followup in followup_results.items():
+            if not isinstance(followup, FollowUpQuestions) or not followup.questions:
+                continue
+            if agent_id in self.failed_agents:
+                continue
+            try:
+                refined = await asyncio.wait_for(
+                    agents[agent_id](followup),
+                    timeout=max(30, self._get_timeout() // 2),
+                )
+                if refined and isinstance(refined, Findings) and (refined.summary or refined.key_points):
+                    round_1_results[agent_id] = refined
+                    _refined_count += 1
+                    logger.info("Agent '%s' refined findings from %d questions", agent_id, len(followup.questions))
+            except Exception as e:
+                logger.warning("Agent '%s' refinement failed: %s", agent_id, e)
+        if _refined_count:
+            console.print(f"  [dim]{_refined_count} agent(s) refined their findings[/dim]")
+        self._log_event("refinement_complete", refined_agents=_refined_count)
 
         # ── Round 2: Refined Research ──────────────────────────────────
         # Dynamic decision: run Round 2 only if there are significant

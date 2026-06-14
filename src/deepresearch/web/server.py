@@ -75,6 +75,7 @@ if _settings_env_path.exists():
     if _loaded:
         logger.info("Loaded %d API key(s) from .env into environment", _loaded)
 
+VERSION = "v0.0.44"  # Bump this when making changes to verify deployment
 app = FastAPI(title="DeepeResearch Dashboard")
 
 # ── CORS (allow browser-based access from any origin) ──────────────────
@@ -172,6 +173,12 @@ async def get_status() -> JSONResponse:
         "session_active": _ws._session_active,
         "phase_label": _ws._phase_label,
     })
+
+
+@app.get("/api/version")
+async def get_version() -> JSONResponse:
+    """Return the current dashboard version for deployment verification."""
+    return JSONResponse({"version": VERSION})
 
 
 @app.get("/api/agents")

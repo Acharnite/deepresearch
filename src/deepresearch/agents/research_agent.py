@@ -26,6 +26,7 @@ from deepresearch.models import (
 from deepresearch.utils.prompts import (
     build_agent_system_prompt,
     build_clarify_prompt,
+    build_refine_prompt,
     build_review_prompt,
     build_round_1_prompt,
     build_round_2_prompt,
@@ -141,6 +142,13 @@ class ResearchAgent(BaseAgent):
             response = await self._generate_with_retry(user_prompt)
 
         data = self._try_parse_json(response, "research_round_1")
+        # If web search + tools produced empty content, retry without tools
+        if not data.get("summary") and not data.get("key_points"):
+            logger.warning("Empty response from agent '%s' with tools, retrying without", self.profile.id)
+            response2 = await self._generate_with_retry(user_prompt)
+            data2 = self._try_parse_json(response2, "research_round_1")
+            if data2.get("summary") or data2.get("key_points"):
+                data = data2
         return Findings(
             agent_id=self.profile.id,
             round=1,
@@ -160,6 +168,66 @@ class ResearchAgent(BaseAgent):
         return FollowUpQuestions(
             agent_id=self.profile.id,
             questions=data.get("questions", []),
+        )
+
+    async def refine_findings(
+        self,
+        questions: FollowUpQuestions,
+        current_findings: Findings | None = None,
+    ) -> Findings:
+        """Refine findings based on follow-up questions from other agents.
+
+        Uses web search to answer the questions and produce updated findings.
+        If refinement fails or produces empty results, the current findings
+        are returned unchanged.
+        """
+        if not questions.questions:
+            return current_findings or Findings(
+                agent_id=self.profile.id, round=1, summary="", key_points=[], perspective="",
+            )
+
+        user_prompt = build_refine_prompt(
+            questions=questions.questions,
+            current_summary=(current_findings.summary if current_findings else ""),
+            current_key_points=(current_findings.key_points if current_findings else []),
+        )
+        user_prompt += _ROUND_1_FORMAT
+
+        from deepresearch.tools.web_search import WEB_SEARCH_TOOL
+
+        try:
+            response = await self.llm.generate_with_tools(
+                system_prompt=self._system_prompt,
+                user_prompt=user_prompt,
+                tools=[WEB_SEARCH_TOOL],
+                temperature=self.profile.temperature,
+                max_tokens=4096,
+            )
+        except LLMError:
+            logger.warning(
+                "LLM call with tools failed for refinement of agent '%s', retrying without tools",
+                self.profile.id,
+            )
+            response = await self._generate_with_retry(user_prompt)
+
+        data = self._try_parse_json(response, "refine_findings")
+        if not data.get("summary") and not data.get("key_points"):
+            logger.warning(
+                "Empty refinement response from agent '%s', keeping current findings",
+                self.profile.id,
+            )
+            return current_findings or Findings(
+                agent_id=self.profile.id, round=1, summary="", key_points=[], perspective="",
+            )
+
+        return Findings(
+            agent_id=self.profile.id,
+            round=1,
+            summary=data.get("summary", current_findings.summary if current_findings else ""),
+            key_points=data.get("key_points", current_findings.key_points if current_findings else []),
+            perspective=data.get("perspective", current_findings.perspective if current_findings else ""),
+            confidence=float(data.get("confidence", current_findings.confidence if current_findings else 0.5)),
+            raw_response=response,
         )
 
     async def research_round_2(
