@@ -75,7 +75,7 @@ if _settings_env_path.exists():
     if _loaded:
         logger.info("Loaded %d API key(s) from .env into environment", _loaded)
 
-VERSION = "v0.0.50"  # Bump this when making changes to verify deployment
+VERSION = "v0.0.51"  # Bump this when making changes to verify deployment
 app = FastAPI(title="DeepeResearch Dashboard")
 logger.info("DeepeResearch %s starting on port %d", VERSION, __import__("os").environ.get("PORT", 7500))
 
@@ -357,22 +357,28 @@ async def cancel_legacy() -> JSONResponse:
 # ── File Download Endpoint ─────────────────────────────────────────────
 
 
-@app.get("/api/download/{filename:path}")
-async def download_file(filename: str) -> Any:
-    """Download a generated file (PDF, HTML, or fallback text)."""
+@app.get("/api/download/{session_id}/{filename:path}")
+async def download_file(session_id: str, filename: str) -> Any:
+    """Download a generated file (PDF, HTML, or fallback text) for a session."""
     from fastapi.responses import FileResponse
 
-    # Priority list of paths to check.
-    possible_paths: list[Path] = [
-        Path("./output") / filename,
-        Path(filename),
-    ]
+    # Prevent path traversal
+    if ".." in filename or "/" in filename or "\\" in filename:
+        return JSONResponse({"error": "Invalid filename"}, status_code=400)
 
-    # Also search in per-session output directories.
-    for s in multi_session_manager.list_sessions():
-        sid = s["session_id"]
-        session_path = Path(f"./output/{sid}") / filename
-        possible_paths.append(session_path)
+    # Only allow files from the session's output directory
+    base_dir = Path(f"./output/{session_id}")
+    safe_path = (base_dir / filename).resolve()
+    if not str(safe_path).startswith(str(base_dir.resolve())):
+        return JSONResponse({"error": "Access denied"}, status_code=403)
+
+    # Also check the legacy flat output directory as a fallback
+    possible_paths: list[Path] = [safe_path]
+
+    if not safe_path.exists():
+        # Fallback: search in the flat output directory
+        legacy_path = Path("./output") / filename
+        possible_paths.append(legacy_path)
 
     for path in possible_paths:
         if path.exists() and path.is_file():

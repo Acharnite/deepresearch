@@ -192,7 +192,7 @@ def test_new_routes_registered(client: TestClient) -> None:
     assert "/api/cancel" in routes
     assert "/api/profiles" in routes
     assert "/api/models" in routes
-    assert "/api/download/{filename:path}" in routes
+    assert "/api/download/{session_id}/{filename:path}" in routes
     assert "/api/settings/keys" in routes
     assert "/api/settings/keys/{provider}" in routes
     assert "/api/settings/local-models" in routes

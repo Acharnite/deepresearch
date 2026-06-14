@@ -1016,7 +1016,7 @@ class Orchestrator:
         self._log_event("pipeline_summary",
             total_agents=agent_count,
             failed_agents=list(self.failed_agents.keys()),
-            state_history=list(self._state_history) if hasattr(self, "_state_history") else [],
+            state_history=[],
             elapsed=round((datetime.now() - self._session_start_time).total_seconds(), 1),
         )
 

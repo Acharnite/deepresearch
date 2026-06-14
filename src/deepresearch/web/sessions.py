@@ -38,12 +38,25 @@ def _load_session_db() -> dict[str, dict]:
 
 
 def _save_session_db(db: dict[str, dict]) -> None:
-    """Persist session metadata to disk."""
+    """Persist session metadata to disk (synchronous, no lock)."""
     try:
         SESSION_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         SESSION_DB_PATH.write_text(_json.dumps(db, indent=2, default=str), encoding="utf-8")
     except Exception as e:
         logger.warning("Failed to save session DB: %s", e)
+
+
+_session_db_lock = asyncio.Lock()
+
+
+async def _save_session_db_async(db: dict[str, dict]) -> None:
+    """Persist session metadata to disk with async lock to prevent concurrent writes."""
+    async with _session_db_lock:
+        try:
+            SESSION_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            SESSION_DB_PATH.write_text(_json.dumps(db, indent=2, default=str), encoding="utf-8")
+        except Exception as e:
+            logger.warning("Failed to save session DB: %s", e)
 
 
 
@@ -128,7 +141,7 @@ class MultiSessionManager:
         if time_budget_seconds is not None:
             secs = time_budget_seconds
         else:
-            secs = {"quick": 300, "medium": 900, "deep": 1800}.get(time_budget, 900)
+            secs = {"quick": 120, "medium": 300, "deep": 480}.get(time_budget, 300)
 
         info = SessionInfo(
             session_id=session_id,
@@ -169,9 +182,10 @@ class MultiSessionManager:
                 "model_mode": info.model_mode, "selected_model": info.selected_model,
                 "agent_models": info.agent_models,
                 "created_at": info.created_at, "completed_at": info.completed_at,
+                "result": info.result,
                 "error": info.error,
             }
-            _save_session_db(db)
+            await _save_session_db_async(db)
             await info.event_bus.publish({
                 "event_type": "session_error",
                 "session_id": session_id,
@@ -280,9 +294,10 @@ class MultiSessionManager:
                 "agent_models": info.agent_models,
                 "created_at": info.created_at,
                 "completed_at": info.completed_at,
+                "result": info.result,
                 "error": info.error,
             }
-            _save_session_db(db)
+            await _save_session_db_async(db)
             info.output_path = str(output_path)
 
             await info.event_bus.publish({
@@ -365,12 +380,15 @@ class MultiSessionManager:
                 agent_models=data.get("agent_models"),
                 created_at=data.get("created_at", datetime.now().isoformat()),
                 completed_at=data.get("completed_at"),
+                result=data.get("result"),
                 error=data.get("error"),
             )
-            topic_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', (info.topic or "").lower().strip())[:50] or "research"
-            pdf_path = Path(f"./output/{sid}/{topic_slug}.pdf")
-            if pdf_path.exists():
-                info.result = {"pdf_filename": pdf_path.name, "pdf_path": str(pdf_path)}
+            # Fallback: if result wasn't persisted (legacy sessions), derive from filesystem
+            if not info.result:
+                topic_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', (info.topic or "").lower().strip())[:50] or "research"
+                pdf_path = Path(f"./output/{sid}/{topic_slug}.pdf")
+                if pdf_path.exists():
+                    info.result = {"pdf_filename": pdf_path.name, "pdf_path": str(pdf_path)}
             self._sessions[sid] = info
         if db:
             logger.info("Restored %d sessions from disk", len(db))

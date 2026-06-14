@@ -1272,7 +1272,7 @@
       topicDisplay.textContent = currentTopic.length > 60 ? currentTopic.slice(0, 60) + '…' : currentTopic;
 
       if (data.status === 'complete' && data.result) {
-        showResult(data.result, data.topic);
+        showResult(data.result, data.topic, sessionId);
       } else if (data.status === 'error') {
         showError(data.error);
       }
@@ -1281,22 +1281,23 @@
     }
   }
 
-  function showResult(result, topic) {
+  function showResult(result, topic, sessionId) {
     resultView.classList.remove('hidden');
     errorView.classList.add('hidden');
     resultTopic.textContent = topic || '—';
     resultFilename.textContent = result.pdf_filename || '—';
     resultStatus.textContent = 'Complete';
 
-    const pdfFile = result.pdf_filename || 'deepresearch_output.pdf';
+    const pdfFile = result.pdf_filename || 'research.pdf';
+    const sid = sessionId || currentSessionId;
     downloadPdfBtn.onclick = function() {
-      window.open('/api/download/' + encodeURIComponent(pdfFile), '_blank');
+      window.open('/api/download/' + sid + '/' + encodeURIComponent(pdfFile), '_blank');
     };
 
     if (result.html_path) {
       const htmlFile = result.html_path.split('/').pop();
       downloadHtmlBtn.onclick = function() {
-        window.open('/api/download/' + encodeURIComponent(htmlFile), '_blank');
+        window.open('/api/download/' + sid + '/' + encodeURIComponent(htmlFile), '_blank');
       };
       downloadHtmlBtn.classList.remove('hidden');
     } else {
