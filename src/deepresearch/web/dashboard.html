@@ -1335,8 +1335,17 @@
       const pre = panel ? panel.querySelector('.agent-output-text') : null;
       if (pre) {
         panel.style.display = 'block';
-        pre.textContent += text;
-        panel.scrollTop = panel.scrollHeight;
+        // Buffer text and batch DOM updates (throttle to ~20fps)
+        if (!panel._outputBuffer) panel._outputBuffer = '';
+        panel._outputBuffer += text;
+        if (!panel._outputTimer) {
+          panel._outputTimer = setTimeout(() => {
+            pre.textContent += panel._outputBuffer || '';
+            panel._outputBuffer = '';
+            panel._outputTimer = null;
+            panel.scrollTop = panel.scrollHeight;
+          }, 50);
+        }
       }
     }
 
@@ -1388,6 +1397,17 @@
     }
 
     agentCount.textContent = ids.length + ' agent' + (ids.length !== 1 ? 's' : '');
+    
+    // Save existing agent output text before re-render
+    const _savedOutputs = {};
+    for (const id of ids) {
+        const _existing = document.getElementById('agent-output-' + id);
+        if (_existing) {
+            const _pre = _existing.querySelector('.agent-output-text');
+            if (_pre) _savedOutputs[id] = _pre.textContent;
+        }
+    }
+    
     let html = '';
     for (const id of ids) {
       const info = agents[id] || {};
@@ -1415,6 +1435,20 @@
       </div>`;
     }
     agentList.innerHTML = html;
+    
+    // Restore saved output text after re-render
+    for (const id of ids) {
+        if (_savedOutputs[id]) {
+            const _newPanel = document.getElementById('agent-output-' + id);
+            if (_newPanel) {
+                const _pre = _newPanel.querySelector('.agent-output-text');
+                if (_pre) {
+                    _pre.textContent = _savedOutputs[id];
+                    _newPanel.style.display = 'block';
+                }
+            }
+        }
+    }
   }
 
   // ── Add event ──────────────────────────────────────

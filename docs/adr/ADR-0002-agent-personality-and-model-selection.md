@@ -12,7 +12,7 @@ phase:
 
 Proposed
 
-**Version:** 1.3
+**Version:** 1.4
 **Last Updated:** 2026-06-14
 
 ## Context
@@ -218,6 +218,16 @@ Agent LLM responses are now streamed in real-time for live dashboard rendering:
 - Long-running scribe compilations (2-5 minutes) become transparent
 - Fallback guarantees no regression if streaming is unavailable
 
+### Web Search Tool for Agents: DuckDuckGo Function Calling
+
+Research agents can search the web in real-time via LiteLLM function calling:
+
+- **Tool definition:** `WEB_SEARCH_TOOL` in `tools/web_search.py` — a LiteLLM-compatible function-calling schema with `name="web_search"`, requiring a `query` string and accepting optional `max_results` (default 5, max 10). The description tells the LLM to use it for up-to-date facts, recent developments, or external sources.
+- **Execution:** `web_search()` queries DuckDuckGo via `duckduckgo_search.DDGS`, running in a thread via `asyncio.to_thread()` to avoid blocking the event loop. Returns structured results (`title`, `snippet`, `url`) or an error dict on failure.
+- **Integration:** `ResearchAgent.research_round_1()` now calls `LLMClient.generate_with_tools()` with `WEB_SEARCH_TOOL` instead of the standard `_generate_with_retry()` — giving agents live web access during their initial research pass
+- **Fallback:** If `generate_with_tools()` raises `LLMError`, the agent retries without tools via `_generate_with_retry()` — ensuring uninterrupted research even if the tool-calling path fails
+- **Multi-turn loop:** Up to 5 tool-call rounds per generation (`max_tool_rounds = 5`), preventing infinite loops while allowing the agent to make multiple search queries in one generation
+
 ### Model Connectivity Check: Pre-Flight Validation
 
 Before a session starts, the `MultiSessionManager.create_session()` runs a connectivity check:
@@ -304,6 +314,8 @@ Becoming the default means new users can run research immediately with just an O
 15. **Live agent streaming** — users see real-time text generation in the dashboard, not just state transitions
 16. **Streaming fallback** — `generate_stream()` degrades gracefully to `generate()` if streaming is unavailable
 17. **Dual Opencode endpoints** — Go and Zen offer different model families through the same API key
+18. **Web search tool** — agents access live internet data via DuckDuckGo, improving factuality and recency of research findings
+19. **Graceful tool degradation** — `generate_with_tools()` falls back to non-streaming, then to no-tools retry, ensuring research never blocks on tool-calling failures
 
 ### Negative
 1. **Token overhead** — 5-component prompt consumes more tokens than single system prompt (~200-300 extra tokens per call)
@@ -316,6 +328,7 @@ Becoming the default means new users can run research immediately with just an O
 8. **Model ID prefix collisions** — if a model ID doesn't match any known prefix, it falls through to default OpenAI routing, which may be unexpected
 9. **3-part model IDs are verbose** — `opencode/go/deepseek-v4-flash` is longer and more complex than simple provider prefixes
 10. **Streaming adds server load** — per-chunk events increase EventBus publish volume and SSE bandwidth
+11. **Web search depends on DuckDuckGo availability** — if DuckDuckGo is unreachable (rate-limited, blocked, or down), agents fall back to no-tools mode silently, reducing search quality
 
 ### Neutral
 1. Temperature + Voice combo is the primary personality lever

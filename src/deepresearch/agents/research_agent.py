@@ -119,10 +119,26 @@ class ResearchAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     async def research_round_1(self, topic: ResearchTopic) -> Findings:
-        """Initial research pass — independent exploration."""
+        """Initial research pass — with web search capability."""
         user_prompt = build_round_1_prompt(topic.question, topic.time_budget)
         user_prompt += _ROUND_1_FORMAT
-        response = await self._generate_with_retry(user_prompt)
+
+        from deepresearch.tools.web_search import WEB_SEARCH_TOOL
+
+        try:
+            response = await self.llm.generate_with_tools(
+                system_prompt=self._system_prompt,
+                user_prompt=user_prompt,
+                tools=[WEB_SEARCH_TOOL],
+                temperature=self.profile.temperature,
+            )
+        except LLMError:
+            logger.warning(
+                "LLM call with tools failed for agent '%s', retrying without tools",
+                self.profile.id,
+            )
+            response = await self._generate_with_retry(user_prompt)
+
         data = self._try_parse_json(response, "research_round_1")
         return Findings(
             agent_id=self.profile.id,
@@ -223,7 +239,7 @@ class ResearchAgent(BaseAgent):
     async def _generate_with_retry(self, user_prompt: str) -> str:
         """Call the LLM, retrying **once** on failure with a stricter instruction."""
         try:
-            return await self.llm.generate(
+            return await self.llm.generate_stream(
                 system_prompt=self._system_prompt,
                 user_prompt=user_prompt,
                 temperature=self.profile.temperature,
@@ -234,7 +250,7 @@ class ResearchAgent(BaseAgent):
                 "instruction",
                 self.profile.id,
             )
-            return await self.llm.generate(
+            return await self.llm.generate_stream(
                 system_prompt=self._system_prompt
                 + "\n\nYou MUST respond with valid JSON only — no markdown, "
                   "no explanation, no code fences.",

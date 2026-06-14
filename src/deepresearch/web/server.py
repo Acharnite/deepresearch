@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # ── Persistent file logging ─────────────────────────────────────────────
 import logging.handlers
 
-_log_dir = Path(__file__).resolve().parent.parent.parent / "logs"
+_log_dir = Path(__file__).resolve().parent.parent.parent.parent / "logs"
 _log_dir.mkdir(parents=True, exist_ok=True)
 _log_file = _log_dir / "deepresearch.log"
 
@@ -52,6 +52,11 @@ root_logger.addHandler(_file_handler)
 root_logger.setLevel(logging.DEBUG)
 
 logging.getLogger("deepresearch").info("File logging initialized: %s", _log_file)
+
+# Suppress noisy third-party loggers in file output.
+for _noisy in ("LiteLLM", "LiteLLM.litellm", "httpx", "httpcore", "asyncio",
+               "weasyprint", "fontTools", "PIL", "matplotlib", "fpdf"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 # ── Load .env keys into os.environ at startup ──────────────────────────
 # This ensures LLMClient (which reads from os.environ) can find API keys
@@ -834,8 +839,10 @@ class SystemLogHandler(logging.Handler):
 # Install the handler on the root deepresearch logger so it captures
 # all child loggers (deepresearch.web.server, deepresearch.llm.client, etc.)
 _deepresearch_logger = logging.getLogger("deepresearch")
-_deepresearch_logger.addHandler(SystemLogHandler())
-_deepresearch_logger.setLevel(logging.INFO)
+_system_log_handler = SystemLogHandler()
+_system_log_handler.setLevel(logging.INFO)
+_deepresearch_logger.addHandler(_system_log_handler)
+_deepresearch_logger.setLevel(logging.DEBUG)
 
 logger.info("System log initialized — up to %d entries", MAX_LOG_ENTRIES)
 

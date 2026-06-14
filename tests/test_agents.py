@@ -188,6 +188,28 @@ def _make_mock_generate(
     return mock
 
 
+def _make_mock_generate_with_tools(
+    response_data: dict, fail_count: int = 0
+) -> AsyncMock:
+    """Create an AsyncMock for ``LLMClient.generate_with_tools``.
+
+    Args:
+        response_data: Dict that will be JSON-serialised as the response.
+        fail_count: Number of times to raise ``LLMError`` before succeeding.
+    """
+    mock = AsyncMock()
+
+    async def side_effect(*args, **kwargs):
+        if mock.call_count < fail_count:
+            mock.call_count += 1  # type: ignore[attr-defined]
+            raise LLMError("Simulated LLM failure")
+        return json.dumps(response_data)
+
+    mock.side_effect = side_effect
+    mock.call_count = 0  # type: ignore[attr-defined]
+    return mock
+
+
 # ─── Tests: BaseAgent ────────────────────────────────────────────────────────
 
 
@@ -235,7 +257,7 @@ class TestResearchAgent:
         self, profile, topic, mock_llm_client
     ):
         """research_round_1 should return a valid Findings from LLM JSON."""
-        mock_llm_client.generate = _make_mock_generate({
+        mock_llm_client.generate_with_tools = _make_mock_generate_with_tools({
             "summary": "AI in healthcare shows diagnostic improvements.",
             "key_points": ["85% accuracy", "Reduces workload"],
             "perspective": "AI as augmentative tool.",
@@ -257,7 +279,7 @@ class TestResearchAgent:
         self, profile, topic, mock_llm_client
     ):
         """The system prompt should include the agent's persona."""
-        mock_llm_client.generate = _make_mock_generate({
+        mock_llm_client.generate_with_tools = _make_mock_generate_with_tools({
             "summary": "Test", "key_points": [], "perspective": "P", "confidence": 0.5,
         })
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
@@ -265,7 +287,7 @@ class TestResearchAgent:
         await agent.research_round_1(topic)
 
         # Verify the system prompt contained profile info.
-        call_kwargs = mock_llm_client.generate.call_args[1]
+        call_kwargs = mock_llm_client.generate_with_tools.call_args[1]
         assert profile.persona_prompt in call_kwargs["system_prompt"]
         assert profile.name in call_kwargs["system_prompt"]
 
@@ -274,7 +296,7 @@ class TestResearchAgent:
         self, profile, shared, mock_llm_client
     ):
         """review_findings should return FollowUpQuestions."""
-        mock_llm_client.generate = _make_mock_generate({
+        mock_llm_client.generate_stream = _make_mock_generate({
             "questions": ["What about X?", "How does Y affect Z?"],
         })
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
@@ -290,14 +312,14 @@ class TestResearchAgent:
         self, profile, shared, mock_llm_client
     ):
         """The user prompt should contain shared knowledge data."""
-        mock_llm_client.generate = _make_mock_generate({
+        mock_llm_client.generate_stream = _make_mock_generate({
             "questions": [],
         })
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
 
         await agent.review_findings(shared)
 
-        call_kwargs = mock_llm_client.generate.call_args[1]
+        call_kwargs = mock_llm_client.generate_stream.call_args[1]
         user_prompt = call_kwargs["user_prompt"]
         assert "AI improves diagnostic" in user_prompt
         assert "Diagnostic AI" in user_prompt
@@ -307,7 +329,7 @@ class TestResearchAgent:
         self, profile, topic, shared, follow_up, mock_llm_client
     ):
         """research_round_2 should return Findings."""
-        mock_llm_client.generate = _make_mock_generate({
+        mock_llm_client.generate_stream = _make_mock_generate({
             "summary": "Deeper analysis confirms findings.",
             "key_points": ["Dataset bias concern", "Regulatory evolution"],
             "perspective": "Cautious optimism.",
@@ -326,7 +348,7 @@ class TestResearchAgent:
         self, profile, round_1_findings, round_2_findings, mock_llm_client
     ):
         """write_report should return an IndividualReport."""
-        mock_llm_client.generate = _make_mock_generate({
+        mock_llm_client.generate_stream = _make_mock_generate({
             "title": "AI in Healthcare Report",
             "perspective_summary": "AI augments clinicians.",
             "key_insights": ["85% accuracy in screening"],
@@ -359,7 +381,7 @@ class TestResearchAgent:
         self, profile, round_1_findings, mock_llm_client
     ):
         """write_report should handle None for round_2."""
-        mock_llm_client.generate = _make_mock_generate({
+        mock_llm_client.generate_stream = _make_mock_generate({
             "title": "Quick Report",
             "perspective_summary": "Summary.",
             "key_insights": ["Key finding"],
@@ -377,7 +399,7 @@ class TestResearchAgent:
         self, profile, mock_llm_client
     ):
         """clarify should return a ClarificationResponse."""
-        mock_llm_client.generate = _make_mock_generate({
+        mock_llm_client.generate_stream = _make_mock_generate({
             "response": "My analysis was based on recent peer-reviewed studies.",
         })
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
@@ -395,15 +417,15 @@ class TestResearchAgent:
     async def test_temperature_used_in_llm_call(
         self, profile, topic, mock_llm_client
     ):
-        """The profile temperature should be passed to LLM.generate."""
-        mock_llm_client.generate = _make_mock_generate({
+        """The profile temperature should be passed to LLM.generate_with_tools."""
+        mock_llm_client.generate_with_tools = _make_mock_generate_with_tools({
             "summary": "Test", "key_points": [], "perspective": "P", "confidence": 0.5,
         })
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
 
         await agent.research_round_1(topic)
 
-        call_kwargs = mock_llm_client.generate.call_args[1]
+        call_kwargs = mock_llm_client.generate_with_tools.call_args[1]
         assert call_kwargs["temperature"] == profile.temperature
 
     # ── JSON error handling ──────────────────────────────────────────────
@@ -416,7 +438,7 @@ class TestResearchAgent:
         mock_llm_client.parse_json_response = MagicMock(
             side_effect=LLMError("Invalid JSON")
         )
-        mock_llm_client.generate = AsyncMock(return_value="not valid json")
+        mock_llm_client.generate_with_tools = AsyncMock(return_value="not valid json")
 
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
         result = await agent.research_round_1(topic)
@@ -428,24 +450,23 @@ class TestResearchAgent:
         assert result.raw_response == "not valid json"
 
     @pytest.mark.asyncio
-    async def test_llm_failure_retry_once(
+    async def test_llm_failure_falls_back_to_generate_stream(
         self, profile, topic, mock_llm_client
     ):
-        """LLM.generate is called twice when first attempt fails."""
-        generate_mock = AsyncMock()
-        generate_mock.side_effect = [
-            LLMError("First attempt failed"),
-            json.dumps({
-                "summary": "S", "key_points": ["K"], "perspective": "P", "confidence": 0.5,
-            }),
-        ]
-        mock_llm_client.generate = generate_mock
+        """LLM.generate_with_tools failure falls back to generate_stream."""
+        mock_llm_client.generate_with_tools = AsyncMock(
+            side_effect=LLMError("Tool calling failed")
+        )
+        mock_llm_client.generate_stream = _make_mock_generate({
+            "summary": "S", "key_points": ["K"], "perspective": "P", "confidence": 0.5,
+        })
 
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
         result = await agent.research_round_1(topic)
 
         assert isinstance(result, Findings)
-        assert generate_mock.call_count == 2
+        assert mock_llm_client.generate_with_tools.call_count == 1
+        assert mock_llm_client.generate_stream.call_count >= 1
 
     # ── Personality differentiation ──────────────────────────────────────
 
@@ -456,7 +477,7 @@ class TestResearchAgent:
         """Two agents with different profiles should have different system prompts."""
         real_client = LLMClient(model="gpt-4o", timeout=10)
         mock_llm = MagicMock(spec=LLMClient)
-        mock_llm.generate = AsyncMock(
+        mock_llm.generate_with_tools = AsyncMock(
             return_value=json.dumps({
                 "summary": "S", "key_points": [], "perspective": "P", "confidence": 0.5,
             })
@@ -467,10 +488,10 @@ class TestResearchAgent:
         analytical_agent = ResearchAgent(profile=analytical_profile, llm_client=mock_llm)
 
         await creative_agent.research_round_1(topic)
-        creative_prompt = mock_llm.generate.call_args[1]["system_prompt"]
+        creative_prompt = mock_llm.generate_with_tools.call_args[1]["system_prompt"]
 
         await analytical_agent.research_round_1(topic)
-        analytical_prompt = mock_llm.generate.call_args[1]["system_prompt"]
+        analytical_prompt = mock_llm.generate_with_tools.call_args[1]["system_prompt"]
 
         assert creative_prompt != analytical_prompt
         assert "creative" in creative_prompt.lower()

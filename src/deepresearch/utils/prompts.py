@@ -50,12 +50,16 @@ def build_round_1_prompt(topic: str, time_budget: str) -> str:
         f"# Research Topic\n{topic}\n\n"
         f"# Time Budget\n{time_budget}\n\n"
         "## Instructions\n"
-        "Research the above topic independently. Provide:\n"
+        "Research the above topic independently. **Use the web_search tool "
+        "to find current information** — do not rely solely on your training "
+        "data.\n\n"
+        "Provide:\n"
         "1. A concise summary of your findings\n"
         "2. 3-5 key points or insights\n"
         "3. Your unique perspective on this topic\n"
         "4. Your confidence level in these findings (0.0–1.0)\n\n"
-        "Be thorough but efficient — respect the time budget."
+        "Be thorough but efficient — respect the time budget.\n"
+        "Cite your sources where possible."
     )
 
 

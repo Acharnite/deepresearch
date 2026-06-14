@@ -131,6 +131,41 @@ The `/api/models` endpoint auto-discovers models from ALL configured providers (
 
 ---
 
+## Tool Calling (Web Search)
+
+Research agents can search the web in real-time using DuckDuckGo via LiteLLM function calling — enabling them to access current information, recent developments, and external sources during research.
+
+### How It Works
+
+1. **`LLMClient.generate_with_tools()`** handles the multi-turn tool calling loop:
+   - Calls LiteLLM `acompletion()` with streaming and tools enabled
+   - If the LLM requests a tool call, the tool is executed and results are fed back
+   - The loop continues (up to **5 rounds**) until the LLM produces a final text response
+   - Falls back gracefully: streaming+tool failure → non-streaming retry → no-tools retry
+
+2. **`WEB_SEARCH_TOOL`** is a LiteLLM-compatible function-calling schema defined in `tools/web_search.py`:
+   - Name: `web_search`
+   - Required parameter: `query` (string)
+   - Optional parameter: `max_results` (integer, default 5)
+
+3. **`web_search()`** queries DuckDuckGo via `duckduckgo_search.DDGS`:
+   - Runs in a thread (`asyncio.to_thread()`) to avoid blocking the event loop
+   - Returns structured results: `[{title, snippet, url}, ...]`
+   - Returns an error dict on failure — never raises
+
+### Which Agents Use It
+
+- **ResearchAgent.research_round_1()** — the initial research pass now calls `generate_with_tools()` with `WEB_SEARCH_TOOL`. If the tool call fails, the agent falls back to generating without tools.
+- All 6 personality agents benefit: Curious Teenager, Skeptical Academic, Creative Artist, Pragmatic Engineer, Philosophical Thinker, and Data-Driven Analyst all search the web during Round 1.
+
+### Benefits
+
+- **Live facts** — agents access current information instead of relying solely on training data
+- **Graceful degradation** — if DuckDuckGo is unavailable or tool calling isn't supported by the model, research continues without errors
+- **Multiple queries** — the 5-round loop lets agents refine their search queries based on initial results
+
+---
+
 ## Installation
 
 DeepeResearch is part of the KodeHold project. You run it from the workspace directory.
@@ -347,6 +382,9 @@ workspaces/deepresearch/
 │       ├── output/
 │       │   ├── pdf_generator.py        # WeasyPrint PDF rendering
 │       │   └── templates/              # Jinja2 HTML + CSS templates
+│       │
+│       ├── tools/
+│       │   └── web_search.py           # DuckDuckGo web search tool (function calling)
 │       │
 │       ├── prompts/
 │       │   ├── research.py             # Research round prompt templates

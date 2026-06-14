@@ -437,6 +437,172 @@ class LLMClient:
 
         return full_text
 
+    async def generate_with_tools(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        tools: list[dict[str, Any]] | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Generate a response with tool calling support.
+
+        If the LLM calls a tool, the tool is executed and the result
+        is fed back, continuing until a final text response is given.
+
+        Currently supports: web_search
+
+        Args:
+            system_prompt: System-level prompt.
+            user_prompt: User prompt.
+            tools: List of LiteLLM tool definitions. If None, falls back to
+                :meth:`generate_stream`.
+            temperature: Sampling temperature.
+            max_tokens: Max output tokens.
+
+        Returns:
+            Final response text.
+        """
+        if not tools:
+            return await self.generate_stream(
+                system_prompt, user_prompt, temperature, max_tokens,
+            )
+
+        messages = self._build_messages(system_prompt, user_prompt)
+        full_text = ""
+        max_tool_rounds = 5  # Prevent infinite loops
+
+        for tool_round in range(max_tool_rounds):
+            kwargs = self._build_acompletion_kwargs(messages, temperature, max_tokens)
+            kwargs["tools"] = tools
+
+            from litellm import acompletion
+
+            # Tool calls accumulator: list of (id, name, args_json)
+            tool_calls: list[tuple[str, str, str]] = []
+            text_accumulated = False
+
+            try:
+                kwargs["stream"] = True
+                response = await acompletion(**kwargs)
+
+                async for chunk in response:
+                    delta = chunk.choices[0].delta if chunk.choices else None
+                    if not delta:
+                        continue
+
+                    # Text content
+                    if delta.content:
+                        full_text += delta.content
+                        text_accumulated = True
+                        if self.event_callback:
+                            await self.event_callback(
+                                {"type": "stream", "text": delta.content}
+                            )
+
+                    # Tool calls
+                    if delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            idx = tc.index if tc.index is not None else 0
+                            while len(tool_calls) <= idx:
+                                tool_calls.append(("", "", ""))
+
+                            tid, tname, targs = tool_calls[idx]
+                            if tc.id:
+                                tid = tc.id
+                            if tc.function and tc.function.name:
+                                tname = tc.function.name
+                            if tc.function and tc.function.arguments:
+                                targs += tc.function.arguments
+                            tool_calls[idx] = (tid, tname, targs)
+
+            except Exception as e:
+                logger.warning(
+                    "Tool calling with streaming failed (tool_round=%d, tools=%s): %s. "
+                    "Retrying without stream.",
+                    tool_round, [t.get("function", {}).get("name", "?") for t in (tools or [])],
+                    e, exc_info=True,
+                )
+                # Fallback: non-streaming
+                kwargs["stream"] = False
+                response = await acompletion(**kwargs)
+
+                text_content = response.choices[0].message.content or ""
+                full_text += text_content
+                if text_content:
+                    text_accumulated = True
+                    if self.event_callback:
+                        await self.event_callback(
+                            {"type": "stream", "text": text_content}
+                        )
+
+                raw_tool_calls = response.choices[0].message.tool_calls or []
+                for idx, tc in enumerate(raw_tool_calls):
+                    while len(tool_calls) <= idx:
+                        tool_calls.append(("", "", ""))
+                    args_str = tc.function.arguments if tc.function else ""
+                    tool_calls[idx] = (tc.id, tc.function.name if tc.function else "", args_str)
+
+                # Track usage from non-streaming response
+                self._track_usage(response)
+
+            if not tool_calls:
+                # No tool calls — this is the final response
+                break
+
+            # Build assistant message with tool calls (required by API spec)
+            assistant_tool_calls = [
+                {
+                    "id": tc_id,
+                    "type": "function",
+                    "function": {"name": tc_name, "arguments": tc_args},
+                }
+                for tc_id, tc_name, tc_args in tool_calls
+            ]
+            messages.append({
+                "role": "assistant",
+                "content": None,
+                "tool_calls": assistant_tool_calls,
+            })
+
+            # Execute tool calls
+            import json
+
+            from deepresearch.tools.web_search import (
+                web_search as _web_search,
+            )
+
+            for tool_id, tool_name, tool_args_str in tool_calls:
+                args = json.loads(tool_args_str) if tool_args_str else {}
+
+                logger.debug("Executing tool '%s' (round %d, query='%s')", tool_name, tool_round, args.get("query", ""))
+                if tool_name == "web_search":
+                    query = args.get("query", "")
+                    max_res = args.get("max_results", 5)
+                    results = await _web_search(query, max_res)
+                    result_text = json.dumps(results, ensure_ascii=False)
+
+                    # Add tool result to messages
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_id,
+                        "content": result_text,
+                    })
+                else:
+                    logger.warning("Unknown tool call: %s", tool_name)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_id,
+                        "content": f"Error: Unknown tool '{tool_name}'",
+                    })
+
+        if self.event_callback and full_text:
+            await self.event_callback(
+                {"type": "stream", "text": "\n\n[Final response complete]"}
+            )
+
+        return full_text
+
     def _track_usage(self, response: Any) -> None:
         """Track token usage and cost from the LLM response."""
         try:

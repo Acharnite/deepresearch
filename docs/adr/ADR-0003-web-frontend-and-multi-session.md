@@ -12,7 +12,7 @@ phase:
 
 Proposed
 
-**Version:** 1.2
+**Version:** 1.3
 **Last Updated:** 2026-06-14
 
 ## Context
@@ -118,7 +118,7 @@ Late-connecting SSE clients (dashboards opened after session start) need to see 
           info.event_history[:] = info.event_history[-500:]
       await _original_publish(event)
   ```
-- History is trimmed to the last 500 events to bound memory usage
+- History is trimmed to the last 500 events to bound memory usage (hard cap: **500 events max per session**)
 
 **SSE replay flow (`GET /api/sessions/{session_id}/events`):**
 1. Client subscribes to the session's EventBus queue

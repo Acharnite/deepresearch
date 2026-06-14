@@ -12,7 +12,7 @@ phase:
 
 Proposed
 
-**Version:** 1.2
+**Version:** 1.3
 **Last Updated:** 2026-06-14
 
 ## Context
@@ -126,6 +126,50 @@ Persistent file logging was added to supplement console output:
 - Log file is created relative to the project root, directory auto-created on server start
 - The root logger gets the file handler so all child loggers benefit
 
+### Tool Calling: Web Search via Function Calling
+
+Research agents now have live web search capability via LiteLLM function calling, enabling them to fetch current information from the internet during research rounds.
+
+#### Tool Definition
+
+`WEB_SEARCH_TOOL` (defined in `tools/web_search.py`) is a LiteLLM-compatible function-calling schema:
+
+- **Type:** `function`
+- **Name:** `web_search`
+- **Parameters:** `query` (string, required) — the search query; `max_results` (integer, optional, default 5) — number of results (1–10)
+- **Description:** Informs the LLM when to invoke the tool — for up-to-date facts, recent developments, or external sources
+
+#### `generate_with_tools()` Multi-Turn Flow
+
+`LLMClient.generate_with_tools()` (in `llm/client.py`) orchestrates the tool calling loop:
+
+1. **Build messages** — constructs the initial message list from system prompt + user prompt via `_build_messages()`
+2. **Streaming LLM call** — calls LiteLLM `acompletion()` with `stream=True` and the `tools` parameter; accumulates both text content and incremental tool call deltas from streaming chunks
+3. **Assemble tool calls** — streaming tool call deltas (partial ID, name, arguments) are pieced together by tracking `tc.index` across chunks
+4. **Execute tools** — if tool calls are present, the assistant message with `tool_calls` is appended, then each tool is executed sequentially. Currently only `web_search` is supported; unknown tools produce an error response fed back to the LLM
+5. **Feed results back** — tool results are appended as `tool` role messages with the matching `tool_call_id`
+6. **Repeat** — the loop continues (up to `max_tool_rounds = 5`) until the LLM produces a final text response without tool calls
+7. **Return** — the accumulated `full_text` is returned; if an `event_callback` is set, a `[Final response complete]` signal is published
+
+**Fallback behavior:**
+- If streaming with tools fails (model doesn't support streaming+tool calling), falls back to non-streaming `acompletion()`, extracts tool calls from `response.choices[0].message.tool_calls`, and tracks usage via `_track_usage()`
+- If no tools are provided (or empty list), falls back directly to `generate_stream()` — zero overhead when tool calling isn't needed
+- Errors are logged with `exc_info=True` including the current `tool_round` and list of tool names for debugging
+
+#### Web Search Execution
+
+The `web_search()` function:
+- Uses DuckDuckGo Search (`duckduckgo_search.DDGS`) via `asyncio.to_thread()` to avoid blocking the event loop
+- Returns structured results as a list of dicts: `[{title, snippet, url}, ...]`
+- Handles failures gracefully — returns an error dict (`{"title": "Search Error", "snippet": "Search failed: <msg>", "url": ""}`) instead of raising
+- Respects the `max_results` cap (default 5, max 10)
+
+#### ResearchAgent Integration
+
+- `ResearchAgent.research_round_1()` calls `generate_with_tools()` with `WEB_SEARCH_TOOL` instead of `_generate_with_retry()` — agents now search the web during their initial research pass
+- If the tool-enabled LLM call raises `LLMError`, the agent falls back to `_generate_with_retry()` without tools — ensuring research continues even if function calling fails unexpectedly
+- Response parsing remains unchanged: JSON → `Findings` with `summary`, `key_points`, `perspective`, `confidence`, and `raw_response`
+
 ## Consequences
 
 ### Positive
@@ -145,6 +189,9 @@ Persistent file logging was added to supplement console output:
 3. **File-based logging** — persistent DEBUG logs for troubleshooting without console capture
 4. **Clarification protocol reliability** — proper agent dispatch handles edge cases without crashing
 5. **Agent streaming output** — LLM chunks published as events for live dashboard rendering
+6. **Web search via function calling** — agents access live internet data during Round 1, producing more accurate and up-to-date findings
+7. **Multi-turn tool loop** — agents can make multiple search queries in a single generation (up to 5 rounds), refining queries based on prior results
+8. **Graceful tool fallback** — if function calling fails, agents continue without tools rather than crashing
 
 ### Negative
 1. No horizontal scaling (acceptable for 5-6 agents)
