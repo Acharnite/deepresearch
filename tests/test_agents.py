@@ -398,7 +398,11 @@ class TestResearchAgent:
     async def test_clarify_returns_response(
         self, profile, mock_llm_client
     ):
-        """clarify should return a ClarificationResponse."""
+        """clarify should return a ClarificationResponse (fallback path)."""
+        from deepresearch.llm.client import LLMError
+        mock_llm_client.generate_with_tools = AsyncMock(
+            side_effect=LLMError('Test: tools unavailable')
+        )
         mock_llm_client.generate_stream = _make_mock_generate({
             "response": "My analysis was based on recent peer-reviewed studies.",
         })

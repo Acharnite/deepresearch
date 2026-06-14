@@ -291,10 +291,22 @@ class ResearchAgent(BaseAgent):
         )
 
     async def clarify(self, query: ClarificationQuery) -> ClarificationResponse:
-        """Answer a clarification question from the scribe."""
+        """Answer a clarification question from the scribe — with web search."""
         user_prompt = build_clarify_prompt(query.question)
         user_prompt += _CLARIFY_FORMAT
-        response = await self._generate_with_retry(user_prompt)
+        user_prompt += "\nUse the web_search tool if you need up-to-date information."
+        try:
+            from deepresearch.tools.web_search import WEB_SEARCH_TOOL
+            response = await self.llm.generate_with_tools(
+                system_prompt=self._system_prompt,
+                user_prompt=user_prompt,
+                tools=[WEB_SEARCH_TOOL],
+                temperature=self.profile.temperature,
+                max_tokens=2048,
+            )
+        except LLMError:
+            logger.warning("Clarify with tools failed for '%s', retrying without", self.profile.id)
+            response = await self._generate_with_retry(user_prompt)
         data = self._try_parse_json(response, "clarify")
         return ClarificationResponse(
             agent_id=self.profile.id,

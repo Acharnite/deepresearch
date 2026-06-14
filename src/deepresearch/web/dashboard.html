@@ -1529,7 +1529,7 @@
     eventCountEl.textContent = eventCount + ' event' + (eventCount !== 1 ? 's' : '');
 
     const icon = EVENT_ICONS[eventType] || '📌';
-    const time = data.timestamp ? new Date(data.timestamp + 'Z').toTimeString().slice(0, 8) : timestamp();
+    const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : timestamp();
 
     let msg = eventType;
     if (eventType === 'session_start' && data.topic) msg = 'Session started — "' + data.topic + '"';
