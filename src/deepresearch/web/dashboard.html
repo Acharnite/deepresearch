@@ -367,7 +367,7 @@
   .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); }
   .empty-state h3 { font-size: 16px; margin-bottom: 8px; }
   .empty-state p { font-size: 13px; }
-  .progress-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: start; }
+  .progress-grid { display: grid; grid-template-columns: 1.3fr 1.3fr 1fr; gap: 12px; align-items: start; }
   .agent-column { min-width: 0; }
   .event-column { min-width: 0; }
 
@@ -1041,8 +1041,13 @@
   }
 
   // ── Elapsed time timer ──────────────────────────────
-  function startElapsedTimer() {
-    sessionStartTime = Date.now();
+  function startElapsedTimer(startTime) {
+    // Use server timestamp if available (survives page refresh)
+    if (startTime) {
+      sessionStartTime = new Date(startTime).getTime();
+    } else {
+      sessionStartTime = Date.now();
+    }
     if (elapsedTimer) clearInterval(elapsedTimer);
     elapsedTimer = setInterval(updateElapsed, 1000);
     updateElapsed(); // immediate first update
