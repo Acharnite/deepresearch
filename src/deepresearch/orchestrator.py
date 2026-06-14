@@ -13,10 +13,12 @@ testable without real LLM calls.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import random
 from datetime import datetime
 from pathlib import Path
+from collections.abc import Awaitable
 from typing import Any, Callable
 
 from rich.console import Console
@@ -49,8 +51,8 @@ console = Console()
 AgentFunc = Callable[..., Any]
 PromptFunc = Callable[..., str]
 
-# Maximum session wall-clock time in seconds (10 minutes).
-MAX_SESSION_DURATION = 600
+# Maximum session wall-clock time in seconds (30 minutes).
+MAX_SESSION_DURATION = 1800
 
 
 class Orchestrator:
@@ -380,6 +382,7 @@ class Orchestrator:
                                 round=round_num, result_chars=result_size,
                                 status="success")
             except asyncio.TimeoutError:
+                logger.warning("Agent '%s' timed out in Round %d (timeout=%ds)", agent_id, round_num, timeout)
                 self.handle_agent_failure(agent_id, "timeout")
             except Exception as e:
                 self.handle_agent_failure(agent_id, str(e))
@@ -486,29 +489,25 @@ class Orchestrator:
     ) -> dict[str, IndividualReport]:
         """Collect final individual reports from each agent.
 
-        If Round 2 results are available they are returned directly
-        (agents already produced their final reports in Round 2).
-        Otherwise each agent is called with its Round 1 findings.
+        If Round 2 results are available they are returned directly.
+        Otherwise, Round 1 findings are converted to IndividualReport
+        directly — no extra LLM calls needed.
         """
         if round_2:
             return round_2
 
-        timeout = self._get_timeout()
-        tasks: dict[str, asyncio.Task[Any]] = {}
-
-        for agent_id, agent_fn in agents.items():
+        results: dict[str, IndividualReport] = {}
+        for agent_id, findings in round_1.items():
             if agent_id in self.failed_agents:
                 continue
-            tasks[agent_id] = asyncio.create_task(
-                asyncio.wait_for(agent_fn(round_1.get(agent_id)), timeout=timeout),
+            results[agent_id] = IndividualReport(
+                agent_id=agent_id,
+                title=f"Report from {agent_id}",
+                perspective_summary=findings.summary,
+                key_insights=findings.key_points,
+                analysis=findings.raw_response or findings.summary,
+                full_text=findings.raw_response or findings.summary,
             )
-
-        results: dict[str, IndividualReport] = {}
-        for agent_id, task in tasks.items():
-            try:
-                results[agent_id] = await task
-            except Exception as e:
-                logger.warning("Failed to collect report from %s: %s", agent_id, e)
         return results
 
     # ------------------------------------------------------------------
@@ -548,9 +547,10 @@ class Orchestrator:
                 paper = await scribe(reports)
 
             self._log_event("scribe_end")
+            logger.info("Scribe compilation successful — %d sections", len(paper.sections) if paper.sections else 0)
             return paper
         except Exception as e:
-            logger.error("Scribe compilation failed: %s", e)
+            logger.error("Scribe compilation failed: %s", e, exc_info=True)
             return ResearchPaper(
                 title="Research Paper",
                 abstract="Compilation failed — partial results available.",
@@ -674,12 +674,14 @@ class Orchestrator:
             ``Path`` to the output PDF (or placeholder path in dry-run mode).
         """
         self._session_start_time = datetime.now()
+        logger.info("Session started — topic: %s", topic)
         self._log_event("session_start", topic=topic)
         console.print("\n[bold]🚀 DeepeResearch — Multi-Agent Research System[/bold]")
         console.print(f"[yellow]Topic:[/yellow] {topic}")
 
         config = await self.configure(topic, **overrides)
-
+        logger.info("Config validated — budget=%s, model_mode=%s",
+                     config.topic.time_budget, config.topic.model_mode)
         # Resolve output path.
         if "output_path" in overrides:
             output_path = Path(overrides["output_path"])
@@ -712,7 +714,8 @@ class Orchestrator:
 
         agents = self._build_agents(config, agent_factory)
         self._agents = agents  # Store for clarification routing.
-        scribe = self._build_scribe(scribe_factory)
+        scribe_cb = self._make_stream_callback("scribe")
+        scribe = self._build_scribe(scribe_factory, event_callback=scribe_cb)
 
         # Active agent IDs (excludes failed agents at each step).
         def active_agents() -> list[str]:
@@ -721,10 +724,11 @@ class Orchestrator:
         # ── Session-level timeout ──────────────────────────────────────
         session_timeout = min(
             MAX_SESSION_DURATION,
-            config.time_budget_seconds + 60,  # budget + 1 minute grace
+            config.time_budget_seconds * 4 + 300,  # generous: budget × 4 + 5min grace
         )
 
         # ── Session-level timeout wrapper ────────────────────────────
+        logger.info("Starting _run_session — session_timeout=%ds, agents=%d", session_timeout, len(agents))
         try:
             await asyncio.wait_for(
                 self._run_session(
@@ -773,23 +777,51 @@ class Orchestrator:
             config.topic,
         )
 
+        logger.info("Round 1 complete — %d/%d agents succeeded", len(round_1_results), len(agents))
         # Publish Round 1 findings to the collaboration bus.
         for agent_id, findings in round_1_results.items():
             await self.bus.publish_round_1(agent_id, findings)
+
+        # ── Save Round 1 findings to files for reuse ───────────────────
+        try:
+            agents_dir = output_path.parent / "agents"
+            agents_dir.mkdir(parents=True, exist_ok=True)
+            for agent_id, findings in round_1_results.items():
+                if findings is None:
+                    continue
+                agent_file = agents_dir / f"{agent_id}_round1.json"
+                agent_file.write_text(
+                    json.dumps({
+                        "agent_id": findings.agent_id,
+                        "round": findings.round,
+                        "summary": findings.summary,
+                        "key_points": findings.key_points,
+                        "perspective": findings.perspective,
+                        "confidence": findings.confidence,
+                        "raw_response": findings.raw_response,
+                    }, indent=2),
+                    encoding="utf-8",
+                )
+            logger.info("Saved %d Round 1 findings to %s", len(round_1_results), agents_dir)
+        except Exception as e:
+            logger.warning("Failed to save Round 1 findings: %s", e)
 
         # ── Collaboration ──────────────────────────────────────────────
         self.state = "COLLABORATING"
         console.print("\n[bold]Collaboration:[/bold] Sharing findings across agents")
         shared = await self.bus.compute_shared_knowledge()
+        logger.info("Collaboration complete — shared knowledge from %d agents", len(round_1_results))
         self._log_event("collaboration_phase", shared_agent_count=len(round_1_results))
 
         # ── Follow-up Questions ────────────────────────────────────────
         self.state = "FOLLOWUP"
         console.print("\n[bold]Follow-up:[/bold] Collecting follow-up questions")
+        logger.info("Follow-up: collecting questions from %d agents", len(active_agents()))
         followup_results = await self.collect_followup_questions(
             {aid: agents[aid] for aid in active_agents()},
             shared,
         )
+        logger.info("Follow-up complete — %d agents responded", len(followup_results))
 
         # Publish follow-up questions to the collaboration bus.
         for agent_id, questions in followup_results.items():
@@ -847,6 +879,7 @@ class Orchestrator:
             pass  # scribe model isn't stored in session_config
         self._log_event("scribe_start", report_count=report_count,
                         total_reports_chars=total_chars, model=scribe_model)
+        logger.info("Scribe compiling paper from %d reports (%d chars)", report_count, total_chars)
         paper = await self.compile(all_reports, scribe)
         self._current_paper = paper
 
@@ -926,25 +959,58 @@ class Orchestrator:
     # Agent / Scribe Construction
     # ------------------------------------------------------------------
 
-    @staticmethod
+    def _make_stream_callback(self, agent_id: str) -> Callable[[dict[str, Any]], Awaitable[None]]:
+        """Create an event callback that streams agent output via the event bus.
+
+        The returned async callable accepts stream chunks and publishes them
+        as ``agent_output`` events so the dashboard can render live text.
+        """
+        async def callback(data: dict[str, Any]) -> None:
+            if data.get("type") == "stream":
+                self._log_event(
+                    "agent_output",
+                    agent_id=agent_id,
+                    text=data.get("text", ""),
+                )
+        return callback
+
     def _build_agents(
+        self,
         config: SessionConfig,
         factory: Callable[[AgentProfile, str], AgentFunc],
     ) -> dict[str, AgentFunc]:
-        """Build agent callables via the injected factory."""
+        """Build agent callables via the injected factory.
+
+        Each agent gets a stream callback so that LLM output chunks are
+        published as ``agent_output`` events in real time.
+        """
         agents: dict[str, AgentFunc] = {}
         for profile in config.agent_profiles:
             model_name = config.agent_models.get(profile.id, "")
-            agents[profile.id] = factory(profile, model_name)
+            cb = self._make_stream_callback(profile.id)
+            agents[profile.id] = factory(profile, model_name, event_callback=cb)
         return agents
 
     @staticmethod
     def _build_scribe(
-        factory: Callable[[], AgentFunc] | None,
+        factory: Callable[..., AgentFunc] | None,
+        event_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> AgentFunc:
-        """Build the scribe callable via the injected factory, or use default."""
+        """Build the scribe callable via the injected factory, or use default.
+
+        Args:
+            factory: Factory callable. May accept an ``event_callback`` kwarg.
+            event_callback: Optional async callback for streaming output chunks.
+
+        Returns:
+            An ``AgentFunc`` (async callable) that produces the final paper.
+        """
         if factory is not None:
-            return factory()
+            try:
+                return factory(event_callback=event_callback)
+            except TypeError:
+                # The factory may not accept event_callback (e.g. mocks).
+                return factory()
         return Orchestrator._default_scribe
 
     @staticmethod

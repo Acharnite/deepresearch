@@ -93,7 +93,7 @@ def build_mock_agent_factory():
       - Report writing (no matching pattern) → IndividualReport
     """
 
-    def factory(profile: AgentProfile, model_name: str):
+    def factory(profile: AgentProfile, model_name: str, **extra):
         async def agent_fn(*args, **kwargs):
             first = args[0] if args else None
 
@@ -165,7 +165,7 @@ def build_mock_agent_factory():
 def build_mock_scribe_factory():
     """Factory producing a mock scribe that returns a ResearchPaper."""
 
-    def factory():
+    def factory(**extra):
         async def scribe(reports: dict[str, IndividualReport]) -> ResearchPaper:
             agent_list = "\n".join(
                 f"- {r.title} by {r.agent_id}" for r in reports.values()
@@ -500,7 +500,7 @@ class TestCollaborationBusIntegration:
     ):
         """One agent failing shouldn't break bus for other agents."""
 
-        def failing_factory(profile, model_name):
+        def failing_factory(profile, model_name, **extra):
             async def agent_fn(*args, **kwargs):
                 if profile.id == "agent-alpha":
                     raise RuntimeError("Alpha failure")
@@ -527,7 +527,7 @@ class TestCollaborationBusIntegration:
                 )
             return agent_fn
 
-        def sf():
+        def sf(**extra):
             async def scribe(reports):
                 return ResearchPaper(
                     title="P", abstract="A", methodology_note="M",

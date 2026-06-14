@@ -532,7 +532,7 @@ class TestSessionTimeout:
         # Use same pattern as the existing orchestrator test for quick mode.
         from deepresearch.models import ResearchPaper
 
-        def mock_agent_factory(profile, model_name):
+        def mock_agent_factory(profile, model_name, **extra):
             async def agent_fn(*args, **kwargs):
                 return Findings(
                     agent_id=profile.id, round=1, summary="S",
@@ -540,7 +540,7 @@ class TestSessionTimeout:
                 )
             return agent_fn
 
-        def mock_scribe_factory():
+        def mock_scribe_factory(**extra):
             async def scribe(reports):
                 return ResearchPaper(title="P", abstract="A", methodology_note="M",
                                      sections=[], synthesis="S", key_takeaways=["T"],

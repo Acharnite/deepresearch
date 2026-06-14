@@ -8,7 +8,8 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any
+from collections.abc import Awaitable
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,7 @@ class LLMClient:
         timeout: int = 60,
         provider: str | None = None,
         api_base: str | None = None,
+        event_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> None:
         """Initialize the LLM client.
 
@@ -180,6 +182,9 @@ class LLMClient:
             provider: Explicit provider name (e.g. ``"openrouter"``).
                 Overrides auto-detection from the model prefix.
             api_base: Explicit API base URL. Overrides auto-detection.
+            event_callback: Async callable invoked with each streamed chunk
+                ``{"type": "stream", "text": "..."}`` during
+                ``generate_stream``.  ``None`` disables streaming callbacks.
         """
         self.model = model
         self.timeout = timeout
@@ -187,6 +192,7 @@ class LLMClient:
         self.api_base: str | None = None
         self.endpoint: str | None = None
         self.actual_model: str = model
+        self.event_callback = event_callback
 
         # ── Parse endpoint-routed providers (e.g., opencode/go/deepseek-v4-flash) ──
         if self.provider and self.provider in PROVIDER_ROUTES:
@@ -253,6 +259,14 @@ class LLMClient:
                 return os.environ.get(env_var)
         return None
 
+    @staticmethod
+    def _build_messages(system_prompt: str, user_prompt: str) -> list[dict[str, str]]:
+        """Build the messages list for a LiteLLM completion call."""
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
     async def generate(
         self,
         system_prompt: str,
@@ -277,10 +291,7 @@ class LLMClient:
         Raises:
             LLMError: If all retries fail or the request times out.
         """
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ]
+        messages = self._build_messages(system_prompt, user_prompt)
 
         last_exception: Exception | None = None
 
@@ -320,23 +331,18 @@ class LLMClient:
             f"{last_exception}"
         )
 
-    async def _acompletion(
+    def _build_acompletion_kwargs(
         self,
         messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int | None,
-    ) -> Any:
-        """Perform the actual LiteLLM acompletion call.
+    ) -> dict[str, Any]:
+        """Build the keyword-arguments dict for ``litellm.acompletion``.
 
-        Imported lazily to avoid import errors if litellm is not installed.
+        Shared by :meth:`_acompletion` (non-streaming) and
+        :meth:`generate_stream` (streaming) so that both paths use the
+        same provider routing and model prefix logic.
         """
-        try:
-            from litellm import acompletion
-        except ImportError as e:
-            raise LLMError(
-                "LiteLLM is not installed. Install it with: pip install litellm"
-            ) from e
-
         # OpenAI-compatible providers (e.g., opencode.ai) need "openai/" prefix
         if self.openai_compatible:
             litellm_model = f"openai/{self.actual_model}"
@@ -354,8 +360,82 @@ class LLMClient:
             kwargs["api_base"] = self.api_base
         if self.api_key:
             kwargs["api_key"] = self.api_key
+        return kwargs
 
+    async def _acompletion(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int | None,
+    ) -> Any:
+        """Perform the actual LiteLLM acompletion call (non-streaming).
+
+        Imported lazily to avoid import errors if litellm is not installed.
+        """
+        try:
+            from litellm import acompletion
+        except ImportError as e:
+            raise LLMError(
+                "LiteLLM is not installed. Install it with: pip install litellm"
+            ) from e
+
+        kwargs = self._build_acompletion_kwargs(messages, temperature, max_tokens)
         return await acompletion(**kwargs)
+
+    async def generate_stream(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+    ) -> str:
+        """Generate a response with streaming.
+
+        Each text chunk is sent via ``self.event_callback`` as
+        ``{"type": "stream", "text": chunk}``.  Falls back to
+        non-streaming :meth:`generate` if the streaming call fails.
+
+        Args:
+            system_prompt: The system-level instruction prompt.
+            user_prompt: The user-specific prompt.
+            temperature: Sampling temperature (0.0–1.0).
+            max_tokens: Maximum tokens in the response (``None`` = model default).
+
+        Returns:
+            The full generated text.
+        """
+        messages = self._build_messages(system_prompt, user_prompt)
+        full_text = ""
+
+        try:
+            from litellm import acompletion
+
+            kwargs = self._build_acompletion_kwargs(messages, temperature, max_tokens)
+            kwargs["stream"] = True
+
+            response = await acompletion(**kwargs)
+
+            async for chunk in response:
+                delta = ""
+                if hasattr(chunk, "choices") and chunk.choices:
+                    delta = chunk.choices[0].delta.content or ""
+                full_text += delta
+
+                if self.event_callback and delta:
+                    await self.event_callback({"type": "stream", "text": delta})
+
+        except Exception as e:
+            logger.warning(
+                "Streaming failed, falling back to non-streaming: %s", e
+            )
+            result = await self.generate(
+                system_prompt, user_prompt, temperature, max_tokens,
+            )
+            if self.event_callback and result:
+                await self.event_callback({"type": "stream", "text": result})
+            return result
+
+        return full_text
 
     def _track_usage(self, response: Any) -> None:
         """Track token usage and cost from the LLM response."""

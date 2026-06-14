@@ -12,8 +12,8 @@ phase:
 
 Proposed
 
-**Version:** 1.2
-**Last Updated:** 2026-06-13
+**Version:** 1.3
+**Last Updated:** 2026-06-14
 
 ## Context
 
@@ -147,22 +147,76 @@ The LLMClient (`llm/client.py`) auto-detects the provider from the model ID usin
 
 ```python
 PROVIDER_ROUTES = {
-    "opencode":   {"api_base": "https://api.opencode.ai/v1",    "api_key_env": "OPENCODE_API_KEY"},
+    "opencode": {
+        "type": "endpoint_routed",
+        "api_key_env": "OPENCODE_API_KEY",
+        "openai_compatible": True,
+        "endpoints": {
+            "go": "https://opencode.ai/zen/go/v1",
+            "zen": "https://opencode.ai/zen/v1",
+        },
+    },
     "openrouter": {"api_base": "https://openrouter.ai/api/v1",   "api_key_env": "OPENROUTER_API_KEY"},
     "groq":       {"api_base": "https://api.groq.com/openai/v1", "api_key_env": "GROQ_API_KEY"},
     "together":   {"api_base": "https://api.together.xyz/v1",    "api_key_env": "TOGETHER_API_KEY"},
     "deepseek":   {"api_base": "https://api.deepseek.com/v1",    "api_key_env": "DEEPSEEK_API_KEY"},
     "cohere":     {"api_base": "https://api.cohere.ai/v1",       "api_key_env": "COHERE_API_KEY"},
-    "google":     {"api_base": "https://generativelanguage.googleapis.com/v1", "api_key_env": "GOOGLE_API_KEY"},
-    "anthropic":  {"api_base": "https://api.anthropic.com/v1",   "api_key_env": "ANTHROPIC_API_KEY"},
+    "gemini":     {"api_base": "https://generativelanguage.googleapis.com", "api_key_env": "GEMINI_API_KEY"},
+    "anthropic":  {"api_base": "https://api.anthropic.com",      "api_key_env": "ANTHROPIC_API_KEY"},
     "ollama":     {"api_base": "http://localhost:11434",          "api_key_env": None},
 }
 ```
 
-- `LLMClient.__init__` extracts the prefix from the model ID (e.g., `opencode/go` → `opencode`)
-- It looks up the prefix in `PROVIDER_ROUTES` and passes `api_base` + `api_key` to LiteLLM
-- Supports a `provider` override parameter for cases like `openrouter/opencode/go` where the prefix is `openrouter` and the model is passed as-is
-- No manual provider configuration needed — just use the right model ID prefix
+#### 3-Part Model ID Format (Endpoint-Routed Providers)
+
+Opencode AI uses a **3-part model ID format** to simultaneously specify provider, endpoint, and model:
+
+```
+opencode/{endpoint}/{model-name}
+```
+
+| Model ID | Endpoint | Actual Model Passed to LiteLLM |
+|----------|----------|-------------------------------|
+| `opencode/go/deepseek-v4-flash` | Go (`https://opencode.ai/zen/go/v1`) | `deepseek-v4-flash` |
+| `opencode/zen/claude-sonnet-4` | Zen (`https://opencode.ai/zen/v1`) | `claude-sonnet-4` |
+
+**Resolution logic in `LLMClient.__init__`:**
+1. Extract the prefix (`opencode`) → look up in `PROVIDER_ROUTES`
+2. Detect `"type": "endpoint_routed"` → parse the second segment as the endpoint name
+3. The third segment becomes the `actual_model` passed to LiteLLM
+4. If the provider is marked `openai_compatible`, the model is prefixed with `openai/` for LiteLLM (e.g., `openai/deepseek-v4-flash`)
+5. The `api_base` is set to the endpoint's URL, and `api_key` is read from `OPENCODE_API_KEY`
+
+**Provider override:** A `provider` parameter can override auto-detection. For example, `provider="openrouter"` with `model="opencode/zen/claude-sonnet-4"` routes through OpenRouter's API base instead of Opencode's.
+
+**Standard providers** (non-endpoint-routed) use a simpler 2-part format: `{provider}/{model-name}` (e.g., `groq/llama-3.3-70b`). The prefix maps directly to `api_base` and `api_key_env`.
+
+No manual provider configuration needed — just use the right model ID prefix.
+
+### Agent Streaming Output: generate_stream()
+
+Agent LLM responses are now streamed in real-time for live dashboard rendering:
+
+**Core method — `LLMClient.generate_stream()`:**
+- Calls LiteLLM's `acompletion()` with `stream=True`
+- Iterates over async chunks and delivers each text delta to an optional `event_callback`
+- The callback receives `{"type": "stream", "text": "<chunk>"}` dicts
+
+**Fallback behavior:**
+- If streaming fails (network error, model doesn't support streaming, etc.), `generate_stream()` falls back to `generate()` (non-streaming)
+- The full response is delivered as a single chunk via the callback
+- This ensures streaming is never a blocker — agents work regardless of streaming support
+
+**Integration with orchestrator:**
+- `Orchestrator._make_stream_callback(agent_id)` creates a callback per agent
+- Callbacks publish chunks as `agent_output` events to the `EventBus`
+- The dashboard listens for `agent_output` events and appends text to per-agent panels
+- Agents and scribe both use `generate_stream()` — see `ResearchAgent._generate_with_retry()` and `ScribeAgent.compile()` which call `generate_stream()` internally
+
+**Benefits:**
+- Users see live text as agents generate responses (not just state transitions)
+- Long-running scribe compilations (2-5 minutes) become transparent
+- Fallback guarantees no regression if streaming is unavailable
 
 ### Model Connectivity Check: Pre-Flight Validation
 
@@ -207,17 +261,20 @@ The `/api/models` endpoint in `server.py` goes beyond the curated `models.yaml`:
 
 ### Opencode AI Provider
 
-Opencode AI is added as the 9th supported provider:
+Opencode AI is added as the 9th supported provider, with a dual-endpoint architecture:
 
 - **Environment variable**: `OPENCODE_API_KEY`
-- **API base**: `https://api.opencode.ai/v1`
-- **Default model**: `opencode/go` (the new system default)
-- **Secondary model**: `opencode/zen`
-- **OpenRouter access**: also available as `openrouter/opencode/go` and `openrouter/opencode/zen`
+- **Go endpoint**: `https://opencode.ai/zen/go/v1` — used via `opencode/go/{model-name}` (default)
+- **Zen endpoint**: `https://opencode.ai/zen/v1` — used via `opencode/zen/{model-name}`
+- **Default model**: `opencode/go/deepseek-v4-flash` (the new system default)
+- **Secondary model**: `opencode/zen/claude-sonnet-4`
+- **OpenRouter access**: also available via `openrouter/opencode/go/{model}` and `openrouter/opencode/zen/{model}`
 - **Cost**: free tier (cost rate 0.0 in `client.py`)
 - **Settings manager**: registered in `setting_manager.PROVIDERS` dict alongside the 8 existing providers
+- **Model auto-discovery**: both Go and Zen endpoints have model listing APIs (`/v1/models`) that auto-discover available models
+- **OpenAI-compatible**: models use `openai/` prefix for LiteLLM compatibility
 
-Becoming the default model means new users can run research immediately with just an Opencode AI key — no other provider configuration needed.
+Becoming the default means new users can run research immediately with just an Opencode AI key — no other provider configuration needed. The Go/zen split allows routing to different model families through the same provider.
 
 ### API Key Management: UI + Local .env File
 
@@ -244,6 +301,9 @@ Becoming the default model means new users can run research immediately with jus
 12. **Model auto-discovery** — users see all available models from all configured providers in one list
 13. **Opencode AI default** — free tier enables immediate research with just one API key
 14. **9 providers** — broadest model selection across cloud and local backends
+15. **Live agent streaming** — users see real-time text generation in the dashboard, not just state transitions
+16. **Streaming fallback** — `generate_stream()` degrades gracefully to `generate()` if streaming is unavailable
+17. **Dual Opencode endpoints** — Go and Zen offer different model families through the same API key
 
 ### Negative
 1. **Token overhead** — 5-component prompt consumes more tokens than single system prompt (~200-300 extra tokens per call)
@@ -254,6 +314,8 @@ Becoming the default model means new users can run research immediately with jus
 6. **Connectivity check adds latency** — each session start is delayed by up to 15s for the pre-flight test
 7. **Provider API discovery timeout** — if a provider API is slow, model loading may be delayed (5s per provider)
 8. **Model ID prefix collisions** — if a model ID doesn't match any known prefix, it falls through to default OpenAI routing, which may be unexpected
+9. **3-part model IDs are verbose** — `opencode/go/deepseek-v4-flash` is longer and more complex than simple provider prefixes
+10. **Streaming adds server load** — per-chunk events increase EventBus publish volume and SSE bandwidth
 
 ### Neutral
 1. Temperature + Voice combo is the primary personality lever

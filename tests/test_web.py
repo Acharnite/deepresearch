@@ -745,8 +745,8 @@ async def test_orchestrator_custom_time_budget() -> None:
     orch = Orchestrator(
         profiles=profiles,
         model_configs=[{"id": "gpt-4o", "provider": "openai", "display_name": "GPT-4o", "default": True}],
-        agent_factory=lambda p, m: lambda **kw: None,
-        scribe_factory=lambda: lambda **kw: None,
+        agent_factory=lambda p, m, **extra: lambda **kw: None,
+        scribe_factory=lambda **extra: lambda **kw: None,
     )
 
     config = await orch.configure(

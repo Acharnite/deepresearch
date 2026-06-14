@@ -242,6 +242,10 @@
   .agent-pct { font-size: 12px; width: 36px; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   .agent-status-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
 
+  /* ── Agent Output (live stream panel) ──────────────── */
+  .agent-output { margin: 0 8px 8px 48px; background: var(--surface-2); border-radius: 4px; max-height: 200px; overflow-y: auto; }
+  .agent-output-text { margin: 0; padding: 8px; font-size: 12px; font-family: monospace; white-space: pre-wrap; word-break: break-word; color: var(--text); }
+
   /* ── Event Log ─────────────────────────────────────── */
   .event-log { height: 300px; overflow-y: auto; padding: 8px; }
   .event-log::-webkit-scrollbar { width: 6px; }
@@ -857,7 +861,9 @@
     collaboration_phase: '🤝', scribe_start: '📝', scribe_end: '✅',
     pdf_generated: '📄', session_end: '🏁', agent_failed: '❌',
     session_timeout: '⏰', config_validated: '⚙', models_assigned: '📋',
-    session_error: '💥', pipeline_summary: '📊',
+    session_error: '💥',
+    agent_output: '💬',
+    followup_start: '❓', followup_complete: '✅', round2_skip: '⏭', reports_collected: '📋', pipeline_summary: '📊',
   };
   const STATE_BADGE_CLASSES = {
     IDLE: 'badge-idle', CONFIGURING: 'badge-configuring',
@@ -1256,7 +1262,7 @@
     const topic = data.topic || currentTopic;
 
     if (topic) currentTopic = topic;
-    if (state) updateState(state);
+    updateState(state);
 
     if (currentTopic) {
       topicDisplay.textContent = currentTopic.length > 60 ? currentTopic.slice(0, 60) + '…' : currentTopic;
@@ -1319,6 +1325,19 @@
       const aid = data.agent_id;
       if (agents[aid]) { agents[aid].progress = 0; agents[aid].status = 'failed'; }
       renderAgents();
+    }
+
+    if (eventType === 'agent_output') {
+      const aid = data.agent_id;
+      const text = data.text || '';
+      if (!aid || !text) return;
+      const panel = document.getElementById('agent-output-' + aid);
+      const pre = panel ? panel.querySelector('.agent-output-text') : null;
+      if (pre) {
+        panel.style.display = 'block';
+        pre.textContent += text;
+        panel.scrollTop = panel.scrollHeight;
+      }
     }
 
     if (eventType === 'collaboration_phase') {
@@ -1390,6 +1409,9 @@
         <div class="agent-bar-wrap"><div class="agent-bar-bg"><div class="${barClass}" style="width:${pct}%"></div></div></div>
         <span class="agent-pct">${Math.round(pct)}%</span>
         <span class="agent-status-icon">${statusIcon}</span>
+      </div>
+      <div class="agent-output" id="agent-output-${id}" style="display:none;">
+        <pre class="agent-output-text"></pre>
       </div>`;
     }
     agentList.innerHTML = html;
@@ -1418,6 +1440,10 @@
     else if (eventType === 'scribe_end') msg = 'Scribe compilation complete';
     else if (eventType === 'config_validated') msg = 'Configuration validated';
     else if (eventType === 'models_assigned') msg = 'Models assigned to agents';
+    else if (eventType === 'followup_start') msg = 'Follow-up phase started (' + (data.active_agents || '?') + ' agents)';
+    else if (eventType === 'followup_complete') msg = 'Follow-up complete (' + (data.results || '?') + ' responses)';
+    else if (eventType === 'round2_skip') msg = 'Round 2 skipped (' + (data.budget || '?') + ' mode)';
+    else if (eventType === 'reports_collected') msg = 'Reports collected from ' + (data.count || '?') + ' agents';
     else if (eventType === 'pipeline_summary') msg = '📊 Pipeline complete: ' + (data.total_agents || '?') + ' agents, ' + (data.failed_agents ? data.failed_agents.length + ' failed' : '0 failed') + ', ' + data.elapsed + 's';
 
     const empty = document.getElementById('emptyLog');

@@ -12,8 +12,8 @@ phase:
 
 Proposed
 
-**Version:** 1.1
-**Last Updated:** 2026-06-13
+**Version:** 1.2
+**Last Updated:** 2026-06-14
 
 ## Context
 
@@ -81,6 +81,51 @@ In addition to the CLI-only original design, users requested a **web frontend** 
 - Max 20 concurrent sessions with auto-cleanup of oldest completed
 - Per-session output directories (`./output/{session_id}/`)
 
+### Simplified Pipeline: Round 1 → Collaboration → Scribe → PDF
+The pipeline was simplified from the original 6-phase flow to a streamlined default:
+
+```
+Round 1 (all agents) → Collaboration (shared knowledge) 
+  → Follow-up Questions → [Round 2 if medium/deep] 
+  → Collect Reports → Scribe Compilation → PDF
+```
+
+Key simplifications:
+- **`collect_reports` direct conversion** — When Round 2 is skipped (quick/custom budgets), `collect_reports()` converts `Findings` directly to `IndividualReport` objects with zero extra LLM calls. The findings' `summary`, `key_points`, and `raw_response` fields are mapped directly to report fields.
+- **Round 2 skip for quick/custom** — Budgets `"quick"` and `"custom"` skip Round 2 entirely, saving tokens and time. Only `"medium"` and `"deep"` budgets run a second round.
+- **Agent dispatch pattern** — The `AgentRegistry.agent_factory()` returns a single `dispatch()` callable that routes to the correct lifecycle method based on argument types (ResearchTopic → Round 1, SharedKnowledge → Review, 2 args → Round 2, Findings → Report, ClarificationQuery → Clarify).
+
+### Clarification Protocol Error Handling
+The scribe's clarification protocol now properly handles agent dispatch:
+- `Orchestrator._handle_clarification()` looks up agents by ID in `self._agents` dict
+- The dispatcher in `AgentRegistry.agent_factory` recognizes `ClarificationQuery` instances and routes to the agent's `clarify()` method
+- If the agent is unavailable or fails, a default `ClarificationResponse` is returned instead of crashing
+- Maximum 5 clarification rounds per agent per session (`_MAX_CLARIFICATION_ROUNDS = 5`)
+- Mixed-type dispatch handles edge cases where agents have different method signatures
+
+### Simplified collect_reports: Direct Findings Conversion
+`collect_reports()` no longer requires extra LLM calls for agents that skipped Round 2:
+- If `round_2` results exist, they are returned directly
+- Otherwise, each agent's Round 1 `Findings` is converted to an `IndividualReport` by mapping fields: `summary → perspective_summary`, `key_points → key_insights`, `raw_response → analysis/full_text`
+- This dramatically reduces token consumption for quick/custom budget sessions
+
+### Session Timeout: budget × 4 + 300s
+The session timeout calculation was revised for reliability:
+- **Before:** `time_budget_seconds + 60` (tight grace period, causing frequent timeouts)
+- **After:** `time_budget_seconds × 4 + 300` (generous: 4× budget + 5 min grace)
+- Capped at `MAX_SESSION_DURATION = 1800` seconds (30 minutes)
+- Per-agent round timeout: half the total budget per round, minimum 30 seconds
+- This accommodates the scribe's longer processing time (300s timeout for scribe LLM calls)
+
+### File-Based Logging
+Persistent file logging was added to supplement console output:
+- **Log file:** `logs/deepresearch.log`
+- **Rotation:** 10 MB per file, up to 5 backups (`RotatingFileHandler`)
+- **Level:** DEBUG (captures all deepresearch.* logger activity)
+- **Format:** `%(asctime)s [%(levelname)s] %(name)s: %(message)s`
+- Log file is created relative to the project root, directory auto-created on server start
+- The root logger gets the file handler so all child loggers benefit
+
 ## Consequences
 
 ### Positive
@@ -94,13 +139,21 @@ In addition to the CLI-only original design, users requested a **web frontend** 
 8. **Concurrent sessions** for power users and comparison studies
 9. **Session history** — completed sessions remain viewable in the UI
 
+### Positive (Post-Iteration)
+1. **Simplified pipeline** — direct Findings→Report conversion removes unnecessary LLM calls for quick/custom budgets
+2. **Robust session timeout** — budget × 4 + 300s prevents premature timeouts on long-running scribe calls
+3. **File-based logging** — persistent DEBUG logs for troubleshooting without console capture
+4. **Clarification protocol reliability** — proper agent dispatch handles edge cases without crashing
+5. **Agent streaming output** — LLM chunks published as events for live dashboard rendering
+
 ### Negative
 1. No horizontal scaling (acceptable for 5-6 agents)
 2. Single point of failure (mitigation: optional checkpointing in v1.1)
-3. No streaming (deferred to v2.0)
-4. Python GIL (not a concern — all I/O-bound)
-5. **More memory per session** — each session holds EventBus events, output directory state
-6. **Session cleanup needed** — completed sessions must be pruned to avoid memory leak
+3. Python GIL (not a concern — all I/O-bound)
+4. **More memory per session** — each session holds EventBus events, output directory state
+5. **Session cleanup needed** — completed sessions must be pruned to avoid memory leak
+6. **File logs may grow quickly** — DEBUG-level logging with 10MB rotation may still rotate often on active servers
+7. **Event history buffer adds memory** — 500 events per session for SSE replay could accumulate with many concurrent sessions
 
 ### Neutral
 1. Collaboration bus is in-memory (acceptable for v1.0)

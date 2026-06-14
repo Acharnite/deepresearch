@@ -17,6 +17,7 @@ from typing import Any, Callable, Coroutine
 
 from deepresearch.agents.base_agent import BaseAgent
 from deepresearch.llm.client import LLMClient, LLMError
+from deepresearch.llm.client import LLMError
 from deepresearch.models import (
     ClarificationQuery,
     ClarificationResponse,
@@ -135,7 +136,9 @@ class ScribeAgent(BaseAgent):
         Returns:
             A structured ``ResearchPaper`` with all required sections.
         """
+        logger.info("Scribe compile starting — %d reports, ~%d chars", len(reports), sum(len(str(r)) for r in reports.values()))
         reports_text = self._format_reports(reports)
+        logger.debug("Scribe formatted reports: %d chars in prompt", len(reports_text))
         user_prompt = (
             "# Compile Research Paper\n\n"
             f"The following are individual reports from {len(reports)} "
@@ -147,13 +150,15 @@ class ScribeAgent(BaseAgent):
         user_prompt += _COMPILE_FORMAT
 
         try:
-            response = await self.llm.generate(
+            logger.debug("Scribe calling LLM (stream=%s)...", hasattr(self.llm, 'generate_stream'))
+            response = await self.llm.generate_stream(
                 system_prompt=self._system_prompt,
                 user_prompt=user_prompt,
                 temperature=0.3,
             )
+            logger.debug("Scribe LLM response received: %d chars", len(response))
         except LLMError as exc:
-            logger.warning("Scribe LLM call failed, returning minimal paper. Error: %s", exc)
+            logger.error("Scribe LLM call failed, returning minimal paper. Error: %s", exc)
             return self._fallback_paper(reports)
 
         data = self._try_parse_json(response, "compile")
@@ -196,9 +201,16 @@ class ScribeAgent(BaseAgent):
 
         while total_rounds < max_total_rounds:
             # Ask the scribe LLM to identify claims needing clarification.
-            query_data = await self._identify_clarification_needs(
-                paper, reports, clarifications_per_agent
-            )
+            try:
+                query_data = await self._identify_clarification_needs(
+                    paper, reports, clarifications_per_agent
+                )
+            except LLMError as _exc:
+                logger.warning("Clarification identification failed (LLM error), stopping: %s", _exc)
+                break
+            except Exception as _exc:
+                logger.warning("Clarification identification failed, stopping: %s", _exc)
+                break
             if query_data is None:
                 break  # No more clarifications needed.
 
@@ -218,9 +230,13 @@ class ScribeAgent(BaseAgent):
                 continue
 
             # Ask the agent for clarification.
-            response = await self._clarify_claim(
-                claim, agent_id, context, clarification_fn
-            )
+            try:
+                response = await self._clarify_claim(
+                    claim, agent_id, context, clarification_fn
+                )
+            except Exception as _exc:
+                logger.warning("Clarification request to agent '%s' failed: %s", agent_id, _exc)
+                break
             if response is None:
                 break
 
@@ -230,9 +246,13 @@ class ScribeAgent(BaseAgent):
             total_rounds += 1
 
             # Incorporate the clarification into the paper by re-compiling.
-            paper = await self._recompile_with_clarification(
-                paper, agent_id, claim, response
-            )
+            try:
+                paper = await self._recompile_with_clarification(
+                    paper, agent_id, claim, response
+                )
+            except LLMError as _exc:
+                logger.warning("Recompilation with clarification failed, stopping: %s", _exc)
+                break
 
         return paper
 
@@ -287,7 +307,7 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
 """
 
         try:
-            response = await self.llm.generate(
+            response = await self.llm.generate_stream(
                 system_prompt=self._system_prompt,
                 user_prompt=prompt,
                 temperature=0.3,
@@ -371,7 +391,7 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
         prompt += _COMPILE_FORMAT
 
         try:
-            response = await self.llm.generate(
+            response = await self.llm.generate_stream(
                 system_prompt=self._system_prompt,
                 user_prompt=prompt,
                 temperature=0.3,
@@ -443,7 +463,7 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
         )
         user_prompt += _CLARIFY_FORMAT
         try:
-            response = await self.llm.generate(
+            response = await self.llm.generate_stream(
                 system_prompt=self._system_prompt,
                 user_prompt=user_prompt,
                 temperature=0.3,

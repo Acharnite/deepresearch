@@ -509,7 +509,7 @@ class TestScribeAgent:
         self, reports, mock_llm_client
     ):
         """compile should produce a ResearchPaper from agent reports."""
-        mock_llm_client.generate = _make_mock_generate({
+        mock_llm_client.generate_stream = _make_mock_generate({
             "title": "Synthesis Report",
             "abstract": "This paper synthesises perspectives on AI in healthcare.",
             "methodology_note": "Multi-agent research approach.",
@@ -546,7 +546,7 @@ class TestScribeAgent:
         self, reports, mock_llm_client
     ):
         """The compile prompt should include all agent reports."""
-        mock_llm_client.generate = _make_mock_generate({
+        mock_llm_client.generate_stream = _make_mock_generate({
             "title": "Paper", "abstract": "A", "methodology_note": "M",
             "sections": [], "synthesis": "S",
             "key_takeaways": [], "conclusion": "C", "appendices": [],
@@ -555,7 +555,7 @@ class TestScribeAgent:
 
         await agent.compile(reports)
 
-        call_kwargs = mock_llm_client.generate.call_args[1]
+        call_kwargs = mock_llm_client.generate_stream.call_args[1]
         user_prompt = call_kwargs["user_prompt"]
         assert "agent-a" in user_prompt
         assert "agent-b" in user_prompt
@@ -566,7 +566,7 @@ class TestScribeAgent:
         self, reports, mock_llm_client
     ):
         """compile should return a minimal paper when LLM fails."""
-        mock_llm_client.generate = AsyncMock(side_effect=LLMError("LLM down"))
+        mock_llm_client.generate_stream = AsyncMock(side_effect=LLMError("LLM down"))
         agent = ScribeAgent(llm_client=mock_llm_client)
         paper = await agent.compile(reports)
 
@@ -579,7 +579,7 @@ class TestScribeAgent:
         self, reports, mock_llm_client
     ):
         """Scribe should always use temperature 0.3."""
-        mock_llm_client.generate = _make_mock_generate({
+        mock_llm_client.generate_stream = _make_mock_generate({
             "title": "P", "abstract": "A", "methodology_note": "M",
             "sections": [], "synthesis": "S",
             "key_takeaways": [], "conclusion": "C", "appendices": [],
@@ -588,7 +588,7 @@ class TestScribeAgent:
 
         await agent.compile(reports)
 
-        call_kwargs = mock_llm_client.generate.call_args[1]
+        call_kwargs = mock_llm_client.generate_stream.call_args[1]
         assert call_kwargs["temperature"] == 0.3
 
     @pytest.mark.asyncio
@@ -614,7 +614,7 @@ class TestScribeAgent:
     @pytest.mark.asyncio
     async def test_clarify_returns_response(self, mock_llm_client):
         """ScribeAgent.clarify should return a ClarificationResponse."""
-        mock_llm_client.generate = _make_mock_generate({
+        mock_llm_client.generate_stream = _make_mock_generate({
             "response": "I prioritised recent publications for synthesis.",
         })
         agent = ScribeAgent(llm_client=mock_llm_client)

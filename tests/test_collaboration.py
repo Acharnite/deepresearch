@@ -532,7 +532,7 @@ def build_bus_aware_mock_agent_factory():
     explicitly verifies that the bus is populated at each stage.
     """
 
-    def factory(profile: AgentProfile, model_name: str):
+    def factory(profile: AgentProfile, model_name: str, **kwargs):
         async def agent_fn(*args, **kwargs):
             first = args[0] if args else None
 
@@ -587,7 +587,7 @@ def build_bus_aware_mock_agent_factory():
 def build_bus_scribe_factory():
     """Factory for a scribe that returns a basic ResearchPaper."""
 
-    def factory():
+    def factory(**kwargs):
         async def scribe(reports: dict[str, IndividualReport]) -> ResearchPaper:
             return ResearchPaper(
                 title="Integrated Paper",
@@ -740,7 +740,7 @@ class TestOrchestratorBusIntegration:
     async def test_graceful_degradation_with_bus(self, mock_profiles, mock_model_configs):
         """Agent failure in Round 1 doesn't break bus integration."""
 
-        def failing_factory(profile: AgentProfile, model_name: str):
+        def failing_factory(profile: AgentProfile, model_name: str, **extra):
             async def agent_fn(*args, **kwargs):
                 if profile.id == "agent-alpha":
                     raise RuntimeError("Agent Alpha failure")
@@ -760,7 +760,7 @@ class TestOrchestratorBusIntegration:
                 )
             return agent_fn
 
-        def sf():
+        def sf(**extra):
             async def scribe(reports):
                 return ResearchPaper(
                     title="P", abstract="A", methodology_note="M",

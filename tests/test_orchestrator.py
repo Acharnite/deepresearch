@@ -133,7 +133,7 @@ def mock_agent_factory(mock_findings, mock_followup, mock_report) -> MagicMock:
       - ``Findings`` → ``IndividualReport`` (report writing)
     """
 
-    def factory(profile: AgentProfile, model_name: str):
+    def factory(profile: AgentProfile, model_name: str, **extra):
         async def agent_fn(*args, **kwargs):
             # Inspect first arg type to determine behavior.
             if args:
@@ -182,7 +182,7 @@ def mock_agent_factory(mock_findings, mock_followup, mock_report) -> MagicMock:
 def mock_scribe_factory(mock_paper) -> MagicMock:
     """Factory that creates a scribe returning a ResearchPaper."""
 
-    def factory():
+    def factory(**extra):
         async def scribe(reports):
             return ResearchPaper(
                 title="Compiled Paper",
@@ -521,19 +521,16 @@ class TestCollectReports:
 
     @pytest.mark.asyncio
     async def test_collects_from_agents_when_no_round_2(self, mock_findings):
-        """Without Round 2, collect_reports should call each agent with Round 1 findings."""
+        """Without Round 2, collect_reports converts Findings to IndividualReport directly."""
         orch = Orchestrator()
         r1 = {"agent-a": mock_findings}
 
-        agents = {
-            "agent-a": AsyncMock(return_value=IndividualReport(
-                agent_id="a", title="R", perspective_summary="S", key_insights=["I"], analysis="A", full_text="F",
-            )),
-        }
-
-        results = await orch.collect_reports(agents, r1, {})
+        results = await orch.collect_reports({}, r1, {})
         assert "agent-a" in results
-        agents["agent-a"].assert_called_once_with(mock_findings)
+        report = results["agent-a"]
+        assert report.agent_id == "agent-a"
+        assert report.perspective_summary == "Test findings summary."
+        assert report.key_insights == ["Key point 1", "Key point 2"]
 
 
 class TestCompile:
@@ -649,7 +646,7 @@ class TestFullLifecycle:
     async def test_run_with_agent_failure(self, profiles, model_configs):
         """Session should continue when one agent fails (graceful degradation)."""
 
-        def failing_factory(profile, model_name):
+        def failing_factory(profile, model_name, **extra):
             async def fail_fn(*args, **kwargs):
                 if profile.id == "agent-a":
                     raise RuntimeError("Agent A failure")
@@ -660,7 +657,7 @@ class TestFullLifecycle:
 
             return fail_fn
 
-        def scribe_factory():
+        def scribe_factory(**extra):
             async def scribe(reports):
                 return ResearchPaper(title="P", abstract="A", methodology_note="M", sections=[], synthesis="S", key_takeaways=["T"], conclusion="C")
             return scribe

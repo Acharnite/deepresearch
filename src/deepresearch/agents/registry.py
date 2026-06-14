@@ -22,6 +22,7 @@ agent's abstract methods.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from typing import Any, Callable
 
 from deepresearch.agents.research_agent import ResearchAgent
@@ -29,6 +30,8 @@ from deepresearch.agents.scribe_agent import ScribeAgent
 from deepresearch.llm.client import LLMClient
 from deepresearch.models import (
     AgentProfile,
+    ClarificationQuery,
+    ClarificationResponse,
     Findings,
     FollowUpQuestions,
     ResearchTopic,
@@ -57,24 +60,46 @@ class AgentRegistry:
     # ------------------------------------------------------------------
 
     def create_research_agent(
-        self, profile: AgentProfile, model_name: str = "gpt-4o"
+        self,
+        profile: AgentProfile,
+        model_name: str = "gpt-4o",
+        event_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> ResearchAgent:
         """Create a research agent with the given personality profile.
 
         A new ``LLMClient`` is created per agent so each can use a
         different model as assigned by the orchestrator.
+
+        Args:
+            profile: The agent personality profile.
+            model_name: The LLM model to use.
+            event_callback: Async callback for streaming output chunks.
         """
-        llm = LLMClient(model=model_name, timeout=self.llm.timeout)
+        llm = LLMClient(
+            model=model_name,
+            timeout=self.llm.timeout,
+            event_callback=event_callback,
+        )
         return ResearchAgent(profile=profile, llm_client=llm)
 
-    def create_scribe_agent(self, model_name: str | None = None) -> ScribeAgent:
+    def create_scribe_agent(
+        self,
+        model_name: str | None = None,
+        event_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+    ) -> ScribeAgent:
         """Create the scribe agent (no personality profile needed).
+
+        The scribe must process ALL agent reports in a single prompt, which
+        can take 2-5 minutes (especially with GPT-4o).  We give it a
+        generous 5-minute timeout to avoid fallback to the minimal paper.
 
         Args:
             model_name: Optional model override. If None, uses the default LLMClient.
+            event_callback: Async callback for streaming output chunks.
         """
         if model_name:
-            llm = LLMClient(model=model_name, timeout=self.llm.timeout)
+            # Scribe needs longer timeout — it processes all reports in one prompt.
+            llm = LLMClient(model=model_name, timeout=300, event_callback=event_callback)
             return ScribeAgent(llm_client=llm)
         return ScribeAgent(llm_client=self.llm)
 
@@ -83,7 +108,10 @@ class AgentRegistry:
     # ------------------------------------------------------------------
 
     def agent_factory(
-        self, profile: AgentProfile, model_name: str
+        self,
+        profile: AgentProfile,
+        model_name: str,
+        event_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> Callable[..., Any]:
         """Factory for the Orchestrator.
 
@@ -93,12 +121,13 @@ class AgentRegistry:
         Args:
             profile: The agent's personality profile.
             model_name: The LLM model to use for this agent.
+            event_callback: Async callback for streaming output chunks.
 
         Returns:
             An ``AgentFunc`` — an async callable that handles all lifecycle
             phases via type-based dispatch.
         """
-        agent = self.create_research_agent(profile, model_name)
+        agent = self.create_research_agent(profile, model_name, event_callback)
 
         # Internal state tracked across lifecycle calls.
         _round_1: Findings | None = None
@@ -122,6 +151,16 @@ class AgentRegistry:
                 if isinstance(first, Findings):
                     # Report writing (no Round 2).
                     return await agent.write_report(first, None)
+
+                # Handle ClarificationQuery for the scribe's clarification protocol
+                if isinstance(first, ClarificationQuery):
+                    if hasattr(agent, "clarify"):
+                        return await agent.clarify(first)
+                    # Fallback: agent doesn't support clarify
+                    return ClarificationResponse(
+                        agent_id=first.agent_id,
+                        response="I cannot clarify this further with the available information.",
+                    )
 
             if len(args) == 2 and isinstance(args[0], ResearchTopic) and isinstance(args[1], SharedKnowledge):
                 # Round 2 — the orchestrator expects an IndividualReport here.

@@ -30,6 +30,29 @@ from deepresearch.web import state as _ws
 
 logger = logging.getLogger(__name__)
 
+# ── Persistent file logging ─────────────────────────────────────────────
+import logging.handlers
+
+_log_dir = Path(__file__).resolve().parent.parent.parent / "logs"
+_log_dir.mkdir(parents=True, exist_ok=True)
+_log_file = _log_dir / "deepresearch.log"
+
+_file_handler = logging.handlers.RotatingFileHandler(
+    _log_file, maxBytes=10_485_760, backupCount=5,  # 10 MB per file, keep 5
+)
+_file_handler.setLevel(logging.DEBUG)
+_file_handler.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+))
+
+# Add to root logger — catches ALL deepresearch.* loggers
+root_logger = logging.getLogger()
+root_logger.addHandler(_file_handler)
+root_logger.setLevel(logging.DEBUG)
+
+logging.getLogger("deepresearch").info("File logging initialized: %s", _log_file)
+
 # ── Load .env keys into os.environ at startup ──────────────────────────
 # This ensures LLMClient (which reads from os.environ) can find API keys
 # that were persisted to .env via dashboard settings across server restarts.

@@ -12,8 +12,8 @@ phase:
 
 Proposed
 
-**Version:** 1.1
-**Last Updated:** 2026-06-13
+**Version:** 1.2
+**Last Updated:** 2026-06-14
 
 ## Context
 
@@ -104,7 +104,87 @@ The `/api/models` endpoint goes beyond the curated `models.yaml` to discover mod
 - **Timeout**: 5 seconds per provider API call
 - **De-duplication**: curated `models.yaml` entries take precedence over auto-discovered ones with the same ID
 
+### SSE Event History Buffer: Replay on Connect
+
+Late-connecting SSE clients (dashboards opened after session start) need to see past events. An in-memory event history buffer was added to `SessionInfo`:
+
+**Mechanism:**
+- `SessionInfo.event_history: list[dict]` captures every event published to the session's `EventBus`
+- The bus's `publish()` method is patched at session start to also append to `event_history`:
+  ```python
+  async def _publish_with_history(event):
+      info.event_history.append(event)
+      if len(info.event_history) > 500:
+          info.event_history[:] = info.event_history[-500:]
+      await _original_publish(event)
+  ```
+- History is trimmed to the last 500 events to bound memory usage
+
+**SSE replay flow (`GET /api/sessions/{session_id}/events`):**
+1. Client subscribes to the session's EventBus queue
+2. **First:** all buffered events from `event_history` are replayed (synchronously, one by one)
+3. **Then:** live events stream from the bus queue (asynchronous, with 30s keepalive timeout)
+4. This ensures late arrivals see `session_start`, `models_assigned`, `round_start`, etc.
+
+**Legacy global SSE (`GET /api/events`):**
+- Uses the global `event_bus` singleton — no history replay (events before subscribe are lost)
+- Kept for backward compatibility; new clients should use per-session endpoints
+
+### Agent Live Streaming Output Panels
+
+The dashboard renders per-agent live text output as agents generate responses:
+
+**Event flow:**
+1. `Orchestrator._make_stream_callback(agent_id)` creates an async callback per agent
+2. Each research agent is constructed with `event_callback` passed via `AgentRegistry.create_research_agent()`
+3. The callback receives `{"type": "stream", "text": "<chunk>"}` dicts from `LLMClient.generate_stream()`
+4. These are published as `agent_output` events to the session's `EventBus`
+5. The dashboard SSE handler in `server.py` forwards events to connected clients
+
+**Dashboard rendering (`dashboard.html`):**
+- Agent progress panels detect `event_type === 'agent_output'` 
+- Text chunks are appended to per-agent streaming text areas
+- Icons in the event legend map event types: `agent_output → 💬`
+- Long-running agents (especially the scribe) show accumulating text in real-time
+
+**Scribe streaming:**
+- The scribe agent also uses `generate_stream()` via `ScribeAgent.compile()`
+- The orchestrator creates a dedicated `_make_stream_callback("scribe")` for the scribe
+- The dashboard renders scribe output in a dedicated "Scribe" panel
+
+### File Logging and System Log Tab
+
+Two complementary logging systems were added for observability:
+
+#### 1. File-Based Logging (`logs/deepresearch.log`)
+- **Setup:** `logging.handlers.RotatingFileHandler` in `server.py`
+- **Path:** `logs/deepresearch.log` (relative to project root, auto-created)
+- **Rotation:** 10 MB per file, 5 backups
+- **Level:** DEBUG — captures ALL deepresearch.* logger activity
+- **Format:** `2026-06-14 10:30:00 [DEBUG] deepresearch.orchestrator: Session event: ...`
+- **Root logger:** The handler is added to the root logger, so all child loggers benefit
+- Auto-created on server start — directory and file created if absent
+
+#### 2. In-Memory System Log Buffer (`/api/system/log`)
+- **Handler:** `SystemLogHandler` — a custom `logging.Handler` that captures log records into an in-memory list
+- **Buffer:** `SYSTEM_LOG` list, max 500 entries
+- **Level:** INFO (captures from `deepresearch` logger tree)
+- **Endpoint:**
+  - `GET /api/system/log?limit=200&level=ERROR` — returns recent entries, newest first, with optional level filter
+  - `POST /api/system/log/clear` — clears the buffer
+- **Dashboard tab:** "📋 System Log" button opens a log viewer with:
+  - Auto-refresh (polls every 2 seconds)
+  - Level filter dropdown (All / ERROR / WARNING / INFO / DEBUG)
+  - Clear button
+  - Timestamped, color-coded entries by severity
+
+**Use cases:**
+- Debugging session failures without server console access
+- Tracing LLM errors, timeout events, and connectivity issues
+- Users can share log output when reporting bugs
+
 ### Model Connectivity Check: Pre-Flight
+
 Before a session starts, `MultiSessionManager.create_session()` runs a connectivity check on the selected model:
 1. Sends `"Respond with exactly one word: ok"` with `max_tokens=5`
 2. 15-second timeout via `asyncio.wait_for()`
@@ -126,6 +206,10 @@ Before a session starts, `MultiSessionManager.create_session()` runs a connectiv
 8. Session deletion with file cleanup — keeps output directory tidy
 9. Provider model auto-discovery — always up-to-date model lists from all configured providers
 10. Pre-flight connectivity check — fails fast on unreachable models, saving time and tokens
+11. **SSE event replay** — late-connecting dashboards see full session history from the start
+12. **Live agent streaming** — per-agent text output panels show real-time LLM generation
+13. **File-based logging** — persistent DEBUG logs survive server restarts
+14. **System Log tab** — in-browser log viewer for debugging without terminal access
 
 ### Negative
 1. In-memory sessions: lost on server restart (acceptable for v1.0)
@@ -134,6 +218,9 @@ Before a session starts, `MultiSessionManager.create_session()` runs a connectiv
 4. SSE connections per session tab may consume resources with many sessions
 5. Connectivity check adds ~15s latency to each session start
 6. Provider model discovery may fail or timeout for slow provider APIs (5s timeout per provider)
+7. **Event history buffer adds memory** — 500 events per session × 20 sessions = up to 10,000 events in memory
+8. **File logs may grow quickly** — DEBUG-level logging with 10MB rotation can rotate frequently on active servers
+9. **Agent streaming adds SSE event volume** — each token chunk becomes a separate SSE event, increasing bandwidth
 
 ### Neutral
 1. API keys in environment variables is standard practice
@@ -142,6 +229,8 @@ Before a session starts, `MultiSessionManager.create_session()` runs a connectiv
 4. File download path is session-scoped for isolation
 5. 60s cache for auto-discovered models balances freshness with API load
 6. Delete confirmation dialog prevents accidental session removal
+7. Event history trimmed to 500 entries — recent history always available, oldest events are lost
+8. System log buffer is in-memory (500 entries) — lost on server restart, distinct from file-based logging
 
 ## ADR References
 - **ADR-0001** (Multi-Agent Research Architecture) — core architecture this frontend connects to
