@@ -229,7 +229,9 @@ def test_dashboard_contains_required_sections(client: TestClient) -> None:
     assert 'id="detailView"' in html
     assert 'id="settingsView"' in html
     assert 'id="topicInput"' in html
-    assert 'id="agentList"' in html
+    assert 'id="agentColumn1"' in html
+    assert 'id="agentColumn2"' in html
+    assert 'id="eventColumn"' in html
     assert 'id="eventLog"' in html
     assert 'id="resultView"' in html
     assert 'id="errorView"' in html

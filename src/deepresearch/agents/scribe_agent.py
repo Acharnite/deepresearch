@@ -17,7 +17,6 @@ from typing import Any, Callable, Coroutine
 
 from deepresearch.agents.base_agent import BaseAgent
 from deepresearch.llm.client import LLMClient, LLMError
-from deepresearch.llm.client import LLMError
 from deepresearch.models import (
     ClarificationQuery,
     ClarificationResponse,
@@ -198,12 +197,13 @@ class ScribeAgent(BaseAgent):
         clarifications_per_agent: dict[str, int] = {}
         total_rounds = 0
         max_total_rounds = _MAX_CLARIFICATION_ROUNDS * len(reports)
+        _asked_claims: set[str] = set()
 
         while total_rounds < max_total_rounds:
             # Ask the scribe LLM to identify claims needing clarification.
             try:
                 query_data = await self._identify_clarification_needs(
-                    paper, reports, clarifications_per_agent
+                    paper, reports, clarifications_per_agent, _asked_claims
                 )
             except LLMError as _exc:
                 logger.warning("Clarification identification failed (LLM error), stopping: %s", _exc)
@@ -220,6 +220,12 @@ class ScribeAgent(BaseAgent):
 
             if not agent_id or not claim:
                 break
+
+            # Skip claims already asked about.
+            if claim in _asked_claims:
+                logger.warning("Claim already asked, skipping: %s", claim[:60])
+                continue
+            _asked_claims.add(claim)
 
             # Enforce per-agent round limit.
             if clarifications_per_agent.get(agent_id, 0) >= _MAX_CLARIFICATION_ROUNDS:
@@ -261,11 +267,19 @@ class ScribeAgent(BaseAgent):
         paper: ResearchPaper,
         reports: dict[str, IndividualReport],
         clarifications_per_agent: dict[str, int],
+        asked_claims: set[str] | None = None,
     ) -> dict[str, str] | None:
         """Ask the scribe LLM to identify claims needing clarification.
 
         Returns a dict with ``agent_id``, ``claim``, and ``context``,
         or ``None`` if no further clarifications are needed.
+
+        Args:
+            paper: The current draft paper.
+            reports: Original agent reports.
+            clarifications_per_agent: Tracks per-agent clarification round counts.
+            asked_claims: Set of claims already clarified — the LLM is told
+                not to ask about these again.
         """
         max_per_agent = _MAX_CLARIFICATION_ROUNDS
 
@@ -294,6 +308,16 @@ class ScribeAgent(BaseAgent):
             '  "context": "Why this needs clarification"\n'
             "}\n\n"
             f"{clarification_status}\n\n"
+        )
+
+        # Add already-asked claims so the LLM doesn't repeat them.
+        if asked_claims:
+            prompt += "\nAlready clarified claims:\n"
+            for c in asked_claims:
+                prompt += f"- {c}\n"
+            prompt += "\nDo NOT ask about any of these again.\n\n"
+
+        prompt += (
             f"## Compiled Paper (Draft)\n"
             f"Title: {paper.title}\n"
             f"Abstract: {paper.abstract}\n"

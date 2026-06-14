@@ -121,6 +121,7 @@ class ResearchAgent(BaseAgent):
 
     async def research_round_1(self, topic: ResearchTopic) -> Findings:
         """Initial research pass — with web search capability."""
+        await self._log_agent_state("researching")
         user_prompt = build_round_1_prompt(topic.question, topic.time_budget)
         user_prompt += _ROUND_1_FORMAT
 
@@ -161,6 +162,7 @@ class ResearchAgent(BaseAgent):
 
     async def review_findings(self, shared: SharedKnowledge) -> FollowUpQuestions:
         """Review aggregated shared knowledge and pose follow-up questions."""
+        await self._log_agent_state("questioning")
         user_prompt = build_review_prompt(shared)
         user_prompt += _REVIEW_FORMAT
         response = await self._generate_with_retry(user_prompt)
@@ -186,6 +188,7 @@ class ResearchAgent(BaseAgent):
                 agent_id=self.profile.id, round=1, summary="", key_points=[], perspective="",
             )
 
+        await self._log_agent_state("refining")
         user_prompt = build_refine_prompt(
             questions=questions.questions,
             current_summary=(current_findings.summary if current_findings else ""),
@@ -237,6 +240,7 @@ class ResearchAgent(BaseAgent):
         questions: FollowUpQuestions,
     ) -> Findings:
         """Deeper research after seeing shared context and follow-up questions."""
+        await self._log_agent_state("researching")
         user_prompt = build_round_2_prompt(
             topic.question, shared, questions.questions
         )
@@ -257,6 +261,7 @@ class ResearchAgent(BaseAgent):
         self, round_1: Findings, round_2: Findings | None
     ) -> IndividualReport:
         """Consolidate findings into a final individual report."""
+        await self._log_agent_state("writing")
         r1_text = (
             f"Round 1 findings: {round_1.summary if round_1 else 'N/A'}\n"
             f"Key points: {round_1.key_points if round_1 else []}"
@@ -292,6 +297,7 @@ class ResearchAgent(BaseAgent):
 
     async def clarify(self, query: ClarificationQuery) -> ClarificationResponse:
         """Answer a clarification question from the scribe — with web search."""
+        await self._log_agent_state("answering")
         user_prompt = build_clarify_prompt(query.question)
         user_prompt += _CLARIFY_FORMAT
         user_prompt += "\nUse the web_search tool if you need up-to-date information."
@@ -316,6 +322,14 @@ class ResearchAgent(BaseAgent):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    async def _log_agent_state(self, state: str) -> None:
+        """Send an agent state update through the LLM client's event callback."""
+        if self.llm and hasattr(self.llm, 'event_callback') and self.llm.event_callback:
+            try:
+                await self.llm.event_callback({"type": "agent_state", "state": state})
+            except Exception:
+                pass  # Fire-and-forget — don't disrupt the agent.
 
     async def _generate_with_retry(self, user_prompt: str) -> str:
         """Call the LLM, retrying **once** on failure with a stricter instruction."""

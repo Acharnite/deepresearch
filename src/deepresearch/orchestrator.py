@@ -365,7 +365,8 @@ class Orchestrator:
             if self.session_config and hasattr(self.session_config, "agent_models"):
                 agent_model = self.session_config.agent_models.get(agent_id, "unknown")
             self._log_event("agent_start", agent_id=agent_id, round=round_num,
-                            model=agent_model, timeout=timeout)
+                            model=agent_model, timeout=timeout,
+                            agent_state="researching")
 
             coro = agent_fn(topic, shared) if shared is not None else agent_fn(topic)
             tasks[agent_id] = asyncio.create_task(
@@ -1030,6 +1031,9 @@ class Orchestrator:
 
         The returned async callable accepts stream chunks and publishes them
         as ``agent_output`` events so the dashboard can render live text.
+
+        Also handles ``agent_state`` and ``search`` event types so the
+        dashboard shows real-time state badges.
         """
         async def callback(data: dict[str, Any]) -> None:
             if data.get("type") == "stream":
@@ -1037,6 +1041,20 @@ class Orchestrator:
                     "agent_output",
                     agent_id=agent_id,
                     text=data.get("text", ""),
+                )
+            if data.get("type") == "search":
+                self._log_event(
+                    "agent_output",
+                    agent_id=agent_id,
+                    text=f"\n[🔍 Searching: {data.get('query', '')}]\n",
+                    agent_state="searching",
+                )
+            if data.get("type") == "agent_state":
+                self._log_event(
+                    "agent_output",
+                    agent_id=agent_id,
+                    agent_state=data.get("state", ""),
+                    text="",
                 )
         return callback
 

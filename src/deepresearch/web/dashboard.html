@@ -242,11 +242,6 @@
   .agent-pct { font-size: 12px; width: 36px; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   .agent-status-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
   .scribe-row { border-top: 2px solid var(--border); margin-top: 8px; padding-top: 8px; }
-  .agent-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4px 16px;
-  }
 
   /* ── Q&A Panel ──────────────────────────────────── */
   .qa-panel { margin-top: 8px; padding: 0 4px; }
@@ -372,6 +367,22 @@
   .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); }
   .empty-state h3 { font-size: 16px; margin-bottom: 8px; }
   .empty-state p { font-size: 13px; }
+  .progress-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; align-items: start; }
+  .agent-column { min-width: 0; }
+  .event-column { min-width: 0; }
+
+  /* ── State Badges ──────────────────────────── */
+  .state-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; white-space: nowrap; display: inline-block; }
+  .state-waiting { background: var(--surface-2); color: var(--text-muted); }
+  .state-researching { background: #a78bfa40; color: #a78bfa; }
+  .state-searching { background: #60a5fa40; color: #60a5fa; }
+  .state-writing { background: #34d39940; color: #34d399; }
+  .state-questioning { background: #fbbf2440; color: #fbbf24; }
+  .state-answering { background: #f472b640; color: #f472b6; }
+  .state-refining { background: #fb923c40; color: #fb923c; }
+  .state-done { background: #22c55e40; color: #22c55e; }
+  .state-failed { background: #ef444440; color: #ef4444; }
+
   .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; }
   .stat-card { background: var(--surface-2); border-radius: 6px; padding: 12px; text-align: center; }
   .stat-value { font-size: 22px; font-weight: 700; }
@@ -665,55 +676,14 @@
   </div>
 
   <div class="main-grid" id="progressView">
-    <!-- Left Column -->
-    <div>
-      <div class="card mb-8">
-        <div class="card-header">
-          <span>🤖 Agent Progress</span>
-          <span id="agentCount" class="text-muted">0 agents</span>
-        </div>
-        <div class="agent-list" id="agentList">
-          <div class="empty-state">
-            <h3>No agent data</h3>
-            <p>Waiting for session to start...</p>
-          </div>
-        </div>
+    <!-- Left Column: Agents 1-3 -->
+    <div class="agent-column" id="agentColumn1"></div>
 
-        <!-- Q&A Panel -->
-        <div id="qaPanel" class="qa-panel" style="display:none;">
-          <h4 style="margin:12px 0 8px;font-size:13px;">💬 Questions & Answers</h4>
-          <div id="qaLog"><div class="empty-state"><p>No Q&A yet</p></div></div>
-        </div>
-      </div>
+    <!-- Middle Column: Agents 4-6 -->
+    <div class="agent-column" id="agentColumn2"></div>
 
-      <div class="card">
-        <div class="card-header">
-          <span>📋 Research Pipeline</span>
-        </div>
-        <div class="phase-indicator" id="phaseIndicator">
-          <span class="phase-step" data-phase="IDLE">⏸ Idle</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="CONFIGURING">⚙ Config</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="ROUND1">🔍 Round 1</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="COLLABORATING">🤝 Collaborate</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="FOLLOWUP">❓ Follow-up</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="ROUND2">🔎 Round 2</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="COMPILING">📝 Compile</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="OUTPUT">📄 Output</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="COMPLETE">✅ Done</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- Right Column -->
-    <div>
+    <!-- Right Column: Event log, Q&A, pipeline, result -->
+    <div class="event-column" id="eventColumn">
       <!-- Result View (shown when complete) -->
       <div id="resultView" class="result-view card hidden" style="margin:0;padding:16px;">
         <h2 style="font-size:18px;">✅ Research Complete!</h2>
@@ -738,7 +708,7 @@
       </div>
 
       <!-- Event Log -->
-      <div class="card">
+      <div class="card mb-8">
         <div class="card-header">
           <span>📜 Event Log</span>
           <span id="eventCount" class="text-muted">0 events</span>
@@ -748,6 +718,42 @@
             <h3>No events yet</h3>
             <p>Events will appear here as the research progresses.</p>
           </div>
+        </div>
+      </div>
+
+      <!-- Q&A Panel -->
+      <div class="card mb-8">
+        <div class="card-header">
+          <span>💬 Questions & Answers</span>
+        </div>
+        <div id="qaPanel" class="qa-panel" style="display:none;">
+          <div id="qaLog"><div class="empty-state"><p>No Q&A yet</p></div></div>
+        </div>
+      </div>
+
+      <!-- Research Pipeline -->
+      <div class="card">
+        <div class="card-header">
+          <span>📋 Research Pipeline</span>
+        </div>
+        <div class="phase-indicator" id="phaseIndicator">
+          <span class="phase-step" data-phase="IDLE">⏸ Idle</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="CONFIGURING">⚙ Config</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="ROUND1">🔍 Round 1</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="COLLABORATING">🤝 Collaborate</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="FOLLOWUP">❓ Follow-up</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="ROUND2">🔎 Round 2</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="COMPILING">📝 Compile</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="OUTPUT">📄 Output</span>
+          <span class="phase-arrow">→</span>
+          <span class="phase-step" data-phase="COMPLETE">✅ Done</span>
         </div>
       </div>
     </div>
@@ -1159,7 +1165,7 @@
 
   function resetDetailState() {
     agents = {};
-    scribeInfo = { status: 'waiting', progress: 0 };
+    scribeInfo = { status: 'waiting', state: 'waiting' };
     eventCount = 0;
     currentState = 'IDLE';
     currentTopic = '';
@@ -1372,14 +1378,14 @@
     if (eventType === 'models_assigned' && data.assignments) {
       console.log('[Agent Debug] models_assigned:', data.assignments ? Object.keys(data.assignments).length + ' agents' : 'NO ASSIGNMENTS');
       Object.entries(data.assignments).forEach(([id]) => {
-        if (!agents[id]) agents[id] = { progress: 0, status: 'waiting', state: 'waiting' };
+        if (!agents[id]) agents[id] = { status: 'waiting', state: 'waiting' };
       });
       renderAgents();
     }
 
     if (eventType === 'round_start') {
       Object.keys(agents).forEach(id => {
-        agents[id] = { progress: 0, status: 'waiting' };
+        agents[id] = { status: 'waiting', state: 'waiting' };
       });
       renderAgents();
     }
@@ -1388,22 +1394,30 @@
       console.log('[Agent Debug] agent_start:', data.agent_id);
       const aid = data.agent_id;
       if (!agents[aid]) agents[aid] = {};
-      agents[aid].progress = 0;
       agents[aid].status = 'running';
+      agents[aid].state = data.agent_state || 'researching';
       renderAgents();
     }
 
     if (eventType === 'agent_complete') {
       console.log('[Agent Debug] agent_complete:', data.agent_id);
       const aid = data.agent_id;
-      if (agents[aid]) { agents[aid].progress = 100; agents[aid].status = 'done'; }
+      if (agents[aid]) { agents[aid].status = 'done'; agents[aid].state = 'done'; }
       renderAgents();
     }
 
     if (eventType === 'agent_failed') {
       const aid = data.agent_id;
-      if (agents[aid]) { agents[aid].progress = 0; agents[aid].status = 'failed'; }
+      if (agents[aid]) { agents[aid].status = 'failed'; agents[aid].state = 'failed'; }
       renderAgents();
+    }
+
+    if (eventType === 'agent_output' && data.agent_state) {
+      const aid = data.agent_id;
+      if (aid && agents[aid]) {
+        agents[aid].state = data.agent_state;
+        renderAgents();
+      }
     }
 
     if (eventType === 'followup_start') {
@@ -1447,21 +1461,21 @@
 
     if (eventType === 'collaboration_phase') {
       Object.keys(agents).forEach(id => {
-        if (agents[id].status !== 'done') { agents[id].progress = 100; agents[id].status = 'done'; }
+        if (agents[id].status !== 'done') { agents[id].status = 'done'; agents[id].state = 'done'; }
       });
       renderAgents();
     }
 
     if (eventType === 'scribe_start') {
       Object.keys(agents).forEach(id => {
-        agents[id].progress = 100; agents[id].status = 'done';
+        agents[id].status = 'done'; agents[id].state = 'done';
       });
-      scribeInfo = { status: 'running', progress: 30 };
+      scribeInfo = { status: 'running', state: 'writing' };
       renderAgents();
     }
 
     if (eventType === 'scribe_end') {
-      scribeInfo = { status: 'done', progress: 100 };
+      scribeInfo = { status: 'done', state: 'done' };
       renderAgents();
     }
 
@@ -1488,18 +1502,27 @@
     });
   }
 
+  // ── State badges lookup ────────────────────────────
+  const stateLabels = {
+    waiting: '⏳ Waiting', researching: '🔬 Researching', searching: '🔍 Web Search',
+    writing: '✍️ Writing', questioning: '❓ Questioning', answering: '💬 Answering',
+    refining: '🔄 Refining', done: '✅ Done', failed: '❌ Failed'
+  };
+
   // ── Render agents ──────────────────────────────────
   function renderAgents() {
     console.log('[Agent Debug] renderAgents called, agents count:', Object.keys(agents).length);
     const ids = Object.keys(agents);
     if (ids.length === 0) {
-      agentList.innerHTML = `<div class="empty-state"><h3>No agent data</h3><p>Waiting for session to start...</p></div>`;
-      agentCount.textContent = '0 agents';
+      const col1 = document.getElementById('agentColumn1');
+      const col2 = document.getElementById('agentColumn2');
+      if (col1) col1.innerHTML = `<div class="card"><div class="card-header"><span>🤖 Agent Progress</span><span id="agentCount" class="text-muted">0 agents</span></div><div class="agent-list"><div class="empty-state"><h3>No agent data</h3><p>Waiting for session to start...</p></div></div></div>`;
+      if (col2) col2.innerHTML = '';
+      // Remove any scribe row from columns
+      document.querySelectorAll('.scribe-row-container').forEach(el => el.remove());
       return;
     }
 
-    agentCount.textContent = ids.length + ' agent' + (ids.length !== 1 ? 's' : '');
-    
     // Save existing agent output text before re-render
     const _savedOutputs = {};
     for (const id of ids) {
@@ -1515,69 +1538,80 @@
     if (_existingScribe) {
         const _scribePre = _existingScribe.querySelector('.agent-output-text');
         if (_scribePre) _savedScribeOutput = _scribePre.textContent;
-        // Clear any pending buffer on old element
         if (_existingScribe._outputTimer) {
             clearTimeout(_existingScribe._outputTimer);
             _existingScribe._outputTimer = null;
         }
         _existingScribe._outputBuffer = '';
     }
-    
-    let html = '<div class="agent-grid">';
-    for (const id of ids) {
-      const info = agents[id] || {};
-      const pct = info.progress || 0;
-      const status = info.status || 'waiting';
-      const name = agentNames[id] || id;
-      const emoji = agentEmojis[id] || '🤖';
 
-      let barClass = 'agent-bar-fill ';
-      let statusIcon = '';
-      if (status === 'done') { barClass += 'done'; statusIcon = '✅'; }
-      else if (status === 'running') { barClass += 'running'; statusIcon = '🔄'; }
-      else if (status === 'failed') { barClass += 'failed'; statusIcon = '❌'; }
-      else { barClass += 'waiting'; statusIcon = '⏳'; }
+    // Split agents into two columns
+    const mid = Math.ceil(ids.length / 2);
+    const col1Ids = ids.slice(0, mid);
+    const col2Ids = ids.slice(mid);
 
-      html += `<div class="agent-row">
-        <span class="agent-emoji">${emoji}</span>
-        <span class="agent-name">${esc(name)}</span>
-        <div class="agent-bar-wrap"><div class="agent-bar-bg"><div class="${barClass}" style="width:${pct}%"></div></div></div>
-        <span class="agent-pct">${Math.round(pct)}%</span>
-        <span class="agent-status-icon">${statusIcon}</span>
-      </div>`;
+    function renderAgentCard(agentIds) {
+      let html = '<div class="card"><div class="card-header"><span>🤖 Agent Progress</span><span id="agentCount" class="text-muted">' + agentIds.length + ' agent' + (agentIds.length !== 1 ? 's' : '') + '</span></div><div class="agent-list">';
+      for (const id of agentIds) {
+        const info = agents[id] || {};
+        const status = info.status || 'waiting';
+        const stateClass = status === 'done' ? 'done' : status === 'failed' ? 'failed' : (info.state || 'waiting');
+        const label = stateLabels[stateClass] || stateClass;
+        const name = agentNames[id] || id;
+        const emoji = agentEmojis[id] || '🤖';
+
+        html += `<div class="agent-row">
+          <span class="agent-emoji">${emoji}</span>
+          <span class="agent-name">${esc(name)}</span>
+          <span class="state-badge state-${stateClass}">${label}</span>
+        </div>`;
+      }
+      // Output panels for each agent
+      for (const id of agentIds) {
+        html += `<div class="agent-output" id="agent-output-${id}" style="display:none;">
+          <pre class="agent-output-text"></pre>
+        </div>`;
+      }
+      html += '</div></div>';
+      return html;
     }
-    html += '</div>';
 
-    // Output panels (outside grid, full width)
-    for (const id of ids) {
-      html += `<div class="agent-output" id="agent-output-${id}" style="display:none;">
-        <pre class="agent-output-text"></pre>
-      </div>`;
-    }
+    // Render columns
+    const col1El = document.getElementById('agentColumn1');
+    const col2El = document.getElementById('agentColumn2');
+    if (col1El) col1El.innerHTML = renderAgentCard(col1Ids);
+    if (col2El) col2El.innerHTML = renderAgentCard(col2Ids);
 
-    // ── Scribe row ─────────────────────────────────────
-    const sc = scribeInfo || { status: 'waiting', progress: 0 };
-    let scBarClass = 'agent-bar-fill ';
-    let scIcon = '';
-    if (sc.status === 'done') { scBarClass += 'done'; scIcon = '✅'; }
-    else if (sc.status === 'running') { scBarClass += 'running'; scIcon = '🔄'; }
-    else { scBarClass += 'waiting'; scIcon = '⏳'; }
-    const scPct = sc.status === 'done' ? 100 : sc.status === 'running' ? 50 : 0;
+    // Remove any previous scribe containers
+    document.querySelectorAll('.scribe-row-container').forEach(el => el.remove());
+
+    // ── Scribe row (spans full width below the grid) ──
+    const sc = scribeInfo || { status: 'waiting' };
+    const scStateClass = sc.status === 'done' ? 'done' : sc.status === 'failed' ? 'failed' : (sc.state || 'waiting');
+    const scLabel = stateLabels[scStateClass] || scStateClass;
     const scDisplay = (sc.status === 'running' || sc.status === 'done') ? 'block' : 'none';
 
-    html += `<div class="agent-row scribe-row">
-      <span class="agent-emoji">📝</span>
-      <span class="agent-name">Scribe</span>
-      <div class="agent-bar-wrap"><div class="agent-bar-bg"><div class="${scBarClass}" style="width:${scPct}%"></div></div></div>
-      <span class="agent-pct">${scPct}%</span>
-      <span class="agent-status-icon">${scIcon}</span>
-    </div>
-    <div class="agent-output" id="agent-output-scribe" style="display:${scDisplay};">
-      <pre class="agent-output-text"></pre>
+    const scribeHtml = `<div class="scribe-row-container" style="max-width:1200px;margin:8px auto 0;padding:0 24px;">
+      <div class="card">
+        <div class="agent-list">
+          <div class="agent-row scribe-row">
+            <span class="agent-emoji">📝</span>
+            <span class="agent-name">Scribe</span>
+            <span class="state-badge state-${scStateClass}">${scLabel}</span>
+          </div>
+          <div class="agent-output" id="agent-output-scribe" style="display:${scDisplay};">
+            <pre class="agent-output-text"></pre>
+          </div>
+        </div>
+      </div>
     </div>`;
 
-    agentList.innerHTML = html;
-    
+    // Insert scribe row after the progress view
+    const progressView = document.getElementById('progressView');
+    if (progressView) {
+      progressView.insertAdjacentHTML('afterend', scribeHtml);
+    }
+
     // Restore saved output text after re-render
     for (const id of ids) {
         if (_savedOutputs[id]) {

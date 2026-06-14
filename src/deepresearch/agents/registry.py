@@ -133,6 +133,14 @@ class AgentRegistry:
         _round_1: Findings | None = None
         _questions: FollowUpQuestions | None = None
 
+        async def _dispatch_state(state: str) -> None:
+            """Send a state update through the agent's LLM event callback."""
+            if agent.llm and hasattr(agent.llm, 'event_callback') and agent.llm.event_callback:
+                try:
+                    await agent.llm.event_callback({"type": "agent_state", "state": state})
+                except Exception:
+                    pass  # Fire-and-forget.
+
         async def dispatch(*args: Any) -> Any:
             nonlocal _round_1, _questions
 
@@ -140,16 +148,19 @@ class AgentRegistry:
                 first = args[0]
                 if isinstance(first, ResearchTopic):
                     # Round 1 — independent research.
+                    await _dispatch_state("researching")
                     _round_1 = await agent.research_round_1(first)
                     return _round_1
 
                 if isinstance(first, SharedKnowledge):
                     # Follow-up questions.
+                    await _dispatch_state("questioning")
                     _questions = await agent.review_findings(first)
                     return _questions
 
                 if isinstance(first, FollowUpQuestions):
                     # Refinement phase — refine findings from follow-up questions.
+                    await _dispatch_state("refining")
                     if _round_1 is not None:
                         _round_1 = await agent.refine_findings(first, _round_1)
                     return _round_1 or Findings(
@@ -158,11 +169,13 @@ class AgentRegistry:
 
                 if isinstance(first, Findings):
                     # Report writing (no Round 2).
+                    await _dispatch_state("writing")
                     return await agent.write_report(first, None)
 
                 # Handle ClarificationQuery for the scribe's clarification protocol
                 if isinstance(first, ClarificationQuery):
                     if hasattr(agent, "clarify"):
+                        await _dispatch_state("answering")
                         return await agent.clarify(first)
                     # Fallback: agent doesn't support clarify
                     return ClarificationResponse(
