@@ -1,55 +1,47 @@
 # DeepeResearch — TODO
 
 ## Completed
-- [x] Orchestrator FSM — IDLE → CONFIGURING → ROUND1 → COLLABORATING → FOLLOWUP → ROUND2 → COMPILING → OUTPUT → COMPLETE
-- [x] 6 agent personality profiles (YAML-based)
-- [x] Same / Random / Manual model assignment modes
-- [x] LiteLLM async client with retry and streaming
-- [x] Collaboration bus (SharedKnowledge aggregation)
-- [x] Scribe agent compilation pipeline
-- [x] PDF generation via Jinja2 + WeasyPrint (HTML fallback)
-- [x] Web dashboard (FastAPI + SSE streaming)
-- [x] Multi-session management (create, delete, list, cancel)
-- [x] Tool calling (DuckDuckGo web search via function calling)
-- [x] Settings management UI (API keys, local endpoints)
-- [x] Provider prefix routing (opencode/, openrouter/, ollama/, etc.)
-- [x] Provider model auto-discovery (/api/models endpoint)
-- [x] Orchestrator unit tests (32 tests, all passing)
-- [x] PDF generation tests (all passing)
-- [ ] ... (growing list)
-
----
+- [x] Orchestrator FSM with 8 states
+- [x] 6 agent personality profiles
+- [x] Model assignment (same/random/manual)
+- [x] LiteLLM async client with streaming
+- [x] Collaboration bus
+- [x] Scribe agent with clarification protocol
+- [x] PDF generation
+- [x] Web dashboard (FastAPI + SSE)
+- [x] Web search tool (DuckDuckGo via function calling)
+- [x] Provider prefix routing (opencode/, openrouter/, ollama/, gemini/)
+- [x] Provider model auto-discovery
+- [x] Agent live streaming output
+- [x] Dynamic research rounds (up to 5, stops when gaps resolved)
+- [x] Scribe output visible in dashboard
+- [x] Persistent file logging
+- [x] Model connectivity check in background
+- [x] --model flag for CLI
+- [x] Dynamic rounds: continue until gaps < 2 and confidence >= 0.5
 
 ## Next Testing Session
 
-### Priority 1: Web Search Tool
-- [ ] Test `web_search("quantum computing 2026")` returns real results
-- [ ] Test `generate_with_tools()` with web_search tool — agent actually calls the tool
-- [ ] Test streaming + tool calling works together (chunks arrive while tool executes)
-- [ ] Test fallback when streaming+tool calling fails (non-streaming path)
+### Priority 1: Verify latest fixes
+- [ ] **Scribe model prefix** — scribe should use full model ID (e.g., `opencode/go/deepseek-v4-flash`)
+- [ ] **Agent JSON parsing** — agents should return valid JSON after web search
+- [ ] **Web search in dashboard** — 🔍 search results visible in agent output panels
+- [ ] **Scribe row in dashboard** — 📝 scribe row with live output under agents
+- [ ] **Dynamic rounds** — verify it loops when gaps exist, stops when resolved
 
-### Priority 2: Full Pipeline (CLI)
-- [ ] Run `deepresearch run "topic" --quick` and verify:
-  - [ ] All 6 agents complete Round 1
-  - [ ] Collaboration phase works
-  - [ ] Scribe compiles paper
-  - [ ] PDF is generated with real content
-- [ ] Run `deepresearch run "topic" --medium` and verify Round 2 runs
-- [ ] Run `deepresearch run "topic" --deep` and verify full pipeline
+### Priority 2: Full Pipeline
+- [ ] CLI: `deepresearch run "topic" --quick --model "opencode/go/deepseek-v4-flash"`
+- [ ] CLI: `deepresearch run "topic" --medium --model "opencode/go/deepseek-v4-flash"`
+- [ ] Dashboard: same flows via web UI
 
-### Priority 3: Error Handling
-- [ ] Kill network mid-session — verify graceful degradation
-- [ ] Use an invalid model — verify error message is clear
-- [ ] Empty topic — verify validation catches it
+### Priority 3: Model Compatibility
+- [ ] Test with OpenAI (gpt-4o)
+- [ ] Test with Ollama (qwen3:8b)
+- [ ] Test with OpenRouter
+- [ ] Test with Opencode Zen endpoint
 
-### Priority 4: Model Compatibility
-- [ ] Test with OpenAI models (gpt-4o)
-- [ ] Test with Ollama models (qwen3:8b)
-- [ ] Test with OpenRouter models
-- [ ] Test with Opencode AI (go/zen endpoints)
-
-### Priority 5: Performance
-- [ ] Measure Round 1 completion time
+### Priority 4: Performance
+- [ ] Measure Round 1 + web search time
 - [ ] Measure scribe compilation time
-- [ ] Measure total session time vs time budget
 - [ ] Check log file size after 3+ sessions
+- [ ] Verify no memory leaks over multiple sessions
