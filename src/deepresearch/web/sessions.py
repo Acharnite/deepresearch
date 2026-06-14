@@ -179,7 +179,9 @@ class MultiSessionManager:
 
             orchestrator = Orchestrator(
                 agent_factory=registry.agent_factory,
-                scribe_factory=lambda: registry.create_scribe_agent(model_name=scribe_model),
+                scribe_factory=lambda event_callback=None, model_name=None: registry.create_scribe_agent(
+                    model_name=model_name or scribe_model, event_callback=event_callback
+                ),
                 event_bus=info.event_bus,
             )
 

@@ -60,7 +60,7 @@ class TestWebSearchExecution:
     @pytest.mark.asyncio
     async def test_returns_list_of_dicts(self) -> None:
         """web_search should return a list of dicts with expected keys."""
-        with patch("duckduckgo_search.DDGS") as mock_ddgs:
+        with patch("ddgs.DDGS") as mock_ddgs:
             mock_instance = MagicMock()
             mock_instance.text.return_value = [
                 {"title": "Result 1", "body": "Snippet 1", "href": "https://example.com/1"},
@@ -82,7 +82,7 @@ class TestWebSearchExecution:
     @pytest.mark.asyncio
     async def test_respects_max_results(self) -> None:
         """web_search should not return more than max_results items."""
-        with patch("duckduckgo_search.DDGS") as mock_ddgs:
+        with patch("ddgs.DDGS") as mock_ddgs:
             # Return more results than requested
             mock_instance = MagicMock()
             mock_instance.text.return_value = [
@@ -98,7 +98,7 @@ class TestWebSearchExecution:
     @pytest.mark.asyncio
     async def test_handles_empty_results(self) -> None:
         """web_search should return an empty list when no results."""
-        with patch("duckduckgo_search.DDGS") as mock_ddgs:
+        with patch("ddgs.DDGS") as mock_ddgs:
             mock_instance = MagicMock()
             mock_instance.text.return_value = []
             mock_ddgs.return_value.__enter__.return_value = mock_instance
@@ -111,7 +111,7 @@ class TestWebSearchExecution:
     @pytest.mark.asyncio
     async def test_handles_search_failure_gracefully(self) -> None:
         """web_search should return error dict on failure, not raise."""
-        with patch("duckduckgo_search.DDGS") as mock_ddgs:
+        with patch("ddgs.DDGS") as mock_ddgs:
             mock_instance = MagicMock()
             mock_instance.text.side_effect = RuntimeError("Network error")
             mock_ddgs.return_value.__enter__.return_value = mock_instance
@@ -126,7 +126,7 @@ class TestWebSearchExecution:
     @pytest.mark.asyncio
     async def test_handles_missing_keys(self) -> None:
         """web_search should handle dicts with missing keys."""
-        with patch("duckduckgo_search.DDGS") as mock_ddgs:
+        with patch("ddgs.DDGS") as mock_ddgs:
             mock_instance = MagicMock()
             mock_instance.text.return_value = [
                 {"title": "Only Title"},
@@ -145,7 +145,7 @@ class TestWebSearchExecution:
     @pytest.mark.asyncio
     async def test_passes_max_results_to_ddgs(self) -> None:
         """web_search should pass max_results to DDGS.text()."""
-        with patch("duckduckgo_search.DDGS") as mock_ddgs:
+        with patch("ddgs.DDGS") as mock_ddgs:
             mock_instance = MagicMock()
             mock_instance.text.return_value = []
             mock_ddgs.return_value.__enter__.return_value = mock_instance

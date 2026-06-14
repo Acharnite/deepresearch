@@ -582,6 +582,14 @@ class LLMClient:
                     results = await _web_search(query, max_res)
                     result_text = json.dumps(results, ensure_ascii=False)
 
+                    # Stream search activity to the output panel
+                    if self.event_callback and results:
+                        search_summary = f"\n[🔍 Web Search] Query: \"{query}\"\n"
+                        for r in results[:3]:
+                            title = (r.get('title', '') or '')[:60]
+                            search_summary += f"  • {title}\n"
+                        await self.event_callback({"type": "stream", "text": search_summary})
+
                     # Add tool result to messages
                     messages.append({
                         "role": "tool",

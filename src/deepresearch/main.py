@@ -93,6 +93,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Prompt for per-agent model selection",
     )
     run_parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Model ID to use (e.g., 'opencode/go/deepseek-v4-flash' or 'gpt-4o')",
+    )
+    run_parser.add_argument(
         "--seed",
         type=int,
         default=None,
@@ -261,7 +267,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     # Wire up the real agent implementations (Phase 3).
     try:
-        llm_client = LLMClient()
+        llm_client = LLMClient(model=args.model) if args.model else LLMClient()
         registry = AgentRegistry(llm_client)
     except Exception as e:
         console.print(f"[red]Failed to initialise agent system:[/red] {e}")
@@ -269,7 +275,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     orchestrator = Orchestrator(
         agent_factory=registry.agent_factory,
-        scribe_factory=lambda: registry.create_scribe_agent(),
+        scribe_factory=lambda event_callback=None, model_name=None: registry.create_scribe_agent(
+            model_name=model_name, event_callback=event_callback
+        ),
     )
 
     # ── Dry-run mode ────────────────────────────────────────────────
@@ -282,6 +290,8 @@ def cmd_run(args: argparse.Namespace) -> int:
                 dry_run=True,
                 output_path=output_path,
             )
+            if args.model:
+                run_kwargs["selected_model"] = args.model
             if time_budget_seconds is not None:
                 run_kwargs["time_budget_seconds"] = time_budget_seconds
             asyncio.run(orchestrator.run(args.topic, **run_kwargs))
@@ -323,6 +333,8 @@ def cmd_run(args: argparse.Namespace) -> int:
                 model_mode=model_mode,
                 output_path=output_path,
             )
+            if args.model:
+                run_kwargs["selected_model"] = args.model
             if time_budget_seconds is not None:
                 run_kwargs["time_budget_seconds"] = time_budget_seconds
             result = asyncio.run(orchestrator.run(args.topic, **run_kwargs))

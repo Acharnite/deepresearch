@@ -44,6 +44,7 @@ class CollaborationBus:
         self.shared_knowledge: SharedKnowledge | None = None
         self.followup_questions: dict[str, list[str]] = {}
         self.round_2_findings: dict[str, Findings] = {}
+        self.other_rounds_findings: dict[tuple[str, int], Findings] = {}
         self.individual_reports: dict[str, IndividualReport] = {}
         self.clarifications: list[dict[str, Any]] = []
 
@@ -225,6 +226,12 @@ class CollaborationBus:
         async with self._lock:
             self.round_2_findings[agent_id] = findings
             logger.debug("Round 2 findings published for agent '%s'", agent_id)
+
+    async def publish_round(self, agent_id: str, round_num: int, findings: Findings) -> None:
+        """Publish an agent's findings for any round (generic)."""
+        async with self._lock:
+            self.other_rounds_findings[(agent_id, round_num)] = findings
+            logger.debug("Round %d findings published for agent '%s'", round_num, agent_id)
 
     # ------------------------------------------------------------------
     # Individual Reports

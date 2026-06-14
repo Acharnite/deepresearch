@@ -131,6 +131,7 @@ class ResearchAgent(BaseAgent):
                 user_prompt=user_prompt,
                 tools=[WEB_SEARCH_TOOL],
                 temperature=self.profile.temperature,
+                max_tokens=4096,  # Increased for search + JSON output
             )
         except LLMError:
             logger.warning(

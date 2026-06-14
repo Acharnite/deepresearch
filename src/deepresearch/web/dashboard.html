@@ -241,6 +241,7 @@
   .agent-bar-fill.failed { background: var(--red); }
   .agent-pct { font-size: 12px; width: 36px; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
   .agent-status-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
+  .scribe-row { border-top: 2px solid var(--border); margin-top: 8px; padding-top: 8px; }
 
   /* ── Agent Output (live stream panel) ──────────────── */
   .agent-output { margin: 0 8px 8px 48px; background: var(--surface-2); border-radius: 4px; max-height: 200px; overflow-y: auto; }
@@ -883,6 +884,7 @@
   let agents = {};
   let agentNames = {};
   let agentEmojis = {};
+  let scribeInfo = { status: 'waiting', progress: 0 };
   let currentState = 'IDLE';
   let currentTopic = '';
   let currentSessionId = null;  // Session we are viewing in detail
@@ -1083,6 +1085,7 @@
 
   function resetDetailState() {
     agents = {};
+    scribeInfo = { status: 'waiting', progress: 0 };
     eventCount = 0;
     currentState = 'IDLE';
     currentTopic = '';
@@ -1360,6 +1363,12 @@
       Object.keys(agents).forEach(id => {
         agents[id].progress = 100; agents[id].status = 'done';
       });
+      scribeInfo = { status: 'running', progress: 30 };
+      renderAgents();
+    }
+
+    if (eventType === 'scribe_end') {
+      scribeInfo = { status: 'done', progress: 100 };
       renderAgents();
     }
 
@@ -1407,6 +1416,19 @@
             if (_pre) _savedOutputs[id] = _pre.textContent;
         }
     }
+    // Save scribe output before re-render
+    let _savedScribeOutput = '';
+    const _existingScribe = document.getElementById('agent-output-scribe');
+    if (_existingScribe) {
+        const _scribePre = _existingScribe.querySelector('.agent-output-text');
+        if (_scribePre) _savedScribeOutput = _scribePre.textContent;
+        // Clear any pending buffer on old element
+        if (_existingScribe._outputTimer) {
+            clearTimeout(_existingScribe._outputTimer);
+            _existingScribe._outputTimer = null;
+        }
+        _existingScribe._outputBuffer = '';
+    }
     
     let html = '';
     for (const id of ids) {
@@ -1434,6 +1456,28 @@
         <pre class="agent-output-text"></pre>
       </div>`;
     }
+
+    // ── Scribe row ─────────────────────────────────────
+    const sc = scribeInfo || { status: 'waiting', progress: 0 };
+    let scBarClass = 'agent-bar-fill ';
+    let scIcon = '';
+    if (sc.status === 'done') { scBarClass += 'done'; scIcon = '✅'; }
+    else if (sc.status === 'running') { scBarClass += 'running'; scIcon = '🔄'; }
+    else { scBarClass += 'waiting'; scIcon = '⏳'; }
+    const scPct = sc.status === 'done' ? 100 : sc.status === 'running' ? 50 : 0;
+    const scDisplay = (sc.status === 'running' || sc.status === 'done') ? 'block' : 'none';
+
+    html += `<div class="agent-row scribe-row">
+      <span class="agent-emoji">📝</span>
+      <span class="agent-name">Scribe</span>
+      <div class="agent-bar-wrap"><div class="agent-bar-bg"><div class="${scBarClass}" style="width:${scPct}%"></div></div></div>
+      <span class="agent-pct">${scPct}%</span>
+      <span class="agent-status-icon">${scIcon}</span>
+    </div>
+    <div class="agent-output" id="agent-output-scribe" style="display:${scDisplay};">
+      <pre class="agent-output-text"></pre>
+    </div>`;
+
     agentList.innerHTML = html;
     
     // Restore saved output text after re-render
@@ -1446,6 +1490,17 @@
                     _pre.textContent = _savedOutputs[id];
                     _newPanel.style.display = 'block';
                 }
+            }
+        }
+    }
+    // Restore scribe output after re-render
+    if (_savedScribeOutput) {
+        const _newScribePanel = document.getElementById('agent-output-scribe');
+        if (_newScribePanel) {
+            const _scribePre = _newScribePanel.querySelector('.agent-output-text');
+            if (_scribePre) {
+                _scribePre.textContent = _savedScribeOutput;
+                _newScribePanel.style.display = 'block';
             }
         }
     }

@@ -47,7 +47,7 @@ async def web_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
     try:
         import asyncio
 
-        from duckduckgo_search import DDGS
+        from ddgs import DDGS
 
         def _search() -> list[dict[str, str]]:
             with DDGS() as ddgs:
@@ -56,9 +56,9 @@ async def web_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
                     if i >= max_results:
                         break
                     results.append({
-                        "title": r.get("title", ""),
-                        "snippet": r.get("body", ""),
-                        "url": r.get("href", ""),
+                        "title": (r.get("title", "") or "")[:80],      # Truncate title
+                        "snippet": (r.get("body", "") or "")[:150],    # Truncate snippet to 150 chars
+                        "url": (r.get("href", "") or "")[:80],         # Truncate URL
                     })
                 return results
 

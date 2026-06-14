@@ -715,7 +715,12 @@ class Orchestrator:
         agents = self._build_agents(config, agent_factory)
         self._agents = agents  # Store for clarification routing.
         scribe_cb = self._make_stream_callback("scribe")
-        scribe = self._build_scribe(scribe_factory, event_callback=scribe_cb)
+        scribe_model = overrides.get("selected_model", None)
+        scribe = self._build_scribe(
+            scribe_factory,
+            event_callback=scribe_cb,
+            model_name=scribe_model,
+        )
 
         # Active agent IDs (excludes failed agents at each step).
         def active_agents() -> list[str]:
@@ -835,16 +840,37 @@ class Orchestrator:
                 )
 
         # ── Round 2: Refined Research ──────────────────────────────────
-        if config.topic.time_budget in ("quick", self._CUSTOM_BUDGET_KEY):
-            # Quick mode or custom budget — skip Round 2.
+        # Dynamic decision: run Round 2 only if there are significant
+        # knowledge gaps or low-confidence agents.
+        _gap_threshold = 2
+        _knowledge_gaps = len(shared.knowledge_gaps) if hasattr(shared, 'knowledge_gaps') else 0
+        _disagreements = len(shared.areas_of_disagreement) if hasattr(shared, 'areas_of_disagreement') else 0
+        _total_gaps = _knowledge_gaps + _disagreements
+
+        _low_confidence_agents = sum(
+            1 for f in round_1_results.values()
+            if hasattr(f, 'confidence') and f.confidence < 0.5
+        )
+
+        _should_run_round_2 = _total_gaps >= _gap_threshold or _low_confidence_agents > 0
+
+        if config.topic.time_budget in ("quick", self._CUSTOM_BUDGET_KEY) or not _should_run_round_2:
+            # Skip Round 2.
+            reason = ""
             if config.topic.time_budget == self._CUSTOM_BUDGET_KEY:
-                console.print(f"\n[bold]Custom mode ({config.time_budget_seconds}s):[/bold] Skipping Round 2")
+                reason = f"Custom mode ({config.time_budget_seconds}s)"
+            elif config.topic.time_budget == "quick":
+                reason = "Quick mode"
             else:
-                console.print("\n[bold]Quick mode:[/bold] Skipping Round 2")
+                reason = f"Sufficient agreement ({_total_gaps} gaps, {_low_confidence_agents} low-confidence agents)"
+            console.print(f"\n[bold]{reason}:[/bold] Skipping Round 2")
+            self._log_event("round2_skip", budget=config.topic.time_budget,
+                            gaps=_total_gaps, low_confidence=_low_confidence_agents)
             round_2_results = {}
         else:
             self.state = "ROUND2"
-            console.print("\n[bold]Round 2:[/bold] Refined Research with Shared Context")
+            console.print(f"\n[bold]Round 2:[/bold] Refined Research with Shared Context "
+                          f"({_total_gaps} gaps, {_low_confidence_agents} low-confidence agents)")
             self._log_event("round_start", round=2)
             round_2_results = await self.run_round(
                 2,
@@ -995,22 +1021,28 @@ class Orchestrator:
     def _build_scribe(
         factory: Callable[..., AgentFunc] | None,
         event_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        model_name: str | None = None,
     ) -> AgentFunc:
         """Build the scribe callable via the injected factory, or use default.
 
         Args:
-            factory: Factory callable. May accept an ``event_callback`` kwarg.
+            factory: Factory callable. May accept ``event_callback``
+                and/or ``model_name`` kwargs.
             event_callback: Optional async callback for streaming output chunks.
+            model_name: Optional model override for the scribe.
 
         Returns:
             An ``AgentFunc`` (async callable) that produces the final paper.
         """
         if factory is not None:
             try:
-                return factory(event_callback=event_callback)
+                return factory(event_callback=event_callback, model_name=model_name)
             except TypeError:
-                # The factory may not accept event_callback (e.g. mocks).
-                return factory()
+                # The factory may not accept one or both kwargs (e.g. mocks).
+                try:
+                    return factory(event_callback=event_callback)
+                except TypeError:
+                    return factory()
         return Orchestrator._default_scribe
 
     @staticmethod

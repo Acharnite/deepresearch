@@ -585,6 +585,7 @@ class TestKeyboardInterrupt:
             manual_models = False
             dry_run = False
             seed = None
+            model = None
             web = False
 
         args = FakeArgs()
