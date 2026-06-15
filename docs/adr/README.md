@@ -10,3 +10,4 @@
 | [ADR-0006](ADR-0006-web-search-and-tool-calling.md) | Web Search and Tool Calling Integration | Proposed | 2026-06-15 |
 | [ADR-0007](ADR-0007-clarification-protocol-and-refinement.md) | Clarification Protocol and Refinement Phase | Proposed | 2026-06-15 |
 | [ADR-0008](ADR-0008-dashboard-enhancements.md) | Dashboard Enhancements | Proposed | 2026-06-15 |
+| [ADR-0009](ADR-0009-cicd-pipeline-and-distribution.md) | CI/CD Pipeline, npm Wrapper, and Docker Distribution | Proposed | 2026-06-15 |
