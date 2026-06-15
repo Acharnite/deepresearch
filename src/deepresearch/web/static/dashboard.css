@@ -328,7 +328,7 @@ a:hover { text-decoration: underline; }
 .result-actions { display: flex; gap: 12px; justify-content: center; margin: 20px 0; flex-wrap: wrap; }
 .result-summary { background: var(--surface-2); border-radius: 8px; padding: 16px; margin-top: 16px; text-align: left; font-size: 13px; line-height: 1.6; }
 .result-summary dt { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
-.result-summary dd { margin: 2px 0 10px 0; }
+.result-summary dd { margin: 2px 0 10px 0; word-break: break-all; }
 .error-view { max-width: 600px; margin: 16px auto; padding: 24px; text-align: center; }
 .error-view h2 { font-size: 20px; color: var(--red); margin-bottom: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .error-message { background: #3a1c1c; border: 1px solid var(--red); border-radius: 6px; padding: 12px; margin: 12px 0; font-size: 13px; color: var(--text); text-align: left; word-break: break-word; }
@@ -404,7 +404,7 @@ a:hover { text-decoration: underline; }
 .empty-state h3 { font-size: 16px; margin-bottom: 8px; }
 .empty-state p { font-size: 13px; }
 .progress-grid { display: grid; grid-template-columns: 1fr 360px; gap: 12px; align-items: start; }
-.agent-column { min-width: 0; }
+.agent-column { min-width: 0; max-height: calc(100vh - 200px); overflow-y: auto; }
 .event-column { min-width: 0; }
 
 /* ── State Badges ──────────────────────────── */
@@ -547,6 +547,22 @@ a:hover { text-decoration: underline; }
 .mini-item.selected { background: rgba(88,166,255,0.15); color: var(--accent); }
 .mini-empty { padding: 12px; text-align: center; color: var(--text-muted); font-size: 12px; }
 
+.state-researching::before,
+.state-searching::before,
+.state-writing::before,
+.state-refining::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--text-muted);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }

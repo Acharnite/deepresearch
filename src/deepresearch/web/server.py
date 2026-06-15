@@ -326,6 +326,7 @@ async def get_session_state(session_id: str) -> JSONResponse:
         "agent_states": agent_states,
         "scribe_info": scribe_info,
         "event_count": len(info.event_history),
+        "elapsed_start": info.created_at,
     })
 
 

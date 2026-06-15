@@ -65,13 +65,13 @@ Respond with valid JSON **only** — no markdown fences, no explanation:
       "subsections": []
     },
     {
-      "heading": "Agent A Perspective",
-      "source_agent_id": "agent-a",
-      "content": "Content from agent A's findings.",
+      "heading": "Curious Teen Perspective",
+      "source_agent_id": "curious-teen",
+      "content": "Content from the curious teen agent's findings.",
       "subsections": [
         {
           "heading": "Subsection",
-          "source_agent_id": "agent-a",
+          "source_agent_id": "curious-teen",
           "content": "Subsection content.",
           "subsections": []
         }
@@ -115,6 +115,7 @@ class ScribeAgent(BaseAgent):
         self,
         reports: dict[str, IndividualReport],
         clarification_fn: Callable[[ClarificationQuery], Coroutine[Any, Any, ClarificationResponse]] | None = None,  # noqa: E501
+        status_callback: Callable[[str], Coroutine[Any, Any, None]] | None = None,
     ) -> ResearchPaper:
         """Synthesise all agent reports into a final research paper.
 
@@ -131,6 +132,9 @@ class ScribeAgent(BaseAgent):
                 ``ClarificationQuery`` and returns a
                 ``ClarificationResponse``. Typically wired to the
                 orchestrator's ``_handle_clarification``.
+            status_callback: Optional async callable that receives status
+                update strings (e.g. "identifying_claims", "asking_agent",
+                "recompiling") during the clarification protocol.
 
         Returns:
             A structured ``ResearchPaper`` with all required sections.
@@ -138,12 +142,16 @@ class ScribeAgent(BaseAgent):
         logger.info("Scribe compile starting — %d reports, ~%d chars", len(reports), sum(len(str(r)) for r in reports.values()))
         reports_text = self._format_reports(reports)
         logger.debug("Scribe formatted reports: %d chars in prompt", len(reports_text))
+        agent_names = list(reports.keys())
         user_prompt = (
             "# Compile Research Paper\n\n"
             f"The following are individual reports from {len(reports)} "
             f"research agents. Synthesise them into a coherent paper.\n\n"
+            f"**IMPORTANT: Use EXACTLY these agent names for section headings: {agent_names}**\n"
+            f"**Do NOT invent new agent names, titles, or perspective names.**\n\n"
             f"{reports_text}\n\n"
-            "Use the EXACT agent names from the reports. Do NOT rename or regroup. "
+            "Use the EXACT agent names from the reports above. "
+            "Each agent section must be titled with the agent's real name. "
             "Highlight areas of agreement and disagreement."
         )
         user_prompt += _COMPILE_FORMAT
@@ -176,7 +184,7 @@ class ScribeAgent(BaseAgent):
         # ── Clarification Protocol ──────────────────────────────────
         if clarification_fn is not None:
             paper = await self._run_clarification_protocol(
-                paper, reports, clarification_fn
+                paper, reports, clarification_fn, status_callback
             )
 
         return paper
@@ -186,6 +194,7 @@ class ScribeAgent(BaseAgent):
         paper: ResearchPaper,
         reports: dict[str, IndividualReport],
         clarification_fn: Callable[[ClarificationQuery], Coroutine[Any, Any, ClarificationResponse]],
+        status_callback: Callable[[str], Coroutine[Any, Any, None]] | None = None,
     ) -> ResearchPaper:
         """Run the clarification protocol on a draft paper.
 
@@ -201,6 +210,8 @@ class ScribeAgent(BaseAgent):
 
         while total_rounds < max_total_rounds:
             # Ask the scribe LLM to identify claims needing clarification.
+            if status_callback:
+                await status_callback("identifying_claims")
             try:
                 query_data = await self._identify_clarification_needs(
                     paper, reports, clarifications_per_agent, _asked_claims
@@ -236,6 +247,8 @@ class ScribeAgent(BaseAgent):
                 continue
 
             # Ask the agent for clarification.
+            if status_callback:
+                await status_callback(f"asking_agent:{agent_id}")
             try:
                 response = await self._clarify_claim(
                     claim, agent_id, context, clarification_fn
@@ -252,6 +265,8 @@ class ScribeAgent(BaseAgent):
             total_rounds += 1
 
             # Incorporate the clarification into the paper by re-compiling.
+            if status_callback:
+                await status_callback("recompiling")
             try:
                 paper = await self._recompile_with_clarification(
                     paper, agent_id, claim, response

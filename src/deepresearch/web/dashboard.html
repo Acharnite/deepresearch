@@ -186,22 +186,23 @@
     </div>
   </div>
 
+  <!-- Scribe (compact, full-width, above agent progress) -->
+  <div class="scribe-card" id="scribeCard" style="margin-bottom:12px;">
+    <div class="card-header">
+      <span>📝 Scribe</span>
+      <span id="scribeStateBadge" class="state-badge state-waiting">⏳ Waiting</span>
+    </div>
+    <div class="agent-output" id="agent-output-scribe" data-agent="scribe" style="display:none;max-height:80px;margin:0 8px 8px 8px;">
+      <pre class="agent-output-text"></pre>
+    </div>
+  </div>
+
   <div class="progress-grid" id="progressView">
     <!-- Left Column: Agents (stacked vertically in single column) -->
     <div class="agent-column" id="agentColumn1"></div>
 
-    <!-- Right Column: Scribe, Event log, Q&A -->
+    <!-- Right Column: Event log, Q&A -->
     <div class="event-column" id="eventColumn">
-      <!-- Scribe Section (top of sidebar) -->
-      <div class="scribe-card" id="scribeCard">
-        <div class="card-header">
-          <span>📝 Scribe</span>
-          <span id="scribeStateBadge" class="state-badge state-waiting">⏳ Waiting</span>
-        </div>
-        <div class="agent-output" id="agent-output-scribe" data-agent="scribe" style="display:none;">
-          <pre class="agent-output-text"></pre>
-        </div>
-      </div>
 
       <!-- Result View (shown when complete) -->
       <div id="resultView" class="result-view card hidden" style="margin:0;padding:16px;">

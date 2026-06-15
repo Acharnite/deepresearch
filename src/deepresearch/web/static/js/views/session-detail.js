@@ -193,6 +193,11 @@ async function fetchSessionDetail(sessionId) {
       }
     }
 
+    // Restore elapsed timer from session creation time
+    if (stateData.elapsed_start) {
+      startElapsedTimer(stateData.elapsed_start);
+    }
+
     // Re-render agents with restored state
     renderAgents();
   }
@@ -362,7 +367,14 @@ export function processEvent(data) {
     const panel = document.getElementById('agent-output-' + aid);
     const pre = panel ? panel.querySelector('.agent-output-text') : null;
     if (pre) {
-      panel.style.display = 'block';
+      // Only auto-show panel if not manually collapsed (user toggled it closed)
+      // Check if user has explicitly collapsed this panel by checking toggle button text
+      const section = document.getElementById('agent-section-' + aid);
+      const btn = section ? section.querySelector('.agent-toggle') : null;
+      const isCollapsed = btn && btn.textContent === '▸';
+      if (!isCollapsed) {
+        panel.style.display = 'block';
+      }
       // Buffer text and batch DOM updates (throttle to ~20fps)
       if (!panel._outputBuffer) panel._outputBuffer = '';
       panel._outputBuffer += text;
@@ -372,7 +384,9 @@ export function processEvent(data) {
           panel._outputBuffer = '';
           panel._outputTimer = null;
           // Auto-scroll to bottom (not top!)
-          panel.scrollTop = panel.scrollHeight;
+          if (!isCollapsed) {
+            panel.scrollTop = panel.scrollHeight;
+          }
         }, 50);
       }
     }

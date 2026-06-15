@@ -10,22 +10,27 @@ export function renderAgents() {
 
   console.log('[Agent Debug] renderAgents called, agents count:', ids.length);
 
+  // Save scroll position of the agent column container (FIX 4)
+  const col1El = document.getElementById('agentColumn1');
+  const savedColumnScrollTop = col1El ? col1El.scrollTop : 0;
+
   if (ids.length === 0) {
-    const col1 = document.getElementById('agentColumn1');
-    if (col1) {
-      col1.innerHTML = '<div class="card">' +
+    if (col1El) {
+      col1El.innerHTML = '<div class="card">' +
         '<div class="card-header"><span>🤖 Agent Progress</span><span id="agentCount" class="text-muted">0 agents</span></div>' +
         '<div class="agent-list"><div class="empty-state"><h3>No agent data</h3><p>Waiting for session to start...</p></div></div></div>';
     }
     return;
   }
 
-  // Save existing agent output text and scroll positions before re-render
+  // Save collapsed state (FIX 1) and output text before re-render
+  const savedCollapsed = {};
   const savedOutputs = {};
   const savedScrollTops = {};
   for (const id of ids) {
     const existing = document.getElementById('agent-output-' + id);
     if (existing) {
+      savedCollapsed[id] = (existing.style.display === 'none');
       const pre = existing.querySelector('.agent-output-text');
       if (pre) savedOutputs[id] = pre.textContent;
       savedScrollTops[id] = existing.scrollTop;
@@ -51,7 +56,7 @@ export function renderAgents() {
         '<span class="state-badge state-' + stateClass + '">' + label + '</span>' +
         '<button class="agent-toggle" onclick="toggleAgentOutput(\'' + id + '\')" title="Toggle log">▾</button>' +
       '</div>';
-      // Output panel immediately after this agent's header
+      // Output panel starts collapsed (FIX 5)
       html += '<div class="agent-output" id="agent-output-' + id + '" data-agent="' + id + '" style="display:none;">' +
         '<pre class="agent-output-text"></pre>' +
       '</div>';
@@ -62,7 +67,6 @@ export function renderAgents() {
   }
 
   // Render all agents in a single column
-  const col1El = document.getElementById('agentColumn1');
   if (col1El) col1El.innerHTML = renderAgentCard(ids);
 
   // Update scribe state badge in sidebar (static HTML)
@@ -83,7 +87,7 @@ export function renderAgents() {
     scribePanel.style.display = scDisplay;
   }
 
-  // Restore saved output text and scroll positions after re-render
+  // Restore saved output text after re-render
   for (const id of ids) {
     if (savedOutputs[id]) {
       const newPanel = document.getElementById('agent-output-' + id);
@@ -91,17 +95,27 @@ export function renderAgents() {
         const pre = newPanel.querySelector('.agent-output-text');
         if (pre) {
           pre.textContent = savedOutputs[id];
-          newPanel.style.display = 'block';
-          // Restore scroll position (scroll to bottom if was at bottom)
-          if (savedScrollTops[id] !== undefined) {
-            newPanel.scrollTop = savedScrollTops[id];
+          // Restore collapsed state (FIX 1)
+          if (savedCollapsed[id]) {
+            newPanel.style.display = 'none';
+            const section = document.getElementById('agent-section-' + id);
+            const btn = section ? section.querySelector('.agent-toggle') : null;
+            if (btn) btn.textContent = '▸';
           } else {
-            newPanel.scrollTop = newPanel.scrollHeight;
+            newPanel.style.display = 'block';
+            if (savedScrollTops[id] !== undefined) {
+              newPanel.scrollTop = savedScrollTops[id];
+            } else {
+              newPanel.scrollTop = newPanel.scrollHeight;
+            }
           }
         }
       }
     }
   }
+
+  // Restore column scroll position (FIX 4)
+  if (col1El) col1El.scrollTop = savedColumnScrollTop;
 }
 
 /* ── Collapsible agent output toggle ───────────────── */

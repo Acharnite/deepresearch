@@ -418,9 +418,12 @@ class Orchestrator:
                 from deepresearch.agents.scribe_agent import ScribeAgent
 
                 if isinstance(scribe, ScribeAgent):
+                    async def _scribe_status(status: str) -> None:
+                        self._log_event("scribe_clarifying", step=status)
                     paper = await scribe.compile(
                         reports,
                         clarification_fn=self._handle_clarification,
+                        status_callback=_scribe_status,
                     )
                 else:
                     # Generic object with .compile method.
@@ -733,7 +736,7 @@ class Orchestrator:
             questions=qa_questions,
         )
 
-        # ── Refinement Phase ──────────────────────────────────────────
+        # ── Refinement Phase (parallel) ────────────────────────────────
         # Give each agent their follow-up questions and let them refine
         # their findings with an additional web search if needed.
         # This happens BEFORE the Round 2 decision so refined findings
@@ -741,23 +744,33 @@ class Orchestrator:
         self.state = "REFINING"
         console.print("\n[bold]Refinement:[/bold] Agents refining findings from questions")
         self._log_event("refinement_start")
-        _refined_count = 0
-        for agent_id, followup in followup_results.items():
+
+        async def _refine_agent(agent_id: str, followup: FollowUpQuestions):
             if not isinstance(followup, FollowUpQuestions) or not followup.questions:
-                continue
+                return None
             if agent_id in self.failed_agents:
-                continue
+                return None
             try:
                 refined = await asyncio.wait_for(
                     agents[agent_id](followup),
                     timeout=max(30, self._get_timeout() // 2),
                 )
                 if refined and isinstance(refined, Findings) and (refined.summary or refined.key_points):
-                    round_1_results[agent_id] = refined
-                    _refined_count += 1
-                    logger.info("Agent '%s' refined findings from %d questions", agent_id, len(followup.questions))
+                    return (agent_id, refined)
             except Exception as e:
                 logger.warning("Agent '%s' refinement failed: %s", agent_id, e)
+            return None
+
+        tasks = [_refine_agent(aid, fu) for aid, fu in followup_results.items()]
+        results = await asyncio.gather(*tasks)
+        _refined_count = 0
+        for result in results:
+            if result:
+                agent_id, refined = result
+                round_1_results[agent_id] = refined
+                _refined_count += 1
+                logger.info("Agent '%s' refined findings", agent_id)
+
         if _refined_count:
             console.print(f"  [dim]{_refined_count} agent(s) refined their findings[/dim]")
         self._log_event("refinement_complete", refined_agents=_refined_count)
