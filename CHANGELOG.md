@@ -2,6 +2,16 @@
 
 All notable changes to DeepeResearch will be documented in this file.
 
+## [0.6.0] - 2026-06-15
+
+### Fixed
+- **Quick budget too short** — Increased from 2 to 5 minutes (300s) to allow meaningful research
+- **Timeout floor too low** — Increased per-agent timeout floor from 30s to 120s to prevent premature agent termination
+- **Round 2 always skipped for quick/custom** — Removed budget-based Round 2 skip logic; now runs whenever gaps warrant it
+- **Empty results not detected** — Agents returning None/empty results now marked as failed instead of silently accepted
+- **DuckDuckGo search failures** — Added retry with exponential backoff (3 attempts, 1s/2s/4s delays)
+- **All-agent failure shows "complete"** — Sessions now show "error" status when all agents fail instead of misleading "complete"
+
 ## [0.4.0] - 2026-06-15
 
 ### Fixed

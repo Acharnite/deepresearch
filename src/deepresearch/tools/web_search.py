@@ -34,38 +34,49 @@ WEB_SEARCH_TOOL: dict[str, Any] = {
 }
 
 
-async def web_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
-    """Execute a DuckDuckGo web search and return structured results.
+async def web_search(query: str, max_results: int = 5, retries: int = 3) -> list[dict[str, str]]:
+    """Execute a DuckDuckGo web search with retry and backoff.
 
     Args:
         query: The search query.
         max_results: Max results to return (1-10).
+        retries: Number of retry attempts.
 
     Returns:
         List of dicts with 'title', 'snippet', and 'url' keys.
     """
-    try:
-        import asyncio
+    import asyncio
 
-        from ddgs import DDGS
+    last_error = None
+    for attempt in range(retries):
+        try:
+            from ddgs import DDGS
 
-        def _search() -> list[dict[str, str]]:
-            with DDGS() as ddgs:
-                results: list[dict[str, str]] = []
-                for i, r in enumerate(ddgs.text(query, max_results=max_results)):
-                    if i >= max_results:
-                        break
-                    results.append({
-                        "title": (r.get("title", "") or "")[:80],      # Truncate title
-                        "snippet": (r.get("body", "") or "")[:150],    # Truncate snippet to 150 chars
-                        "url": (r.get("href", "") or "")[:80],         # Truncate URL
-                    })
+            def _search() -> list[dict[str, str]]:
+                with DDGS() as ddgs:
+                    results: list[dict[str, str]] = []
+                    for i, r in enumerate(ddgs.text(query, max_results=max_results)):
+                        if i >= max_results:
+                            break
+                        results.append({
+                            "title": (r.get("title", "") or "")[:80],
+                            "snippet": (r.get("body", "") or "")[:150],
+                            "url": (r.get("href", "") or "")[:80],
+                        })
+                    return results
+
+            results = await asyncio.to_thread(_search)
+            # Return immediately on success or legitimately empty results
+            if results is not None:
+                logger.debug("Web search for '%s' returned %d results", query, len(results))
                 return results
+        except Exception as e:
+            last_error = e
+            if attempt < retries - 1:
+                wait = 1.0 * (2 ** attempt)  # 1s, 2s, 4s
+                logger.warning("Web search failed for '%s': %s, retrying in %.1fs (attempt %d/%d)", query, e, wait, attempt + 1, retries)
+                await asyncio.sleep(wait)
+            else:
+                logger.warning("Web search failed for '%s' after %d attempts: %s", query, retries, e)
 
-        results = await asyncio.to_thread(_search)
-        logger.debug("Web search for '%s' returned %d results", query, len(results))
-        return results
-
-    except Exception as e:
-        logger.warning("Web search failed for '%s': %s", query, e)
-        return [{"title": "Search Error", "snippet": f"Search failed: {e}", "url": ""}]
+    return [{"title": "Search Error", "snippet": f"Search failed after {retries} attempts: {last_error}", "url": ""}]

@@ -143,7 +143,7 @@ class MultiSessionManager:
         if time_budget_seconds is not None:
             secs = time_budget_seconds
         else:
-            secs = {"quick": 120, "medium": 300, "deep": 480}.get(time_budget, 300)
+            secs = {"quick": 300, "medium": 300, "deep": 480}.get(time_budget, 300)
 
         info = SessionInfo(
             session_id=session_id,
@@ -284,13 +284,27 @@ class MultiSessionManager:
                 if html_candidate.exists():
                     html_path = str(html_candidate)
 
-            info.result = {
-                "status": "complete",
-                "pdf_path": str(pdf_path),
-                "pdf_filename": pdf_file.name,
-                "html_path": html_path,
-            }
-            info.status = "complete"
+            # Check if all agents failed — mark as error instead of complete
+            total_agents = len(orchestrator.failed_agents) + len([a for a in (orchestrator.session_config.agent_profiles if orchestrator.session_config else [])])
+            all_failed = len(orchestrator.failed_agents) >= total_agents and total_agents > 0
+
+            if all_failed:
+                info.result = {
+                    "status": "error",
+                    "error": f"All agents failed ({len(orchestrator.failed_agents)}/{total_agents})",
+                    "pdf_path": str(pdf_path),
+                    "pdf_filename": pdf_file.name,
+                }
+                info.status = "error"
+                info.error = f"All agents failed: {', '.join(orchestrator.failed_agents.keys())}"
+            else:
+                info.result = {
+                    "status": "complete",
+                    "pdf_path": str(pdf_path),
+                    "pdf_filename": pdf_file.name,
+                    "html_path": html_path,
+                }
+                info.status = "complete"
             info.completed_at = datetime.now().isoformat()
             # Persist to disk so it survives restarts
             db = _load_session_db()

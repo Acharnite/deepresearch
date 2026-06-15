@@ -64,14 +64,14 @@ class Orchestrator:
 
     # Map time-budget keywords to human-readable descriptions.
     TIME_BUDGET_OPTIONS: dict[str, str] = {
-        "quick": "Quick (2 minutes — fastest results)",
+        "quick": "Quick (5 minutes — fastest results)",
         "medium": "Standard (5 minutes — balanced)",
         "deep": "Deep (8 minutes — most thorough)",
     }
 
     # Map time-budget keywords to seconds.
     TIME_BUDGET_SECONDS: dict[str, int] = {
-        "quick": 120,
+        "quick": 300,
         "medium": 300,
         "deep": 480,
     }
@@ -275,9 +275,24 @@ class Orchestrator:
                 result = await task
                 results[agent_id] = result
                 result_size = len(str(result)) if result else 0
-                self._log_event("agent_complete", agent_id=agent_id,
-                                round=round_num, result_chars=result_size,
-                                status="success")
+
+                # Check for empty/meaningless results
+                is_empty = False
+                if result is None:
+                    is_empty = True
+                elif hasattr(result, 'summary') and not result.summary:
+                    is_empty = True
+                elif hasattr(result, 'key_points') and not result.key_points:
+                    is_empty = True
+
+                if is_empty and result_size < 200:
+                    logger.warning("Agent '%s' returned empty/meaningless result (%d chars), marking as failed", agent_id, result_size)
+                    self.handle_agent_failure(agent_id, "empty_result")
+                    del results[agent_id]  # Remove from valid results
+                else:
+                    self._log_event("agent_complete", agent_id=agent_id,
+                                    round=round_num, result_chars=result_size,
+                                    status="success")
             except asyncio.TimeoutError:
                 logger.warning("Agent '%s' timed out in Round %d (timeout=%ds)", agent_id, round_num, timeout)
                 self.handle_agent_failure(agent_id, "timeout")
@@ -289,9 +304,9 @@ class Orchestrator:
     def _get_timeout(self) -> int:
         """Per-agent timeout in seconds based on session time budget."""
         if self.session_config is not None:
-            # Half the total budget per round, minimum 30 s.
-            return max(30, self.session_config.time_budget_seconds // 2)
-        return 60
+            # Half the total budget per round, minimum 120 s.
+            return max(120, self.session_config.time_budget_seconds // 2)
+        return 120
 
     # ------------------------------------------------------------------
     # Collaboration — aggregate findings into shared knowledge
@@ -379,7 +394,16 @@ class Orchestrator:
         results: dict[str, FollowUpQuestions] = {}
         for agent_id, task in tasks.items():
             try:
-                results[agent_id] = await task
+                result = await task
+                if result is None:
+                    logger.warning("Agent '%s' returned None follow-up", agent_id)
+                    continue
+                if hasattr(result, 'questions') and not result.questions:
+                    logger.warning("Agent '%s' returned empty follow-up questions", agent_id)
+                    continue
+                results[agent_id] = result
+            except asyncio.TimeoutError:
+                logger.warning("Agent '%s' follow-up timed out", agent_id)
             except Exception as e:
                 logger.warning("Failed to collect follow-up from %s: %s", agent_id, e)
         return results
@@ -841,15 +865,9 @@ class Orchestrator:
 
         _should_run_round_2 = _total_gaps >= _gap_threshold or _low_confidence_agents > 0
 
-        if config.topic.time_budget in ("quick", self._CUSTOM_BUDGET_KEY) or not _should_run_round_2:
-            # Skip Round 2.
-            reason = ""
-            if config.topic.time_budget == self._CUSTOM_BUDGET_KEY:
-                reason = f"Custom mode ({config.time_budget_seconds}s)"
-            elif config.topic.time_budget == "quick":
-                reason = "Quick mode"
-            else:
-                reason = f"Sufficient agreement ({_total_gaps} gaps, {_low_confidence_agents} low-confidence agents)"
+        if not _should_run_round_2:
+            # Skip Round 2 — sufficient agreement
+            reason = f"Sufficient agreement ({_total_gaps} gaps, {_low_confidence_agents} low-confidence agents)"
             console.print(f"\n[bold]{reason}:[/bold] Skipping Round 2")
             self._log_event("round2_skip", budget=config.topic.time_budget,
                             gaps=_total_gaps, low_confidence=_low_confidence_agents)
