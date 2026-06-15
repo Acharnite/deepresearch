@@ -327,7 +327,12 @@ export function processEvent(data) {
   if (eventType === 'agent_complete') {
     console.log('[Agent Debug] agent_complete:', data.agent_id);
     const aid = data.agent_id;
-    if (state.agents[aid]) { state.agents[aid].status = 'done'; }  // DON'T set state to 'done' — agent may still refine/answer
+    if (state.agents[aid]) {
+      state.agents[aid].status = 'done';
+      // Reset state to 'waiting' so badge shows correct status
+      // (otherwise stale 'researching'/'answering' state persists)
+      state.agents[aid].state = 'waiting';
+    }
     renderAgents();
   }
 

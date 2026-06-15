@@ -74,8 +74,9 @@ export function renderAgents() {
         '<span class="state-badge state-' + stateClass + '">' + label + '</span>' +
         '<button class="agent-toggle" onclick="toggleAgentOutput(\'' + id + '\')" title="Toggle log">▾</button>' +
       '</div>';
-      // Output panel starts collapsed (FIX 5)
-      html += '<div class="agent-output" id="agent-output-' + id + '" data-agent="' + id + '" style="display:none;">' +
+      // Output panel starts collapsed (FIX 5) — must have 'collapsed' class
+      // so savedCollapsed check correctly identifies new panels as collapsed
+      html += '<div class="agent-output collapsed" id="agent-output-' + id + '" data-agent="' + id + '" style="display:none;">' +
         '<pre class="agent-output-text"></pre>' +
       '</div>';
       html += '</div>'; // close agent-section
