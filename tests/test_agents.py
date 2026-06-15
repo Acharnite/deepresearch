@@ -29,6 +29,7 @@ from deepresearch.models import (
     Findings,
     FollowUpQuestions,
     IndividualReport,
+    PaperSection,
     ResearchPaper,
     ResearchTopic,
     SharedKnowledge,
@@ -753,3 +754,72 @@ class TestAgentRegistry:
 
         with pytest.raises(TypeError, match="test-agent"):
             await factory(42)  # type: ignore[arg-type]
+
+
+# ─── Tests: Scribe Clarification Failure ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_scribe_parallel_clarification_handles_task_failure():
+    """Scribe clarification protocol handles async task failures gracefully."""
+    from deepresearch.llm.client import LLMClient as RealLLMClient
+
+    llm = MagicMock(spec=RealLLMClient)
+    llm.model = "gpt-4o"
+    llm.timeout = 10
+    real_client = RealLLMClient(model="gpt-4o", timeout=10)
+    llm.parse_json_response = real_client.parse_json_response
+    llm.generate_stream = AsyncMock(return_value=json.dumps({
+        "title": "Test",
+        "abstract": "Test abstract",
+        "methodology_note": "Test",
+        "sections": [{"heading": "Section 1", "content": "Content", "subsections": []}],
+        "synthesis": "Test",
+        "key_takeaways": ["Key 1"],
+        "conclusion": "Test conclusion",
+    }))
+
+    scribe = ScribeAgent(llm_client=llm)
+
+    reports = {
+        "agent-1": IndividualReport(
+            agent_id="agent-1", title="Report 1", perspective_summary="Perspective 1",
+            key_insights=["Insight 1"], analysis="Analysis 1", open_questions=[],
+            sections=[PaperSection(heading="H1", content="C1")],
+            full_text="Full report text.",
+        )
+    }
+
+    # Clarification function that always fails
+    async def failing_clarification(query: ClarificationQuery) -> ClarificationResponse:
+        raise RuntimeError("Agent unavailable")
+
+    # Should not raise — should handle failure gracefully
+    paper = await scribe.compile(reports, clarification_fn=failing_clarification)
+    assert paper is not None
+    assert paper.title == "Test"
+
+
+# ─── Tests: FollowUpQuestions target_agent_ids ───────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_followup_questions_with_target_agent_ids():
+    """FollowUpQuestions supports target_agent_ids for directed questions."""
+    # Without targets (backward compatible)
+    fq = FollowUpQuestions(agent_id="agent-1", questions=["What about X?"])
+    assert fq.target_agent_ids is None
+
+    # With targets
+    fq_targeted = FollowUpQuestions(
+        agent_id="agent-1",
+        questions=["What about X?", "How does Y work?"],
+        target_agent_ids=["agent-2", "agent-3"],
+    )
+    assert fq_targeted.target_agent_ids == ["agent-2", "agent-3"]
+    assert len(fq_targeted.questions) == len(fq_targeted.target_agent_ids)
+
+    # Serialization roundtrip
+    data = fq_targeted.model_dump()
+    fq_restored = FollowUpQuestions(**data)
+    assert fq_restored.target_agent_ids == ["agent-2", "agent-3"]

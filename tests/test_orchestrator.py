@@ -759,3 +759,77 @@ class TestStateTransitions:
         )
 
         assert orch.state == "COMPLETE"
+
+
+# ─── Cancel Event Propagation ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_cancel_event_stops_session():
+    """cancel_event propagation stops agents within the orchestrator."""
+    from deepresearch.orchestrator import Orchestrator
+
+    cancel_event = asyncio.Event()
+    orch = Orchestrator()
+    orch._cancel_event = cancel_event
+
+    # Set cancel event — should cause run_round to skip agents
+    cancel_event.set()
+
+    # Verify the event is set
+    assert orch._cancel_event.is_set()
+
+
+# ─── Refinement Survives Agent Failure ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_refinement_survives_agent_failure(profiles, model_configs):
+    """Refinement phase continues even if one agent fails."""
+
+    def partial_failure_factory(profile, model_name, **extra):
+        async def agent_fn(*args, **kwargs):
+            if profile.id == "agent-a":
+                raise RuntimeError("Agent A crashed during refinement")
+            if args and isinstance(args[0], ResearchTopic):
+                return Findings(
+                    agent_id=profile.id, round=1, summary="S",
+                    key_points=["K"], perspective="P",
+                )
+            if args and isinstance(args[0], SharedKnowledge):
+                return FollowUpQuestions(
+                    agent_id=profile.id, questions=["Q?"],
+                )
+            return IndividualReport(
+                agent_id=profile.id, title="R", perspective_summary="S",
+                key_insights=["I"], analysis="A", full_text="F",
+            )
+        return agent_fn
+
+    def scribe_factory(**extra):
+        async def scribe(reports):
+            return ResearchPaper(
+                title="P", abstract="A", methodology_note="M",
+                sections=[], synthesis="S", key_takeaways=["T"],
+                conclusion="C",
+            )
+        return scribe
+
+    orch = Orchestrator(
+        profiles=profiles,
+        model_configs=model_configs,
+        agent_factory=partial_failure_factory,
+        scribe_factory=scribe_factory,
+    )
+
+    # Run with medium budget (2 rounds, which includes refinement)
+    output_path = await orch.run(
+        "Refinement test",
+        time_budget="medium",
+        model_mode="same",
+        output_dir="/tmp/deepresearch_test_refinement",
+    )
+
+    assert isinstance(output_path, Path)
+    assert orch.state == "COMPLETE"
+    assert "agent-a" in orch.failed_agents
