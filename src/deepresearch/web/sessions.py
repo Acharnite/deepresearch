@@ -255,8 +255,10 @@ class MultiSessionManager:
             info.event_bus.publish = _publish_with_history
 
             topic_slug = _slugify(info.topic) or "research"
-            output_path = Path(f"./output/{session_id}/{topic_slug}.pdf")
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            # Use absolute path based on output directory location (SESSION_DB_PATH.parent)
+            output_dir = SESSION_DB_PATH.parent / session_id
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / f"{topic_slug}.pdf"
 
             # Build overrides dict with optional model selections.
             run_overrides: dict[str, Any] = {
@@ -408,7 +410,7 @@ class MultiSessionManager:
             # Fallback: if result wasn't persisted (legacy sessions), derive from filesystem
             if not info.result:
                 topic_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', (info.topic or "").lower().strip())[:50] or "research"
-                pdf_path = Path(f"./output/{sid}/{topic_slug}.pdf")
+                pdf_path = SESSION_DB_PATH.parent / sid / f"{topic_slug}.pdf"
                 if pdf_path.exists():
                     info.result = {"pdf_filename": pdf_path.name, "pdf_path": str(pdf_path)}
             self._sessions[sid] = info
@@ -451,8 +453,8 @@ class MultiSessionManager:
         self._sessions.pop(session_id, None)
         self._tasks.pop(session_id, None)
         self._cancel_events.pop(session_id, None)
-        # Clean up output files.
-        output_dir = Path(f"./output/{session_id}")
+        # Clean up output files (use absolute path based on SESSION_DB_PATH).
+        output_dir = SESSION_DB_PATH.parent / session_id
         if output_dir.exists():
             shutil.rmtree(output_dir)
 

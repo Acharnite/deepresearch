@@ -76,7 +76,7 @@ if _settings_env_path.exists():
     if _loaded:
         logger.info("Loaded %d API key(s) from .env into environment", _loaded)
 
-VERSION = "v0.4.1"  # Bump this when making changes to verify deployment
+VERSION = "v0.4.2"  # Bump this when making changes to verify deployment
 app = FastAPI(title="DeepeResearch Dashboard")
 
 # ── Serve static files (CSS, JS modules) ────────────────────────────────
@@ -301,7 +301,7 @@ async def get_session_state(session_id: str) -> JSONResponse:
             current_state = "COLLABORATING"
             for aid in agent_states:
                 if agent_states[aid].get("status") != "failed":
-                    agent_states[aid] = {"status": "done", "state": "done"}
+                    agent_states[aid] = {"status": "waiting", "state": "waiting"}
         elif event_type == "followup_start":
             current_state = "FOLLOWUP"
         elif event_type == "refinement_start":
@@ -459,8 +459,9 @@ async def download_file(session_id: str, filename: str) -> Any:
     if ".." in filename or "/" in filename or "\\" in filename:
         return JSONResponse({"error": "Invalid filename"}, status_code=400)
 
-    # Only allow files from the session's output directory
-    base_dir = Path(f"./output/{session_id}")
+    # Only allow files from the session's output directory (absolute path)
+    from deepresearch.web.sessions import SESSION_DB_PATH
+    base_dir = SESSION_DB_PATH.parent / session_id
     safe_path = (base_dir / filename).resolve()
     if not str(safe_path).startswith(str(base_dir.resolve())):
         return JSONResponse({"error": "Access denied"}, status_code=403)
@@ -470,7 +471,7 @@ async def download_file(session_id: str, filename: str) -> Any:
 
     if not safe_path.exists():
         # Fallback: search in the flat output directory
-        legacy_path = Path("./output") / filename
+        legacy_path = SESSION_DB_PATH.parent / filename
         possible_paths.append(legacy_path)
 
     for path in possible_paths:

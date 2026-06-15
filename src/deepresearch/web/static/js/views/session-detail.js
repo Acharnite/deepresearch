@@ -407,7 +407,7 @@ export function processEvent(data) {
 
   if (eventType === 'scribe_start') {
     Object.keys(state.agents).forEach(id => {
-      state.agents[id].status = 'done'; state.agents[id].state = 'done';
+      state.agents[id].status = 'waiting'; state.agents[id].state = 'waiting';
     });
     state.scribeInfo = { status: 'running', state: 'writing' };
     renderAgents();
@@ -419,9 +419,15 @@ export function processEvent(data) {
   }
 
   if (eventType === 'refinement_start') {
+    // Agents are actively refining — set to 'researching' state
+    Object.keys(state.agents).forEach(id => {
+      state.agents[id].status = 'running'; state.agents[id].state = 'refining';
+    });
+    state.scribeInfo = { status: 'waiting', state: 'waiting' };
     updateState('REFINING');
     const phaseDisplay = document.getElementById('phaseDisplay');
     if (phaseDisplay) phaseDisplay.textContent = STATE_LABELS['REFINING'] || 'Refining';
+    renderAgents();
   }
 
   if (eventType === 'refinement_complete') {
