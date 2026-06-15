@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 from deepresearch.web.event_bus import EventBus
 from deepresearch.web.server import app
 from deepresearch.web.sessions import MultiSessionManager, SessionInfo
-from deepresearch.web.settings_manager import SettingsManager, PROVIDERS
+from deepresearch.web.settings_manager import SettingsManager
 from deepresearch.web.state import update_status
 
 
@@ -702,7 +702,7 @@ def test_settings_manager_env_file_persistence(temp_settings: SettingsManager) -
 async def test_orchestrator_custom_time_budget() -> None:
     """Orchestrator accepts time_budget_seconds override."""
     from deepresearch.orchestrator import Orchestrator
-    from deepresearch.models import SessionConfig, ResearchTopic, AgentProfile
+    from deepresearch.models import AgentProfile
 
     profiles = [
         AgentProfile(

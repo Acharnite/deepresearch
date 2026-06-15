@@ -25,7 +25,6 @@ from deepresearch.models import (
     Findings,
     FollowUpQuestions,
     IndividualReport,
-    PaperSection,
     ResearchPaper,
     ResearchTopic,
     SharedKnowledge,

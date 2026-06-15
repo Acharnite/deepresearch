@@ -436,7 +436,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     """Start the web dashboard server without running a session."""
     from deepresearch.web.server import run_server
 
-    console.print(f"[bold green]DeepeResearch Dashboard[/bold green]")
+    console.print("[bold green]DeepeResearch Dashboard[/bold green]")
     console.print(f"Starting web server at http://{args.host}:{args.port}")
     console.print("Press Ctrl+C to stop the server")
     try:

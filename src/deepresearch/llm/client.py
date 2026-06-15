@@ -520,7 +520,6 @@ class LLMClient:
 
             # Tool calls accumulator: list of (id, name, args_json)
             tool_calls: list[tuple[str, str, str]] = []
-            text_accumulated = False
             # Reset full_text for each round — only keep final non-tool output
             _round_text = ""
 
@@ -536,7 +535,6 @@ class LLMClient:
                     # Text content
                     if delta.content:
                         _round_text += delta.content
-                        text_accumulated = True
                         if self.event_callback:
                             await self.event_callback(
                                 {"type": "stream", "text": delta.content}
@@ -579,7 +577,6 @@ class LLMClient:
                 text_content = response.choices[0].message.content or ""
                 full_text += text_content
                 if text_content:
-                    text_accumulated = True
                     if self.event_callback:
                         await self.event_callback(
                             {"type": "stream", "text": text_content}

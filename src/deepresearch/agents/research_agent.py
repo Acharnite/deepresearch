@@ -8,7 +8,6 @@ structured outputs for every lifecycle phase.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from deepresearch.agents.base_agent import BaseAgent
 from deepresearch.llm.client import LLMClient, LLMError
@@ -19,7 +18,6 @@ from deepresearch.models import (
     Findings,
     FollowUpQuestions,
     IndividualReport,
-    PaperSection,
     ResearchTopic,
     SharedKnowledge,
 )

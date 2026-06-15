@@ -12,10 +12,8 @@ Covers:
 from __future__ import annotations
 
 import asyncio
-import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -29,11 +27,9 @@ from deepresearch.llm.client import LLMClient, _lookup_cost
 from deepresearch.models import (
     AgentProfile,
     Findings,
-    IndividualReport,
     ResearchPaper,
     ResearchTopic,
     SessionConfig,
-    SharedKnowledge,
 )
 from deepresearch.orchestrator import Orchestrator
 
@@ -530,7 +526,6 @@ class TestSessionTimeout:
     async def test_timeout_does_not_break_with_fast_agents(self, profiles, model_configs):
         """A fast session should complete before the session timeout."""
         # Use same pattern as the existing orchestrator test for quick mode.
-        from deepresearch.models import ResearchPaper
 
         def mock_agent_factory(profile, model_name, **extra):
             async def agent_fn(*args, **kwargs):
@@ -648,7 +643,7 @@ async def test_llm_client_token_exhaustion_no_retry():
     and verifying the exception is NOT retried (call_count == 1).
     """
     import litellm
-    from deepresearch.llm.client import LLMClient, LLMError
+    from deepresearch.llm.client import LLMClient
 
     client = LLMClient(model="test-model", timeout=10)
 
@@ -665,7 +660,6 @@ async def test_llm_client_token_exhaustion_no_retry():
             mock_ac.side_effect = error_instance
 
             # Directly replicate the generate() retry logic for this test
-            last_exception = None
             raised_llm_error = False
             for attempt in range(3):
                 try:
@@ -673,12 +667,12 @@ async def test_llm_client_token_exhaustion_no_retry():
                     break  # Should not reach here
                 except (litellm.BudgetExceededError,
                         litellm.ContextWindowExceededError,
-                        litellm.RateLimitError) as e:
+                        litellm.RateLimitError):
                     # This is the code path we're testing: immediate fail, no retry
                     raised_llm_error = True
                     break
-                except Exception as e:
-                    last_exception = e
+                except Exception:
+                    pass
 
             assert raised_llm_error, f"{type(error_instance).__name__} was not caught as resource exhausted"
             assert mock_ac.call_count == 1, f"{type(error_instance).__name__} was retried ({mock_ac.call_count} calls)"

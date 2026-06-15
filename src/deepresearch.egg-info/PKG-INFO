@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: deepresearch
-Version: 0.1.0
+Version: 0.7.1
 Summary: Multi-agent AI research system for multi-perspective research papers
 Author: KodeHold
 License: MIT
@@ -16,6 +16,7 @@ Requires-Dist: fastapi>=0.110.0
 Requires-Dist: uvicorn[standard]>=0.29.0
 Requires-Dist: sse-starlette>=2.0.0
 Requires-Dist: httpx>=0.27.0
+Requires-Dist: ddgs>=8.0.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
@@ -41,177 +42,111 @@ The result is a nuanced, multi-perspective research paper that no single-prompt 
      │
      ▼
 ┌──────────────┐
-│ Orchestrator │  ──  assigns models, manages rounds
+│ Orchestrator │  assigns models, manages rounds
 └──────┬───────┘
        │
-       ├──────────── Round 1 (parallel) ────────────┐
-       │  ┌────────┐ ┌────────┐ ┌──────┐ ┌────┐    │
-       ├──│ Agent 1 │ │ Agent 2 │ │  …  │ │Agent6│   │
-       │  └────────┘ └────────┘ └──────┘ └────┘    │
-       │                                            │
-       ├──────── Collaboration Bus ──────────────────┤
-       │  Agents share findings, ask each other Qs   │
-       │                                            │
-       ├──────── Round 2 (parallel, refined) ───────┤
-       │  Each agent researches again, now informed  │
-       │  by what the others found                   │
-       └────────────────────┬───────────────────────┘
-                            │
-                            ▼
-                   ┌──────────────┐
-                   │ Scribe Agent │  ──  compiles, deduplicates, synthesizes
-                   └──────┬───────┘
-                          │
-                          ▼
-                    ┌──────────┐
-                    │ PDF Paper │  ──  cover page, all perspectives, synthesis
-                    └──────────┘
+       ├── Round 1 (6 agents parallel, with web search)
+       ├── Collaboration Bus (shared knowledge)
+       ├── Follow-up Questions → Refinement
+       ├── Round 2 (agents refine, if budget allows)
+       └── Scribe Agent → PDF Paper
 ```
 
 ---
 
-## Architecture Overview
+## Quick Install
 
-| Component | Role |
-|-----------|------|
-| **Orchestrator** | Manages the full session lifecycle — config validation, model assignment, round sequencing, error handling, and event logging. Runs as a finite state machine (`IDLE → CONFIGURING → ROUND1 → COLLABORATING → FOLLOWUP → ROUND2 → COMPILING → OUTPUT → COMPLETE`). |
-| **Research Agents** | Six parallel AI agents, each with a distinct personality profile (prompt + temperature). Run concurrently via `asyncio.gather()`. |
-| **Collaboration Bus** | In-memory shared knowledge store. After Round 1, the orchestrator aggregates all findings into `SharedKnowledge` (consensus points, conflicting perspectives, unanswered questions). Each agent sees this before Round 2 — preventing groupthink by design. |
-| **Scribe Agent** | Neutral, academic-tone agent (temperature 0.3) that compiles all individual reports into a coherent paper. Handles de-duplication, cross-report synthesis, and clarification queries. Uses a structured pipeline: Extract → Compare → Weave → Clarify. |
-| **PDF Generator** | Renders the final paper via Jinja2 HTML templates → WeasyPrint PDF. Falls back to HTML if PDF generation fails. |
+```bash
+# Clone the repo
+git clone https://github.com/Acharnite/deepresearch.git
+cd deepresearch
+
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate   # Windows
+
+# Install
+pip install -e ".[dev]"
+
+# Set your API key (at least one)
+export OPENCODE_API_KEY="your-key-here"
+# or: export OPENAI_API_KEY="your-key-here"
+
+# Run
+deepresearch run "The future of renewable energy" --web
+```
+
+**Prerequisites:**
+- Python 3.11+
+- Git
+- WeasyPrint system deps (Linux only): `sudo apt install libpango-1.0-0 libcairo2 libgdk-pixbuf2.0-dev`
+
+**No API key?** Run a dry test without LLM calls:
+```bash
+deepresearch run "Test topic" --dry-run
+```
 
 ---
 
-## The 6 Agent Personalities
+## Agent Personalities
 
-Each agent is defined by a YAML profile that includes a full persona prompt, methodology, knowledge base description, bias mitigation instructions, voice/tone guidance, and an LLM temperature setting.
+| Agent | Emoji | Temperature | Approach |
+|-------|-------|:-----------:|----------|
+| Curious Teenager | 🔍 | 0.90 | Naive curiosity, explores tangents, pop culture |
+| Skeptical Academic | 📚 | 0.30 | Demands evidence, challenges assumptions |
+| Creative Artist | 🎨 | 0.95 | Metaphors, unexpected connections, storytelling |
+| Pragmatic Engineer | ⚙️ | 0.40 | Implementation, trade-offs, feasibility |
+| Philosophical Thinker | 🤔 | 0.85 | Ethics, first principles, deeper meaning |
+| Data-Driven Analyst | 📊 | 0.20 | Metrics, statistics, quantitative evidence |
 
-| Agent | Emoji | Temperature | Approach | Voice |
-|-------|-------|:-----------:|----------|-------|
-| Curious Teenager | 🔍 | **0.90** | Naive curiosity, asks "why" repeatedly, explores tangents, pop culture connections | Inquisitive, enthusiastic, conversational |
-| Skeptical Academic | 📚 | **0.30** | Demands evidence, challenges assumptions, finds flaws, rigorous methodology | Precise, critical, formal |
-| Creative Artist | 🎨 | **0.95** | Metaphors, unexpected connections, visual thinking, storytelling | Expressive, metaphorical, imaginative |
-| Pragmatic Engineer | ⚙️ | **0.40** | Implementation, trade-offs, feasibility, real-world impact | Direct, practical, solution-oriented |
-| Philosophical Thinker | 🤔 | **0.85** | Ethics, first principles, deeper meaning, human significance | Contemplative, Socratic, abstract |
-| Data-Driven Analyst | 📊 | **0.20** | Metrics, statistics, quantitative evidence, patterns, trends | Factual, analytical, structured |
-
-**The Scribe has no personality** — it maintains a neutral academic tone at temperature 0.3, acting as an impartial compiler and synthesizer.
+The **Scribe** has no personality — neutral academic tone at temperature 0.3, acting as an impartial compiler.
 
 ---
 
 ## Model Selection
 
-DeepeResearch supports three modes for assigning LLM models to agents.
-
-The new default model is **`opencode/go`** (Opencode AI), with `opencode/zen` also available. You can also access these models via OpenRouter as `openrouter/opencode/go` and `openrouter/opencode/zen`.
+DeepeResearch supports three modes: **Same Model** (default), **Random Models**, and **Manual Selection**. The default model is `opencode/go` (Opencode AI, free tier).
 
 ### Provider Prefix Routing
 
-The LLMClient auto-detects the provider from the model ID prefix. For example, `opencode/go` routes to `https://api.opencode.ai/v1` using `OPENCODE_API_KEY`, while `openrouter/opencode/go` routes to OpenRouter. This means you can mix models from different providers by simply using their prefixed model IDs.
+Model IDs auto-route to the correct provider. No manual configuration needed.
 
-| Prefix | API Base | Env Variable |
+| Prefix | Provider | Env Variable |
 |--------|----------|-------------|
-| `opencode/` | `https://api.opencode.ai/v1` | `OPENCODE_API_KEY` |
-| `openrouter/` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
-| `groq/` | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` |
-| `together/` | `https://api.together.xyz/v1` | `TOGETHER_API_KEY` |
-| `deepseek/` | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` |
-| `cohere/` | `https://api.cohere.ai/v1` | `COHERE_API_KEY` |
-| `google/` | `https://generativelanguage.googleapis.com/v1` | `GOOGLE_API_KEY` |
-| `anthropic/` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` |
-| `ollama/` | (local) | — |
+| `opencode/` | Opencode AI | `OPENCODE_API_KEY` |
+| `openrouter/` | OpenRouter | `OPENROUTER_API_KEY` |
+| `groq/` | Groq | `GROQ_API_KEY` |
+| `together/` | Together | `TOGETHER_API_KEY` |
+| `deepseek/` | DeepSeek | `DEEPSEEK_API_KEY` |
+| `cohere/` | Cohere | `COHERE_API_KEY` |
+| `google/` | Google | `GOOGLE_API_KEY` |
+| `anthropic/` | Anthropic | `ANTHROPIC_API_KEY` |
+| `ollama/` | Ollama (local) | — |
 
-### Same Model (default)
-All 6 agents use the same underlying LLM. Personality differentiation comes entirely from the prompt instructions and temperature settings. This is the cheapest and fastest option, and works well for most use cases.
+### Local LLM Backends
 
-```bash
-deepresearch run "Topic" --same
-# or just omit the flag — same model is default
-deepresearch run "Topic"
-```
-
-### Random Models
-Each agent gets a randomly assigned model from your configured pool. The random seed is derived from the topic string, making assignments **deterministic and reproducible** — same topic always gets the same model distribution.
-
-```bash
-deepresearch run "Topic" --random-models
-```
-
-### Manual Selection
-The system prompts you to choose a model for each agent interactively before the session starts.
-
-```bash
-deepresearch run "Topic" --manual-models
-```
-
-### Model Selector (Web UI)
-
-When using the web dashboard, you can pick models visually:
-- **"Same" mode** — single model dropdown for all agents
-- **"Manual" mode** — per-agent model selectors
-- **"Random" mode** — info text explaining random assignment from pool
-
-The `/api/models` endpoint auto-discovers models from ALL configured providers (OpenAI, OpenRouter, Anthropic, Groq, Together, DeepSeek, Google, Cohere) via their respective APIs, merged with curated `models.yaml` definitions and locally-discovered Ollama models. Results are cached for 60 seconds.
+DeepeResearch supports local inference via Ollama (auto-discovered on localhost:11434) and configurable endpoints for llama.cpp, vLLM, and SGLang. See **[ADR-0005](docs/adr/ADR-0005-auto-install-and-discover-local-llm-backends.md)** for the auto-install and auto-discovery design.
 
 ---
 
-## Installation
+## Tool Calling (Web Search)
 
-DeepeResearch is part of the KodeHold project. You run it from the workspace directory.
-
-```bash
-# Navigate to the workspace
-cd workspaces/deepresearch
-
-# Create and activate a virtual environment (recommended)
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install with dev dependencies
-pip install -e ".[dev]"
-
-# Verify it works
-deepresearch --version
-```
-
-### Prerequisites
-
-- **Python 3.11+**
-- **API key** for at least one LLM provider:
-  - `OPENAI_API_KEY` — OpenAI (GPT-4o, GPT-4o Mini)
-  - `ANTHROPIC_API_KEY` — Anthropic (Claude Sonnet 4, Claude Haiku 3.5)
-  - `OPENCODE_API_KEY` — Opencode AI (Opencode Go, Opencode Zen)
-  - `OPENROUTER_API_KEY` — OpenRouter (access to 100+ models)
-  - Or configure **Ollama** locally for Llama 3.1, Mixtral, etc.
-- **WeasyPrint system dependencies** (Linux only):
-  ```bash
-  sudo apt install libpango-1.0-0 libcairo2 libgdk-pixbuf2.0-dev
-  ```
+Research agents search the web in real-time using DuckDuckGo via LiteLLM function calling. Agents can make up to 5 search queries per generation, refining based on initial results. Falls back gracefully if DuckDuckGo is unavailable.
 
 ---
 
 ## CLI Usage
 
-### Quick Start
-
 ```bash
-# See available agent profiles and their personalities
-deepresearch profiles list
-
-# See which LLM models are configured
-deepresearch models list
-
-# Dry-run — validates config without making any API calls
-deepresearch run "Quantum computing" --quick --dry-run
-
-# Full research session
-deepresearch run "The future of renewable energy" --quick
-
-# Balanced research with random model assignment
-deepresearch run "Consciousness in AI" --random-models
+# Quick research
+deepresearch run "Quantum computing" --quick
 
 # Deep research with web dashboard
-deepresearch run "Geopolitics of rare earth minerals" --deep --web
+deepresearch run "Renewable energy" --deep --web
+
+# Start dashboard standalone
+deepresearch serve
 ```
 
 ### All Options
@@ -230,115 +165,31 @@ deepresearch profiles list
 deepresearch models list
 ```
 
-### Time Budget
-
-| Mode | Duration | Rounds | Use Case |
-|------|:--------:|:------:|----------|
-| `--quick` | ~5 min | 1 round | Quick overview or exploratory research |
-| `--time 15` (medium) | ~15 min | 2 rounds | Balanced depth and breadth (default-style) |
-| `--deep` or `--time 30` | ~30 min | 2 rounds | Thorough, comprehensive research |
-| `--time 60` | ~60 min | 2 rounds | Exhaustive deep-dive |
-
-The time budget controls how much the agents write — shorter budgets produce more concise findings, longer budgets allow deeper exploration and more extensive analysis. Use `--time <N>` for fine-grained control between the presets.
-
 ---
 
 ## Web Dashboard
 
-DeepeResearch includes a real-time web dashboard built with FastAPI + SSE streaming.
+Real-time web dashboard built with FastAPI + SSE streaming.
 
 ```bash
-# Start the dashboard server standalone
-deepresearch serve
-# Open http://localhost:8080/
-
-# Run a session with the dashboard
-deepresearch run "Topic" --web
-# Opens http://localhost:8080/ automatically
-
-# Custom host/port
-deepresearch serve --host 127.0.0.1 --port 9090
-deepresearch run "Topic" --web --web-host 127.0.0.1 --web-port 9090
+deepresearch serve                  # Start dashboard at http://localhost:8080/
+deepresearch run "Topic" --web      # Run session with dashboard
 ```
 
-### Dashboard Features
+### Features
 
-- **Topic input** field with time budget and model mode selectors
-- **"Start Research"** button to launch a session
-- **Model dropdown selector** — for "same" mode, a single dropdown; for "manual" mode, per-agent model selectors; info text for "random" mode
-- **Provider model auto-discovery** — the model dropdown fetches from `/api/models`, which discovers models from ALL configured providers (OpenAI, OpenRouter, Anthropic, Groq, Together, DeepSeek, Google, Cohere) plus Ollama local models, all merged with the curated `models.yaml` definitions (60s cache)
-- **Real-time agent progress bars** via SSE streaming — see each agent's status update as it works
-- **Live event log** with timestamps showing every phase transition, agent completion, and clarification round
-- **Cancel button** to gracefully stop a running session
-- **Delete session / Clear All buttons** — delete individual sessions via the `DELETE /api/sessions/{id}` endpoint, or clear all completed/errored sessions with one click. Session output files are cleaned up on deletion.
-- **Download PDF / Download HTML** buttons when the research completes
-- **Settings tab** — manage API keys (9 supported providers including Opencode AI) and local model endpoints (Ollama, llama.cpp, vLLM) through the UI without touching the terminal
-- **Dark-themed UI** with GitHub-dark aesthetic, color-coded state badges, and agent emoji indicators
-
-The dashboard shows a status bar at the top with the current orchestrator state (idle, configuring, round 1, collaborating, follow-up, round 2, compiling, complete, error) and a grid layout with agent progress cards on the left and a scrolling event log on the right.
-
----
-
-## Output
-
-The final output is a professionally formatted research paper.
-
-**PDF paper** (primary output):
-- Cover page with title and generation timestamp
-- Abstract summarizing the research
-- Per-agent findings — each personality's unique perspective in its own section
-- Synthesis section — where the scribe weaves perspectives together
-- Key takeaways — actionable conclusions distilled from all agents
-- Conclusion — final synthesis
-
-**HTML fallback**: If PDF generation fails (e.g., missing WeasyPrint deps), the paper is saved as HTML with the same structure.
-
-Files are written to `./output/` by default (configurable with `--output`):
-```
-./output/paper.pdf          # Final research paper
-./output/paper.html         # HTML version (fallback or paired output)
-```
-
-Download both from the web dashboard when running with `--web`.
-
----
-
-## Configuration
-
-### Agent Profiles
-
-The six built-in agent personalities are defined in:
-
-```
-src/profiles/default.yaml
-```
-
-Each profile contains: `id`, `name`, `emoji`, `temperature`, `persona_prompt`, `methodology`, `knowledge_base`, `bias_mitigation`, and `voice`.
-
-You can create custom profiles:
-```
-~/.deepresearch/profiles/custom.yaml
-```
-
-### Model Definitions
-
-Available LLM models are configured in:
-
-```
-src/config/models.yaml
-```
-
-Default models are now **`opencode/go`** (default) and **`opencode/zen`**, both routed via Opencode AI. OpenRouter alternatives (`openrouter/opencode/go`, `openrouter/opencode/zen`) are also included. Curated models also cover GPT-4o, GPT-4o Mini, Claude Sonnet 4, Claude Haiku 3.5, Llama 3.1 (Ollama), and Mixtral (Ollama).
-
-**Provider prefix routing** — the LLMClient maps model ID prefixes to API base URLs and API key environment variables. This means any model ID like `anthropic/claude-sonnet-4-20250514` or `groq/llama3-70b` routes to the correct provider automatically.
-
-**Model auto-discovery** — the `/api/models` endpoint goes beyond `models.yaml`. It also:
-- Fetches model lists from ALL configured providers (OpenAI, OpenRouter, Anthropic, Groq, Together, DeepSeek, Google, Cohere) via their REST APIs
-- Auto-discovers Ollama models from `http://localhost:11434/api/tags`
-- Merges locally-configured endpoints (llama.cpp, vLLM)
-- Caches results for 60 seconds
-
-**Model cost tracking** — per-model input/output cost rates are defined in `llm/client.py`. Costs are roughly calibrated based on published pricing. Add any model supported by LiteLLM.
+- **Pipeline visualization** — see current phase at a glance
+- **Agent progress cards** — real-time status badges (idle, researching, compiling, done)
+- **Live streaming output** — per-agent text panels showing LLM generation in real-time
+- **Event log** — timestamped phase transitions, agent completions, clarification rounds
+- **Model selector** — dropdown for "same" mode, per-agent selectors for "manual" mode
+- **Q&A visualization** — graph showing agent interactions and clarification flows
+- **Scribe output panel** — watch the scribe compile the final paper live
+- **Cancel / Delete sessions** — stop running sessions or clear completed ones
+- **Download PDF/HTML** — one-click download when research completes
+- **Settings tab** — manage API keys (9 providers) and local model endpoints
+- **System Log tab** — in-browser log viewer with level filtering
+- **Dark-themed UI** — GitHub-dark aesthetic, color-coded state badges
 
 ---
 
@@ -346,91 +197,51 @@ Default models are now **`opencode/go`** (default) and **`opencode/zen`**, both 
 
 ```
 workspaces/deepresearch/
-├── pyproject.toml                      # Package config, dependencies, entry point
-├── src/
-│   └── deepresearch/
-│       ├── __init__.py
-│       ├── __main__.py                 # Entry: python -m deepresearch
-│       ├── main.py                     # CLI entry point (argparse + rich)
-│       ├── models.py                   # Pydantic data models
-│       ├── config.py                   # YAML config loading and validation
-│       ├── orchestrator.py             # Session lifecycle FSM
-│       │
-│       ├── agents/
-│       │   ├── base_agent.py           # Abstract ResearchAgent base class
-│       │   ├── research_agent.py       # 6 personality research agents
-│       │   ├── scribe_agent.py         # Compilation and synthesis agent
-│       │   └── registry.py             # Agent factory and profile registry
-│       │
-│       ├── collaboration/
-│       │   └── bus.py                  # In-memory shared knowledge bus
-│       │
-│       ├── llm/
-│       │   └── client.py               # LiteLLM async wrapper with retry
-│       │
-│       ├── output/
-│       │   ├── pdf_generator.py        # WeasyPrint PDF rendering
-│       │   └── templates/              # Jinja2 HTML + CSS templates
-│       │
-│       ├── prompts/
-│       │   ├── research.py             # Research round prompt templates
-│       │   ├── scribe.py               # Scribe compilation prompts
-│       │   └── collaboration.py        # Collaboration/sharing prompts
-│       │
-│       ├── utils/
-│       │   ├── token_tracker.py        # Token usage tracking
-│       │   └── cost_estimator.py       # Cost estimation logic
-│       │
-│               └── web/
-│           ├── server.py               # FastAPI server (REST + SSE)
-│           ├── dashboard.html          # Single-page dark-themed UI
-│           ├── event_bus.py            # SSE event bus
-│           ├── sessions.py             # MultiSessionManager, SessionInfo
-│           ├── session_manager.py      # Legacy singleton session manager
-│           ├── settings_manager.py     # API key & local endpoint management
-│           └── state.py                # Shared session state
-│
-├── src/profiles/default.yaml           # 6 agent personality profiles
-├── src/config/models.yaml               # LLM model definitions
-│
-└── tests/
-    ├── conftest.py                     # Shared fixtures (mock LLM)
-    ├── test_models.py
-    ├── test_config.py
-    ├── test_orchestrator.py
-    ├── test_agents.py
-    ├── test_collaboration.py
-    ├── test_scribe.py
-    ├── test_prompts.py
-    └── test_integration.py             # End-to-end workflow tests
+├── pyproject.toml
+├── src/deepresearch/
+│   ├── main.py                    # CLI entry point
+│   ├── models.py                  # Pydantic data models
+│   ├── config.py                  # YAML config loading
+│   ├── orchestrator.py            # Session lifecycle FSM
+│   ├── agents/
+│   │   ├── research_agent.py      # 6 personality research agents
+│   │   ├── scribe_agent.py        # Compilation and synthesis agent
+│   │   └── registry.py            # Agent factory and dispatch
+│   ├── collaboration/bus.py       # In-memory shared knowledge bus
+│   ├── llm/client.py              # LiteLLM async wrapper with retry + streaming
+│   ├── output/pdf_generator.py    # WeasyPrint PDF rendering
+│   ├── tools/web_search.py        # DuckDuckGo function calling
+│   ├── prompts/                   # Research, scribe, collaboration prompts
+│   └── web/
+│       ├── server.py              # FastAPI server (REST + SSE)
+│       ├── dashboard.html         # Single-page dark-themed UI
+│       ├── sessions.py            # MultiSessionManager
+│       └── settings_manager.py    # API key & local endpoint management
+├── src/profiles/default.yaml      # 6 agent personality profiles
+├── src/config/models.yaml         # LLM model definitions
+└── tests/                         # 292 tests
 ```
 
 ---
 
-## Running Tests
+## Testing
 
 ```bash
-# From the deepresearch workspace
 cd workspaces/deepresearch
-
-# Run all tests
-pytest tests/ -v
-
-# Run with coverage
-pytest tests/ -v --cov=deepresearch
-
-# Run a specific test file
-pytest tests/test_orchestrator.py -v
+pytest tests/ -v                    # Run all tests
+pytest tests/ -v --cov=deepresearch # With coverage
 ```
 
 ---
 
 ## Design Documents
 
-- **Design doc**: `docs/design/README.md` — full architecture, data model, component design, and implementation plan
-- **ADR-0001**: `docs/adr/ADR-0001-multi-agent-research-architecture.md` — multi-agent architecture decisions
-- **ADR-0002**: `docs/adr/ADR-0002-agent-personality-and-model-selection.md` — personality profiles and model selection modes
-- **ADR-0003**: `docs/adr/ADR-0003-web-frontend-and-multi-session.md` — web frontend, multi-session architecture, and settings management
+- **Design doc**: `docs/design/README.md`
+- **[ADR-0001](docs/adr/ADR-0001-multi-agent-research-architecture.md)**: Multi-Agent Research Architecture
+- **[ADR-0002](docs/adr/ADR-0002-agent-personality-and-model-selection.md)**: Agent Personality and Model Selection
+- **[ADR-0003](docs/adr/ADR-0003-web-frontend-and-multi-session.md)**: Web Frontend and Multi-Session
+- **[ADR-0004](docs/adr/ADR-0004-test-findings-and-architecture-fixes.md)**: Test Findings and Architecture Fixes
+- **[ADR-0005](docs/adr/ADR-0005-auto-install-and-discover-local-llm-backends.md)**: Auto-Install and Auto-Discover Local LLM Backends
 
 ---
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import logging.handlers
 import os
 import time
 from datetime import datetime
@@ -32,8 +33,6 @@ from deepresearch.web import state as _ws
 logger = logging.getLogger(__name__)
 
 # ── Persistent file logging ─────────────────────────────────────────────
-import logging.handlers
-
 _log_dir = Path(__file__).resolve().parent.parent.parent.parent / "logs"
 _log_dir.mkdir(parents=True, exist_ok=True)
 _log_file = _log_dir / "deepresearch.log"
@@ -76,7 +75,7 @@ if _settings_env_path.exists():
     if _loaded:
         logger.info("Loaded %d API key(s) from .env into environment", _loaded)
 
-VERSION = "v0.7.0"  # Bump this when making changes to verify deployment
+VERSION = "v0.7.1"  # Bump this when making changes to verify deployment
 app = FastAPI(title="DeepeResearch Dashboard")
 
 # ── Serve static files (CSS, JS modules) ────────────────────────────────
