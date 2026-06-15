@@ -270,7 +270,7 @@ a { color: var(--accent); text-decoration: none; }
 <div class="status-bar">
   <div class="status-item">
     <span class="status-label">State</span>
-    <span class="badge badge-collaborating"><span class="conn-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--purple);"></span> COLLABORATING</span>
+    <span class="badge badge-collaborating"><span class="conn-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);"></span> COMPLETE</span>
   </div>
   <div class="status-item">
     <span class="status-label">Topic</span>
@@ -278,11 +278,11 @@ a { color: var(--accent); text-decoration: none; }
   </div>
   <div class="status-item">
     <span class="status-label">Elapsed</span>
-    <span class="elapsed">03:42</span>
+    <span class="elapsed">04:02</span>
   </div>
   <div class="status-item">
     <span class="status-label">Phase</span>
-    <span class="text-muted">Round 1 collaboration — agents sharing findings</span>
+    <span class="text-muted">Output ready — 4 agents consulted, 2 clarification rounds</span>
   </div>
 </div>
 
@@ -298,17 +298,15 @@ a { color: var(--accent); text-decoration: none; }
       <span class="phase-arrow">→</span>
       <span class="phase-step done">🔍 Round 1</span>
       <span class="phase-arrow">→</span>
-      <span class="phase-step current">🤝 Collaborate</span>
+      <span class="phase-step done">🤝 Collaborate</span>
       <span class="phase-arrow">→</span>
-      <span class="phase-step">❓ Follow-up</span>
+      <span class="phase-step done">❓ Follow-up</span>
       <span class="phase-arrow">→</span>
-      <span class="phase-step">🔄 Refining</span>
+      <span class="phase-step done">🔄 Refining</span>
       <span class="phase-arrow">→</span>
-      <span class="phase-step">🔎 Round 2</span>
+      <span class="phase-step done">📝 Compile</span>
       <span class="phase-arrow">→</span>
-      <span class="phase-step">📝 Compile</span>
-      <span class="phase-arrow">→</span>
-      <span class="phase-step">📄 Output</span>
+      <span class="phase-step current">📄 Output</span>
       <span class="phase-arrow">→</span>
       <span class="phase-step">✅ Done</span>
     </div>
@@ -547,23 +545,83 @@ AI is automating data engineering tasks that previously required significant man
           <div class="card-header">
             <span>📝 Scribe</span>
             <div style="display:flex;align-items:center;gap:8px;">
-              <span class="state-badge state-writing">✍️ Writing</span>
+              <span class="state-badge state-done">✅ Complete</span>
               <button class="agent-toggle" onclick="this.closest('.agent-section').querySelector('.agent-output').classList.toggle('collapsed')" title="Toggle output">▾</button>
             </div>
           </div>
         </div>
         <div class="agent-output" data-agent="scribe">
-          <pre class="agent-output-text">Compiling research findings from 4 agents...
+          <pre class="agent-output-text">━━━ Clarification Round 1/5 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-## Draft: The Impact of AI on Modern Software Development
+📝 Scribe → Agent 1 (AI/ML Architect):
+"Your findings mention a 30-55% productivity gain. Can you clarify whether
+this includes or excludes time spent learning/refining AI tool usage?"
+
+━━━ Agent Response ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🤖 Agent 1 → Scribe:
+"The 30-55% figure represents net productivity after accounting for learning
+curve overhead. Initial adoption shows ~15% gains in the first month, climbing
+to 40-55% after 3+ months of proficient use. I should emphasize this is
+specifically for code completion tasks, not full development workflows."
+
+━━━ Scribe Recompiling ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📝 Scribe identified gap: need DevOps perspective on AI tool ROI.
+Checking Agent 2 (DevOps Engineer) for CI/CD automation metrics...
+
+━━━ Clarification Round 2/5 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📝 Scribe → Agent 2 (DevOps Engineer):
+"What measurable improvements have you found in CI/CD pipeline efficiency
+when AI tools are integrated into the build and deployment process?"
+
+━━━ Agent Response ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🤖 Agent 2 → Scribe:
+"Intelligent test selection reduces CI build times by 35-40%. Predictive
+failure analysis catches ~60% of flaky tests before they block deploys.
+Auto-remediation handles 80% of common infrastructure issues without
+human intervention. Combined, this cuts mean deployment frequency from
+weekly to daily for mature adopters."
+
+━━━ Clarification Complete — No further gaps found ━━━━━━━━━━━
+
+━━━ Final Output ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## Research: The Impact of AI on Modern Software Development
 
 ### Executive Summary
-Artificial intelligence is fundamentally reshaping how software is designed, built, tested, and deployed. This research synthesizes findings across architectural, operational, business, security, and data-driven perspectives to provide a comprehensive view of AI's impact on modern software development practices.
+Artificial intelligence is fundamentally reshaping how software is designed,
+built, tested, and deployed. This research synthesizes findings across
+architectural, operational, business, security, and data-driven perspectives.
 
 ### 1. Code Generation & Developer Productivity
-AI-powered coding assistants have demonstrated measurable improvements in developer productivity, with studies showing 30-55% gains in code completion speed. Tools like GitHub Copilot and Cursor are becoming standard in developer toolchains, enabling faster prototyping and reducing boilerplate code writing.
+AI-powered coding assistants deliver 30-55% net productivity gains (after
+learning curve) specifically for code completion tasks. Initial adoption shows
+~15% gains in the first month, climbing to 40-55% after 3+ months of
+proficient use. Tools like GitHub Copilot and Cursor are becoming standard
+in developer toolchains.
 
-[Compiling remaining sections...]</pre>
+### 2. CI/CD & Infrastructure Automation
+Intelligent test selection reduces CI build times by 35-40%. Predictive
+failure analysis catches ~60% of flaky tests before they block deploys.
+Auto-remediation handles 80% of common infrastructure issues. Combined,
+this cuts mean deployment frequency from weekly to daily.
+
+### 3. Security Implications
+AI-generated code introduces supply chain concerns — models may reproduce
+licensed code or known vulnerability patterns. Organizations need new
+policies for vetting AI-generated code. Adversarial attacks targeting AI
+development tools (prompt injection, model manipulation) are emerging.
+
+### 4. Product Strategy Shifts
+Companies are building "AI-native" products where ML capabilities are core
+features. Teams require AI specialists, prompt engineers, and ML operations
+roles. Organizations report 25-40% reduction in time-to-market when
+leveraging AI-assisted development workflows.
+
+[✅ Report complete — 4 agents consulted, 2 clarification rounds]</pre>
         </div>
       </div>
 
@@ -575,74 +633,74 @@ AI-powered coding assistants have demonstrated measurable improvements in develo
         </div>
         <div class="event-log">
           <div class="event-entry">
-            <span class="event-time">03:42:15</span>
+            <span class="event-time">04:02:15</span>
             <span class="event-icon">📝</span>
-            <span class="event-msg">Scribe is writing the research paper — compiling findings from 4 agents</span>
+            <span class="event-msg">Scribe output complete — 4 agents consulted, 2 clarification rounds</span>
           </div>
           <div class="event-entry">
-            <span class="event-time">03:41:58</span>
-            <span class="event-icon">🤝</span>
-            <span class="event-msg">Entering collaboration phase — agents sharing findings</span>
+            <span class="event-time">04:02:10</span>
+            <span class="event-icon">📝</span>
+            <span class="event-msg">Scribe recompiling after clarification round 2 — no further gaps found</span>
           </div>
           <div class="event-entry">
-            <span class="event-time">03:41:50</span>
+            <span class="event-time">04:01:55</span>
+            <span class="event-icon">🤖</span>
+            <span class="event-msg">Agent 2 (DevOps Engineer) responded — CI/CD metrics: 35-40% faster builds</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">04:01:30</span>
+            <span class="event-icon">📝</span>
+            <span class="event-msg">Scribe asked Agent 2: "What measurable CI/CD improvements with AI tools?"</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">04:01:05</span>
+            <span class="event-icon">📝</span>
+            <span class="event-msg">Scribe recompiling after clarification round 1 — identified DevOps gap</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">04:00:50</span>
+            <span class="event-icon">🤖</span>
+            <span class="event-msg">Agent 1 (AI/ML Architect) responded — net gains: 30-55% after learning curve</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">04:00:25</span>
+            <span class="event-icon">📝</span>
+            <span class="event-msg">Scribe asked Agent 1: "Is the 30-55% gain before or after learning overhead?"</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">04:00:10</span>
+            <span class="event-icon">⚙️</span>
+            <span class="event-msg">Scribe started clarification protocol — analyzing agent findings for gaps</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:58:45</span>
+            <span class="event-icon">✅</span>
+            <span class="event-msg">Agent 5 (UX Researcher) completed research — 3 key findings</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:57:30</span>
             <span class="event-icon">✅</span>
             <span class="event-msg">Agent 6 (Data Scientist) completed research — 3 key findings</span>
           </div>
           <div class="event-entry">
-            <span class="event-time">03:40:32</span>
+            <span class="event-time">03:56:15</span>
+            <span class="event-icon">✅</span>
+            <span class="event-msg">Agent 3 (Product Strategist) completed research — 3 key findings</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:55:00</span>
             <span class="event-icon">✅</span>
             <span class="event-msg">Agent 4 (Security Analyst) completed research — 3 key findings</span>
           </div>
           <div class="event-entry">
-            <span class="event-time">03:39:18</span>
-            <span class="event-icon">✅</span>
-            <span class="event-msg">Agent 1 (AI/ML Architect) completed research — 3 key findings</span>
-          </div>
-          <div class="event-entry">
-            <span class="event-time">03:38:45</span>
-            <span class="event-icon">💬</span>
-            <span class="event-msg">Agent 3 asked Agent 1: "How does your architectural analysis align with the DevOps findings?"</span>
-          </div>
-          <div class="event-entry">
-            <span class="event-time">03:37:22</span>
+            <span class="event-time">03:53:45</span>
             <span class="event-icon">✅</span>
             <span class="event-msg">Agent 2 (DevOps Engineer) completed research — 3 key findings</span>
           </div>
           <div class="event-entry">
-            <span class="event-time">03:36:10</span>
-            <span class="event-icon">🔍</span>
-            <span class="event-msg">Agent 5 (UX Researcher) queued — waiting for collaboration phase</span>
-          </div>
-          <div class="event-entry">
-            <span class="event-time">03:35:02</span>
-            <span class="event-icon">🔍</span>
-            <span class="event-msg">Agent 3 (Product Strategist) started research — querying web sources</span>
-          </div>
-          <div class="event-entry">
-            <span class="event-time">03:34:55</span>
-            <span class="event-icon">🔍</span>
-            <span class="event-msg">Agent 6 (Data Scientist) started research — querying web sources</span>
-          </div>
-          <div class="event-entry">
-            <span class="event-time">03:34:48</span>
-            <span class="event-icon">🔍</span>
-            <span class="event-msg">Agent 4 (Security Analyst) started research — querying web sources</span>
-          </div>
-          <div class="event-entry">
-            <span class="event-time">03:34:40</span>
-            <span class="event-icon">🔍</span>
-            <span class="event-msg">Agent 1 (AI/ML Architect) started research — querying web sources</span>
-          </div>
-          <div class="event-entry">
-            <span class="event-time">03:34:35</span>
-            <span class="event-icon">🔍</span>
-            <span class="event-msg">Agent 2 (DevOps Engineer) started research — querying web sources</span>
-          </div>
-          <div class="event-entry">
-            <span class="event-time">03:34:30</span>
-            <span class="event-icon">🚀</span>
-            <span class="event-msg">Session started — topic: "The impact of AI on modern software development"</span>
+            <span class="event-time">03:52:30</span>
+            <span class="event-icon">✅</span>
+            <span class="event-msg">Agent 1 (AI/ML Architect) completed research — 3 key findings</span>
           </div>
         </div>
       </div>
@@ -654,25 +712,32 @@ AI-powered coding assistants have demonstrated measurable improvements in develo
         </div>
         <div class="qa-panel">
           <div class="qa-entry">
-            <span class="qa-time">03:38:45</span>
-            <span class="qa-from">Agent 3</span>
+            <span class="qa-time">04:00:25</span>
+            <span class="qa-from">Scribe</span>
             <span class="qa-arrow">→</span>
             <span class="qa-to">Agent 1</span>
-            <span class="qa-question">How does your architectural analysis align with the DevOps findings on CI/CD automation?</span>
+            <span class="qa-question">"Is the 30-55% gain before or after accounting for learning overhead?"</span>
           </div>
           <div class="qa-entry">
-            <span class="qa-time">03:39:02</span>
+            <span class="qa-time">04:00:50</span>
             <span class="qa-from">Agent 1</span>
             <span class="qa-arrow">→</span>
-            <span class="qa-to">Agent 3</span>
-            <span class="qa-question">The shift toward modular architectures directly enables the AI-driven CI/CD optimizations Agent 2 described.</span>
+            <span class="qa-to">Scribe</span>
+            <span class="qa-question">"Net after learning curve — ~15% first month, climbing to 40-55% after 3+ months proficient use."</span>
           </div>
           <div class="qa-entry">
-            <span class="qa-time">03:40:15</span>
-            <span class="qa-from">Agent 4</span>
+            <span class="qa-time">04:01:30</span>
+            <span class="qa-from">Scribe</span>
             <span class="qa-arrow">→</span>
-            <span class="qa-to">All</span>
-            <span class="qa-question">What security considerations should guide the adoption of AI-generated code in production systems?</span>
+            <span class="qa-to">Agent 2</span>
+            <span class="qa-question">"What measurable CI/CD improvements do you see when AI tools are integrated?"</span>
+          </div>
+          <div class="qa-entry">
+            <span class="qa-time">04:01:55</span>
+            <span class="qa-from">Agent 2</span>
+            <span class="qa-arrow">→</span>
+            <span class="qa-to">Scribe</span>
+            <span class="qa-question">"35-40% faster builds, 60% flaky test prediction, 80% auto-remediation of common issues."</span>
           </div>
         </div>
       </div>

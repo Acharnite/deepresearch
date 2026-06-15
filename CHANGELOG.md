@@ -2,6 +2,17 @@
 
 All notable changes to DeepeResearch will be documented in this file.
 
+## [0.4.0] - 2026-06-15
+
+### Fixed
+- **FATAL: Empty PDF from clarification loop** — Scribe clarification protocol now capped at 5 rounds and 3-minute time budget. Empty agent responses are skipped (no wasted recompilation). 2 consecutive empty responses stops the entire protocol.
+- **Agent output lost on session reconnection** — Output buffer flushed before renderAgents saves state, preventing race condition that lost accumulated text.
+- **Agent log collapse state not preserved** — Uses classList instead of style.display check.
+- **Agent progress shows "done" during scribe** — Changed to "waiting" during compilation phase.
+- **Q&A text truncated** — Removed white-space:nowrap, added word-break.
+- **Scribe output too small** — Max-height increased from 80px to 250px.
+- **Missing asyncio import** — Fixed NameError in scribe_agent.py.
+
 ## [0.3.0] - 2026-06-15
 
 ### Added
