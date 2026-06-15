@@ -2,10 +2,35 @@
 
 All notable changes to DeepeResearch will be documented in this file.
 
-## [Unreleased]
+## [0.2.0] - 2026-06-15
+
+### Added
+- Pipeline bar at top of dashboard with full state sequence including REFINING
+- Scribe card above agent progress with compact layout and live streaming
+- Collapsible agent output logs with ▾/▴ toggle
+- Spinning indicator animation on active agent states
+- Colored left borders per agent in output logs
+- Demo page (static/demo.html) with mock data for layout testing
+- Session state API endpoint (GET /api/sessions/{id}/state) for reconnection
+- Clarification status events (identifying_claims, asking_agent, recompiling)
+- Parallel refinement phase (asyncio.gather instead of serial await)
+
+### Changed
+- Wider 16:9 layout (1600px max-width, 2-column grid)
+- Agent cards interleaved — each agent's header and output rendered together
+- Agents start with output logs minimized by default
+- Scribe moved from sidebar to above agent progress section
+- Refinement runs agents in parallel instead of serially
+- Compile prompt explicitly lists agent names to prevent invention
+- Token exhaustion errors (BudgetExceededError, ContextWindowExceededError, RateLimitError) fail immediately without retry
 
 ### Fixed
-- **Dashboard 3-column layout** — Removed `main-grid` class from progressView div that was overriding `progress-grid`'s 3-column grid layout (`1.3fr 1.3fr 1fr`) with a 2-column layout (`1fr 360px`). The CSS cascade conflict caused the 3-column layout to never take effect despite being defined.
+- Agent logs stay collapsed when new content arrives (collapsed state preserved across re-renders)
+- PDF filename overflow — long names now word-break instead of overflowing container
+- Page no longer scrolls to top when agent badge status updates (scroll position preserved)
+- Session reconnection restores agent states, elapsed timer, and event history
+- Scribe clarification shows status events instead of appearing frozen
+- Agent output panels no longer separated from their headers
 
 ## [0.0.57] - 2026-06-14
 
