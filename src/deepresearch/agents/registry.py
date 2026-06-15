@@ -99,7 +99,9 @@ class AgentRegistry:
         """
         if model_name:
             # Scribe needs longer timeout — it processes all reports in one prompt.
-            llm = LLMClient(model=model_name, timeout=300, event_callback=event_callback)
+            llm = LLMClient(
+                model=model_name, timeout=300, event_callback=event_callback
+            )
             return ScribeAgent(llm_client=llm)
         return ScribeAgent(llm_client=self.llm)
 
@@ -142,9 +144,15 @@ class AgentRegistry:
 
         async def _dispatch_state(state: str) -> None:
             """Send a state update through the agent's LLM event callback."""
-            if agent.llm and hasattr(agent.llm, 'event_callback') and agent.llm.event_callback:
+            if (
+                agent.llm
+                and hasattr(agent.llm, "event_callback")
+                and agent.llm.event_callback
+            ):
                 try:
-                    await agent.llm.event_callback({"type": "agent_state", "state": state})
+                    await agent.llm.event_callback(
+                        {"type": "agent_state", "state": state}
+                    )
                 except Exception:
                     pass  # Fire-and-forget.
 
@@ -164,7 +172,9 @@ class AgentRegistry:
                     agent_ids = kwargs.get("agent_ids")
                     await _dispatch_state("questioning")
                     if agent_ids is not None:
-                        _questions = await agent.review_findings(first, agent_ids=agent_ids)
+                        _questions = await agent.review_findings(
+                            first, agent_ids=agent_ids
+                        )
                     else:
                         _questions = await agent.review_findings(first)
                     return _questions
@@ -175,7 +185,11 @@ class AgentRegistry:
                     if _round_1 is not None:
                         _round_1 = await agent.refine_findings(first, _round_1)
                     return _round_1 or Findings(
-                        agent_id=profile.id, round=1, summary="", key_points=[], perspective="",
+                        agent_id=profile.id,
+                        round=1,
+                        summary="",
+                        key_points=[],
+                        perspective="",
                     )
 
                 if isinstance(first, Findings):
@@ -194,14 +208,16 @@ class AgentRegistry:
                         response="I cannot clarify this further with the available information.",
                     )
 
-            if len(args) == 2 and isinstance(args[0], ResearchTopic) and isinstance(args[1], SharedKnowledge):
+            if (
+                len(args) == 2
+                and isinstance(args[0], ResearchTopic)
+                and isinstance(args[1], SharedKnowledge)
+            ):
                 # Round 2 — the orchestrator expects an IndividualReport here.
                 questions = _questions or FollowUpQuestions(
                     agent_id=profile.id, questions=[]
                 )
-                r2 = await agent.research_round_2(
-                    args[0], args[1], questions
-                )
+                r2 = await agent.research_round_2(args[0], args[1], questions)
                 return await agent.write_report(_round_1, r2)
 
             raise TypeError(

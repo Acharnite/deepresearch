@@ -34,7 +34,9 @@ WEB_SEARCH_TOOL: dict[str, Any] = {
 }
 
 
-async def web_search(query: str, max_results: int = 5, retries: int = 3) -> list[dict[str, str]]:
+async def web_search(
+    query: str, max_results: int = 5, retries: int = 3
+) -> list[dict[str, str]]:
     """Execute a DuckDuckGo web search with retry and backoff.
 
     Args:
@@ -58,25 +60,47 @@ async def web_search(query: str, max_results: int = 5, retries: int = 3) -> list
                     for i, r in enumerate(ddgs.text(query, max_results=max_results)):
                         if i >= max_results:
                             break
-                        results.append({
-                            "title": (r.get("title", "") or "")[:80],
-                            "snippet": (r.get("body", "") or "")[:150],
-                            "url": (r.get("href", "") or "")[:80],
-                        })
+                        results.append(
+                            {
+                                "title": (r.get("title", "") or "")[:80],
+                                "snippet": (r.get("body", "") or "")[:150],
+                                "url": (r.get("href", "") or "")[:80],
+                            }
+                        )
                     return results
 
             results = await asyncio.to_thread(_search)
             # Return immediately on success or legitimately empty results
             if results is not None:
-                logger.debug("Web search for '%s' returned %d results", query, len(results))
+                logger.debug(
+                    "Web search for '%s' returned %d results", query, len(results)
+                )
                 return results
         except Exception as e:
             last_error = e
             if attempt < retries - 1:
-                wait = 1.0 * (2 ** attempt)  # 1s, 2s, 4s
-                logger.warning("Web search failed for '%s': %s, retrying in %.1fs (attempt %d/%d)", query, e, wait, attempt + 1, retries)
+                wait = 1.0 * (2**attempt)  # 1s, 2s, 4s
+                logger.warning(
+                    "Web search failed for '%s': %s, retrying in %.1fs (attempt %d/%d)",
+                    query,
+                    e,
+                    wait,
+                    attempt + 1,
+                    retries,
+                )
                 await asyncio.sleep(wait)
             else:
-                logger.warning("Web search failed for '%s' after %d attempts: %s", query, retries, e)
+                logger.warning(
+                    "Web search failed for '%s' after %d attempts: %s",
+                    query,
+                    retries,
+                    e,
+                )
 
-    return [{"title": "Search Error", "snippet": f"Search failed after {retries} attempts: {last_error}", "url": ""}]
+    return [
+        {
+            "title": "Search Error",
+            "snippet": f"Search failed after {retries} attempts: {last_error}",
+            "url": "",
+        }
+    ]

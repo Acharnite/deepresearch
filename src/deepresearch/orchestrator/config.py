@@ -56,7 +56,9 @@ async def configure(
         raise
 
     if not profiles:
-        raise ConfigError("No agent profiles loaded — at least one profile is required.")
+        raise ConfigError(
+            "No agent profiles loaded — at least one profile is required."
+        )
     if not orchestrator.model_configs:
         raise ConfigError("No model configurations loaded — cannot assign models.")
 
@@ -85,7 +87,9 @@ async def configure(
     selected_model: str | None = overrides.get("selected_model")
     agent_models: dict[str, str] | None = overrides.get("agent_models")
     agent_models = await assign_models(
-        orchestrator, model_mode, profiles,
+        orchestrator,
+        model_mode,
+        profiles,
         selected_model=selected_model,
         agent_models=agent_models,
     )

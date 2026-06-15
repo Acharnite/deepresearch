@@ -79,7 +79,9 @@ def build_review_prompt(shared_knowledge: SharedKnowledge) -> str:
 
     themes = "\n".join(f"  - {t}" for t in shared_knowledge.key_themes)
     agreements = "\n".join(f"  - {a}" for a in shared_knowledge.areas_of_agreement)
-    disagreements = "\n".join(f"  - {d}" for d in shared_knowledge.areas_of_disagreement)
+    disagreements = "\n".join(
+        f"  - {d}" for d in shared_knowledge.areas_of_disagreement
+    )
     gaps = "\n".join(f"  - {g}" for g in shared_knowledge.knowledge_gaps)
 
     return (
@@ -155,7 +157,9 @@ def build_round_2_prompt(
     questions_text = "\n".join(f"  - {q}" for q in questions)
 
     themes = "\n".join(f"  - {t}" for t in shared_knowledge.key_themes)
-    disagreements = "\n".join(f"  - {d}" for d in shared_knowledge.areas_of_disagreement)
+    disagreements = "\n".join(
+        f"  - {d}" for d in shared_knowledge.areas_of_disagreement
+    )
     gaps = "\n".join(f"  - {g}" for g in shared_knowledge.knowledge_gaps)
 
     return (
@@ -215,7 +219,7 @@ def build_clarify_prompt(question: str) -> str:
     return (
         f"# Clarification Request\n\n"
         f"The scribe has asked for clarification on the following:\n\n"
-        f"\"{question}\"\n\n"
+        f'"{question}"\n\n'
         "Please provide a clear, concise response addressing this question. "
         "Refer back to your research findings and analysis as needed."
     )

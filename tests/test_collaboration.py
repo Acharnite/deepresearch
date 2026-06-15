@@ -150,7 +150,12 @@ def mock_profiles() -> list[AgentProfile]:
 @pytest.fixture
 def mock_model_configs() -> list[dict]:
     return [
-        {"id": "gpt-4o", "provider": "openai", "display_name": "GPT-4o", "default": True},
+        {
+            "id": "gpt-4o",
+            "provider": "openai",
+            "display_name": "GPT-4o",
+            "default": True,
+        },
     ]
 
 
@@ -391,8 +396,12 @@ class TestReports:
     async def test_get_all_returns_copy(self, bus):
         """get_all_reports returns a dict copy."""
         r1 = IndividualReport(
-            agent_id="agent-alpha", title="R", perspective_summary="S",
-            key_insights=[], analysis="A", full_text="F",
+            agent_id="agent-alpha",
+            title="R",
+            perspective_summary="S",
+            key_insights=[],
+            analysis="A",
+            full_text="F",
         )
         await bus.publish_report("agent-alpha", r1)
         retrieved = await bus.get_all_reports()
@@ -430,10 +439,13 @@ class TestClarifications:
         """Multiple clarification pairs accumulate."""
         for i in range(3):
             q = ClarificationQuery(
-                agent_id=f"agent-{i}", question=f"Q{i}", context=None,
+                agent_id=f"agent-{i}",
+                question=f"Q{i}",
+                context=None,
             )
             r = ClarificationResponse(
-                agent_id=f"agent-{i}", response=f"R{i}",
+                agent_id=f"agent-{i}",
+                response=f"R{i}",
             )
             await bus.add_clarification(q, r)
 
@@ -505,8 +517,12 @@ class TestThreadSafety:
         async def writer():
             for i in range(10):
                 f = Findings(
-                    agent_id=f"w{i}", round=1, summary=f"S{i}",
-                    key_points=[f"K{i}"], perspective=f"P{i}", confidence=0.5,
+                    agent_id=f"w{i}",
+                    round=1,
+                    summary=f"S{i}",
+                    key_points=[f"K{i}"],
+                    perspective=f"P{i}",
+                    confidence=0.5,
                 )
                 await bus.publish_round_1(f"w{i}", f)
                 await asyncio.sleep(0.001)
@@ -717,7 +733,9 @@ class TestOrchestratorBusIntegration:
             assert profile.id in all_reports
 
     @pytest.mark.asyncio
-    async def test_quick_mode_skips_round_2_in_bus(self, mock_profiles, mock_model_configs):
+    async def test_quick_mode_skips_round_2_in_bus(
+        self, mock_profiles, mock_model_configs
+    ):
         """Quick mode does not produce Round 2 findings in the bus."""
         orch = Orchestrator(
             profiles=mock_profiles,
@@ -737,7 +755,9 @@ class TestOrchestratorBusIntegration:
             assert len(orch.bus.round_2_findings) == 0
 
     @pytest.mark.asyncio
-    async def test_graceful_degradation_with_bus(self, mock_profiles, mock_model_configs):
+    async def test_graceful_degradation_with_bus(
+        self, mock_profiles, mock_model_configs
+    ):
         """Agent failure in Round 1 doesn't break bus integration."""
 
         def failing_factory(profile: AgentProfile, model_name: str, **extra):
@@ -747,25 +767,41 @@ class TestOrchestratorBusIntegration:
                 first = args[0] if args else None
                 if isinstance(first, ResearchTopic):
                     return Findings(
-                        agent_id=profile.id, round=1, summary="S",
-                        key_points=["K"], perspective="P", confidence=0.5,
+                        agent_id=profile.id,
+                        round=1,
+                        summary="S",
+                        key_points=["K"],
+                        perspective="P",
+                        confidence=0.5,
                     )
                 if isinstance(first, SharedKnowledge):
                     return FollowUpQuestions(
-                        agent_id=profile.id, questions=["Follow-up Q?"],
+                        agent_id=profile.id,
+                        questions=["Follow-up Q?"],
                     )
                 return IndividualReport(
-                    agent_id=profile.id, title="R", perspective_summary="S",
-                    key_insights=[], analysis="A", full_text="F",
+                    agent_id=profile.id,
+                    title="R",
+                    perspective_summary="S",
+                    key_insights=[],
+                    analysis="A",
+                    full_text="F",
                 )
+
             return agent_fn
 
         def sf(**extra):
             async def scribe(reports):
                 return ResearchPaper(
-                    title="P", abstract="A", methodology_note="M",
-                    sections=[], synthesis="S", key_takeaways=["T"], conclusion="C",
+                    title="P",
+                    abstract="A",
+                    methodology_note="M",
+                    sections=[],
+                    synthesis="S",
+                    key_takeaways=["T"],
+                    conclusion="C",
                 )
+
             return scribe
 
         orch = Orchestrator(

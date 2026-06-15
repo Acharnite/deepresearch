@@ -66,9 +66,22 @@ def profiles() -> list[AgentProfile]:
 def model_configs() -> list[dict]:
     """Return minimal model definitions for testing."""
     return [
-        {"id": "openrouter/opencode/go", "provider": "openrouter", "display_name": "Opencode Go (via OpenRouter)"},
-        {"id": "gpt-4o", "provider": "openai", "display_name": "GPT-4o", "default": True},
-        {"id": "claude-sonnet-4-20250514", "provider": "anthropic", "display_name": "Claude Sonnet 4"},
+        {
+            "id": "openrouter/opencode/go",
+            "provider": "openrouter",
+            "display_name": "Opencode Go (via OpenRouter)",
+        },
+        {
+            "id": "gpt-4o",
+            "provider": "openai",
+            "display_name": "GPT-4o",
+            "default": True,
+        },
+        {
+            "id": "claude-sonnet-4-20250514",
+            "provider": "anthropic",
+            "display_name": "Claude Sonnet 4",
+        },
     ]
 
 
@@ -94,7 +107,9 @@ def mock_findings() -> Findings:
 
 @pytest.fixture
 def mock_followup() -> FollowUpQuestions:
-    return FollowUpQuestions(agent_id="agent-a", questions=["What about X?", "Can we explore Y?"])
+    return FollowUpQuestions(
+        agent_id="agent-a", questions=["What about X?", "Can we explore Y?"]
+    )
 
 
 @pytest.fixture
@@ -138,7 +153,9 @@ def mock_agent_factory(mock_findings, mock_followup, mock_report) -> MagicMock:
             # Inspect first arg type to determine behavior.
             if args:
                 first = args[0]
-                if isinstance(first, ResearchTopic) and (len(args) == 1 or args[1] is None):
+                if isinstance(first, ResearchTopic) and (
+                    len(args) == 1 or args[1] is None
+                ):
                     return Findings(
                         agent_id=profile.id,
                         round=1,
@@ -147,7 +164,11 @@ def mock_agent_factory(mock_findings, mock_followup, mock_report) -> MagicMock:
                         perspective="Perspective",
                         confidence=0.7,
                     )
-                elif isinstance(first, ResearchTopic) and len(args) > 1 and isinstance(args[1], SharedKnowledge):
+                elif (
+                    isinstance(first, ResearchTopic)
+                    and len(args) > 1
+                    and isinstance(args[1], SharedKnowledge)
+                ):
                     return IndividualReport(
                         agent_id=profile.id,
                         title=f"Report by {profile.name}",
@@ -211,11 +232,13 @@ class TestConfigure:
             profiles=profiles,
             model_configs=model_configs,
         )
-        config = asyncio.run(orch.configure(
-            "Test topic",
-            time_budget="deep",
-            model_mode="random",
-        ))
+        config = asyncio.run(
+            orch.configure(
+                "Test topic",
+                time_budget="deep",
+                model_mode="random",
+            )
+        )
         assert isinstance(config, SessionConfig)
         assert config.topic.question == "Test topic"
         assert config.topic.time_budget == "deep"
@@ -243,7 +266,9 @@ class TestConfigure:
 
     def test_configure_empty_profiles_raises(self):
         """Configure should raise if no profiles are loaded."""
-        orch = Orchestrator(profiles=[], model_configs=[{"id": "gpt-4o", "default": True}])
+        orch = Orchestrator(
+            profiles=[], model_configs=[{"id": "gpt-4o", "default": True}]
+        )
         with pytest.raises(ConfigError, match="No agent profiles loaded"):
             asyncio.run(orch.configure("Test topic"))
 
@@ -268,7 +293,9 @@ class TestAssignModels:
     def test_same_mode(self, profiles, model_configs):
         """Same mode assigns the default model to all agents."""
         orch = Orchestrator(profiles=profiles, model_configs=model_configs)
-        result = asyncio.run(orch.assign_models("same", profiles, selected_model="opencode/go"))
+        result = asyncio.run(
+            orch.assign_models("same", profiles, selected_model="opencode/go")
+        )
         assert result == {"agent-a": "opencode/go", "agent-b": "opencode/go"}
 
     def test_same_mode_no_default(self, profiles):
@@ -287,12 +314,20 @@ class TestAssignModels:
         orch = Orchestrator(profiles=profiles, model_configs=model_configs)
 
         # First call.
-        asyncio.run(orch.configure("Deterministic topic", time_budget="quick", model_mode="random"))
+        asyncio.run(
+            orch.configure(
+                "Deterministic topic", time_budget="quick", model_mode="random"
+            )
+        )
         result_1 = asyncio.run(orch.assign_models("random", profiles))
 
         # Reset and second call.
         orch2 = Orchestrator(profiles=profiles, model_configs=model_configs)
-        asyncio.run(orch2.configure("Deterministic topic", time_budget="quick", model_mode="random"))
+        asyncio.run(
+            orch2.configure(
+                "Deterministic topic", time_budget="quick", model_mode="random"
+            )
+        )
         result_2 = asyncio.run(orch2.assign_models("random", profiles))
 
         assert result_1 == result_2
@@ -301,18 +336,30 @@ class TestAssignModels:
         """Different topics should produce different random assignments."""
         # Use 4 agents and 2 models → very low collision probability (1/16).
         many_profiles = [
-            AgentProfile(id=f"agent-{c}", name=f"Agent {c}", emoji="🧪",
-                         persona_prompt="P", methodology="M", knowledge_base="K",
-                         bias_mitigation="B", voice="V", temperature=0.5)
+            AgentProfile(
+                id=f"agent-{c}",
+                name=f"Agent {c}",
+                emoji="🧪",
+                persona_prompt="P",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=0.5,
+            )
             for c in "abcd"
         ]
 
         orch_a = Orchestrator(profiles=many_profiles, model_configs=model_configs)
-        asyncio.run(orch_a.configure("Topic A", time_budget="quick", model_mode="random"))
+        asyncio.run(
+            orch_a.configure("Topic A", time_budget="quick", model_mode="random")
+        )
         result_a = asyncio.run(orch_a.assign_models("random", many_profiles))
 
         orch_b = Orchestrator(profiles=many_profiles, model_configs=model_configs)
-        asyncio.run(orch_b.configure("Topic B", time_budget="quick", model_mode="random"))
+        asyncio.run(
+            orch_b.configure("Topic B", time_budget="quick", model_mode="random")
+        )
         result_b = asyncio.run(orch_b.assign_models("random", many_profiles))
 
         # With 4 agents × 2 models there are 16 possible outcomes —
@@ -352,8 +399,24 @@ class TestRunRound:
 
         # Create mock agents that return findings.
         agents = {
-            "agent-a": AsyncMock(return_value=Findings(agent_id="a", round=1, summary="S", key_points=["K"], perspective="P")),
-            "agent-b": AsyncMock(return_value=Findings(agent_id="b", round=1, summary="S", key_points=["K"], perspective="P")),
+            "agent-a": AsyncMock(
+                return_value=Findings(
+                    agent_id="a",
+                    round=1,
+                    summary="S",
+                    key_points=["K"],
+                    perspective="P",
+                )
+            ),
+            "agent-b": AsyncMock(
+                return_value=Findings(
+                    agent_id="b",
+                    round=1,
+                    summary="S",
+                    key_points=["K"],
+                    perspective="P",
+                )
+            ),
         }
 
         results = await orch.run_round(1, agents, topic)
@@ -370,7 +433,9 @@ class TestRunRound:
         async def failing_agent(topic):
             raise RuntimeError("Agent crashed")
 
-        successful = Findings(agent_id="b", round=1, summary="S", key_points=["K"], perspective="P")
+        successful = Findings(
+            agent_id="b", round=1, summary="S", key_points=["K"], perspective="P"
+        )
 
         agents = {
             "agent-a": failing_agent,
@@ -393,9 +458,13 @@ class TestRunRound:
 
         async def slow_agent(topic):
             await asyncio.sleep(10)  # much longer than timeout
-            return Findings(agent_id="slow", round=1, summary="S", key_points=["K"], perspective="P")
+            return Findings(
+                agent_id="slow", round=1, summary="S", key_points=["K"], perspective="P"
+            )
 
-        fast = Findings(agent_id="fast", round=1, summary="S", key_points=["K"], perspective="P")
+        fast = Findings(
+            agent_id="fast", round=1, summary="S", key_points=["K"], perspective="P"
+        )
 
         agents = {
             "slow": slow_agent,
@@ -409,7 +478,9 @@ class TestRunRound:
         assert orch.failed_agents["slow"] == "timeout"
 
     @pytest.mark.asyncio
-    async def test_failed_agents_skipped_in_subsequent_rounds(self, profiles, model_configs):
+    async def test_failed_agents_skipped_in_subsequent_rounds(
+        self, profiles, model_configs
+    ):
         """Agents that failed in Round 1 should not run in Round 2."""
         orch = Orchestrator(profiles=profiles, model_configs=model_configs)
         orch.failed_agents["agent-a"] = "previous failure"
@@ -423,9 +494,16 @@ class TestRunRound:
             knowledge_gaps=[],
         )
 
-        mock_fn = AsyncMock(return_value=IndividualReport(
-            agent_id="b", title="R", perspective_summary="S", key_insights=["I"], analysis="A", full_text="F",
-        ))
+        mock_fn = AsyncMock(
+            return_value=IndividualReport(
+                agent_id="b",
+                title="R",
+                perspective_summary="S",
+                key_insights=["I"],
+                analysis="A",
+                full_text="F",
+            )
+        )
 
         agents = {
             "agent-a": AsyncMock(),  # should NOT be called
@@ -445,8 +523,22 @@ class TestShareFindings:
     def test_basic_aggregation(self, mock_findings):
         """share_findings should produce SharedKnowledge with correct structure."""
         orch = Orchestrator()
-        f1 = Findings(agent_id="a", round=1, summary="Summary A", key_points=["P1", "P2"], perspective="Per A", confidence=0.8)
-        f2 = Findings(agent_id="b", round=1, summary="Summary B", key_points=["P3"], perspective="Per B", confidence=0.6)
+        f1 = Findings(
+            agent_id="a",
+            round=1,
+            summary="Summary A",
+            key_points=["P1", "P2"],
+            perspective="Per A",
+            confidence=0.8,
+        )
+        f2 = Findings(
+            agent_id="b",
+            round=1,
+            summary="Summary B",
+            key_points=["P3"],
+            perspective="Per B",
+            confidence=0.6,
+        )
 
         shared = orch.share_findings({"a": f1, "b": f2})
         assert isinstance(shared, SharedKnowledge)
@@ -480,8 +572,12 @@ class TestCollectFollowup:
         )
 
         agents = {
-            "agent-a": AsyncMock(return_value=FollowUpQuestions(agent_id="a", questions=["Q1?"])),
-            "agent-b": AsyncMock(return_value=FollowUpQuestions(agent_id="b", questions=["Q2?"])),
+            "agent-a": AsyncMock(
+                return_value=FollowUpQuestions(agent_id="a", questions=["Q1?"])
+            ),
+            "agent-b": AsyncMock(
+                return_value=FollowUpQuestions(agent_id="b", questions=["Q2?"])
+            ),
         }
 
         results = await orch.collect_followup_questions(agents, shared)
@@ -493,11 +589,20 @@ class TestCollectFollowup:
         """Failed agents should be excluded from follow-up questions."""
         orch = Orchestrator()
         orch.failed_agents["agent-a"] = "error"
-        shared = SharedKnowledge(round_number=1, all_summaries={}, key_themes=[], areas_of_agreement=[], areas_of_disagreement=[], knowledge_gaps=[])
+        shared = SharedKnowledge(
+            round_number=1,
+            all_summaries={},
+            key_themes=[],
+            areas_of_agreement=[],
+            areas_of_disagreement=[],
+            knowledge_gaps=[],
+        )
 
         agents = {
             "agent-a": AsyncMock(),
-            "agent-b": AsyncMock(return_value=FollowUpQuestions(agent_id="b", questions=["Q?"])),
+            "agent-b": AsyncMock(
+                return_value=FollowUpQuestions(agent_id="b", questions=["Q?"])
+            ),
         }
 
         results = await orch.collect_followup_questions(agents, shared)
@@ -514,7 +619,14 @@ class TestCollectReports:
         """If Round 2 results exist, collect_reports should return them directly."""
         orch = Orchestrator()
         round_2 = {
-            "a": IndividualReport(agent_id="a", title="R", perspective_summary="S", key_insights=["I"], analysis="A", full_text="F"),
+            "a": IndividualReport(
+                agent_id="a",
+                title="R",
+                perspective_summary="S",
+                key_insights=["I"],
+                analysis="A",
+                full_text="F",
+            ),
         }
         result = await orch.collect_reports({}, {}, round_2)
         assert result == round_2
@@ -541,7 +653,14 @@ class TestCompile:
         """Compile should call the scribe with all reports."""
         orch = Orchestrator()
         reports = {
-            "a": IndividualReport(agent_id="a", title="R", perspective_summary="S", key_insights=["I"], analysis="A", full_text="F"),
+            "a": IndividualReport(
+                agent_id="a",
+                title="R",
+                perspective_summary="S",
+                key_insights=["I"],
+                analysis="A",
+                full_text="F",
+            ),
         }
 
         async def scribe(reports):
@@ -602,7 +721,9 @@ class TestFullLifecycle:
     """Full session lifecycle with mock agents."""
 
     @pytest.mark.asyncio
-    async def test_run_quick_mode(self, profiles, model_configs, mock_agent_factory, mock_scribe_factory):
+    async def test_run_quick_mode(
+        self, profiles, model_configs, mock_agent_factory, mock_scribe_factory
+    ):
         """Quick mode session should complete successfully."""
         orch = Orchestrator(
             profiles=profiles,
@@ -623,7 +744,9 @@ class TestFullLifecycle:
         assert len(orch.failed_agents) == 0
 
     @pytest.mark.asyncio
-    async def test_run_medium_mode(self, profiles, model_configs, mock_agent_factory, mock_scribe_factory):
+    async def test_run_medium_mode(
+        self, profiles, model_configs, mock_agent_factory, mock_scribe_factory
+    ):
         """Medium mode (with Round 2) should complete successfully."""
         orch = Orchestrator(
             profiles=profiles,
@@ -652,14 +775,36 @@ class TestFullLifecycle:
                     raise RuntimeError("Agent A failure")
                 # Agent B succeeds.
                 if args and isinstance(args[0], ResearchTopic):
-                    return Findings(agent_id=profile.id, round=1, summary="S", key_points=["K"], perspective="P")
-                return IndividualReport(agent_id=profile.id, title="R", perspective_summary="S", key_insights=["I"], analysis="A", full_text="F")
+                    return Findings(
+                        agent_id=profile.id,
+                        round=1,
+                        summary="S",
+                        key_points=["K"],
+                        perspective="P",
+                    )
+                return IndividualReport(
+                    agent_id=profile.id,
+                    title="R",
+                    perspective_summary="S",
+                    key_insights=["I"],
+                    analysis="A",
+                    full_text="F",
+                )
 
             return fail_fn
 
         def scribe_factory(**extra):
             async def scribe(reports):
-                return ResearchPaper(title="P", abstract="A", methodology_note="M", sections=[], synthesis="S", key_takeaways=["T"], conclusion="C")
+                return ResearchPaper(
+                    title="P",
+                    abstract="A",
+                    methodology_note="M",
+                    sections=[],
+                    synthesis="S",
+                    key_takeaways=["T"],
+                    conclusion="C",
+                )
+
             return scribe
 
         orch = Orchestrator(
@@ -682,7 +827,9 @@ class TestFullLifecycle:
         assert "agent-b" not in orch.failed_agents
 
     @pytest.mark.asyncio
-    async def test_event_logging(self, profiles, model_configs, mock_agent_factory, mock_scribe_factory):
+    async def test_event_logging(
+        self, profiles, model_configs, mock_agent_factory, mock_scribe_factory
+    ):
         """Session events should be recorded throughout the lifecycle."""
         orch = Orchestrator(
             profiles=profiles,
@@ -722,13 +869,15 @@ class TestDryRun:
             model_configs=model_configs,
         )
 
-        result = asyncio.run(orch.run(
-            "Dry run topic",
-            time_budget="medium",
-            model_mode="same",
-            dry_run=True,
-            output_dir="/tmp/deepresearch_test_output",
-        ))
+        result = asyncio.run(
+            orch.run(
+                "Dry run topic",
+                time_budget="medium",
+                model_mode="same",
+                dry_run=True,
+                output_dir="/tmp/deepresearch_test_output",
+            )
+        )
 
         assert isinstance(result, Path)
         # No agents should have been created or executed.
@@ -740,7 +889,9 @@ class TestStateTransitions:
     """Orchestrator lifecycle state transitions."""
 
     @pytest.mark.asyncio
-    async def test_full_state_sequence(self, profiles, model_configs, mock_agent_factory, mock_scribe_factory):
+    async def test_full_state_sequence(
+        self, profiles, model_configs, mock_agent_factory, mock_scribe_factory
+    ):
         """State should follow the expected lifecycle sequence."""
         orch = Orchestrator(
             profiles=profiles,
@@ -793,26 +944,40 @@ async def test_refinement_survives_agent_failure(profiles, model_configs):
                 raise RuntimeError("Agent A crashed during refinement")
             if args and isinstance(args[0], ResearchTopic):
                 return Findings(
-                    agent_id=profile.id, round=1, summary="S",
-                    key_points=["K"], perspective="P",
+                    agent_id=profile.id,
+                    round=1,
+                    summary="S",
+                    key_points=["K"],
+                    perspective="P",
                 )
             if args and isinstance(args[0], SharedKnowledge):
                 return FollowUpQuestions(
-                    agent_id=profile.id, questions=["Q?"],
+                    agent_id=profile.id,
+                    questions=["Q?"],
                 )
             return IndividualReport(
-                agent_id=profile.id, title="R", perspective_summary="S",
-                key_insights=["I"], analysis="A", full_text="F",
+                agent_id=profile.id,
+                title="R",
+                perspective_summary="S",
+                key_insights=["I"],
+                analysis="A",
+                full_text="F",
             )
+
         return agent_fn
 
     def scribe_factory(**extra):
         async def scribe(reports):
             return ResearchPaper(
-                title="P", abstract="A", methodology_note="M",
-                sections=[], synthesis="S", key_takeaways=["T"],
+                title="P",
+                abstract="A",
+                methodology_note="M",
+                sections=[],
+                synthesis="S",
+                key_takeaways=["T"],
                 conclusion="C",
             )
+
         return scribe
 
     orch = Orchestrator(

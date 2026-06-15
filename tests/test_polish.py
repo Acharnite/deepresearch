@@ -74,7 +74,10 @@ class TestTokenTracking:
     def test_estimate_cost_positive_for_paid_models(self):
         """Paid models should return a positive estimated cost."""
         client = LLMClient(model="claude-sonnet-4-20250514")
-        cost = client.estimate_cost("System prompt of moderate length", "User prompt with some content to estimate")
+        cost = client.estimate_cost(
+            "System prompt of moderate length",
+            "User prompt with some content to estimate",
+        )
         assert cost > 0.0
 
     def test_estimate_cost_returns_float(self):
@@ -112,7 +115,12 @@ class TestTokenTracking:
         """get_usage_stats must return the expected keys."""
         client = LLMClient(model="gpt-4o")
         stats = client.get_usage_stats()
-        expected_keys = {"total_input_tokens", "total_output_tokens", "total_cost", "call_count"}
+        expected_keys = {
+            "total_input_tokens",
+            "total_output_tokens",
+            "total_cost",
+            "call_count",
+        }
         assert set(stats.keys()) == expected_keys
 
 
@@ -128,27 +136,46 @@ class TestDryRun:
     def profiles(self) -> list[AgentProfile]:
         return [
             AgentProfile(
-                id="agent-a", name="Agent Alpha", emoji="🔬",
-                persona_prompt="P", methodology="M", knowledge_base="K",
-                bias_mitigation="B", voice="V", temperature=0.5,
+                id="agent-a",
+                name="Agent Alpha",
+                emoji="🔬",
+                persona_prompt="P",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=0.5,
             ),
             AgentProfile(
-                id="agent-b", name="Agent Beta", emoji="🧪",
-                persona_prompt="P", methodology="M", knowledge_base="K",
-                bias_mitigation="B", voice="V", temperature=0.7,
+                id="agent-b",
+                name="Agent Beta",
+                emoji="🧪",
+                persona_prompt="P",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=0.7,
             ),
         ]
 
     @pytest.fixture
     def model_configs(self) -> list[dict]:
         return [
-            {"id": "gpt-4o", "provider": "openai", "display_name": "GPT-4o", "default": True},
+            {
+                "id": "gpt-4o",
+                "provider": "openai",
+                "display_name": "GPT-4o",
+                "default": True,
+            },
         ]
 
     @pytest.fixture
     def config(self, profiles, model_configs) -> SessionConfig:
         return SessionConfig(
-            topic=ResearchTopic(question="Test topic", time_budget="medium", model_mode="same"),
+            topic=ResearchTopic(
+                question="Test topic", time_budget="medium", model_mode="same"
+            ),
             agent_profiles=profiles,
             agent_models={"agent-a": "gpt-4o", "agent-b": "gpt-4o"},
             time_budget_seconds=300,
@@ -165,9 +192,14 @@ class TestDryRun:
         )
         assert isinstance(result, dict)
         expected_keys = {
-            "topic", "time_budget", "model_mode",
-            "agent_assignments", "estimated_cost", "estimated_tokens",
-            "rounds", "agents_count",
+            "topic",
+            "time_budget",
+            "model_mode",
+            "agent_assignments",
+            "estimated_cost",
+            "estimated_tokens",
+            "rounds",
+            "agents_count",
         }
         assert set(result.keys()) == expected_keys
 
@@ -228,9 +260,15 @@ class TestValidateProfiles:
         """Valid profiles should produce no errors."""
         profiles = [
             AgentProfile(
-                id="a", name="A", emoji="🔍",
-                persona_prompt="P", methodology="M", knowledge_base="K",
-                bias_mitigation="B", voice="V", temperature=0.5,
+                id="a",
+                name="A",
+                emoji="🔍",
+                persona_prompt="P",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=0.5,
             ),
         ]
         errors = validate_profiles(profiles)
@@ -240,9 +278,15 @@ class TestValidateProfiles:
         """Profiles with empty string fields should produce errors."""
         profiles = [
             AgentProfile(
-                id="a", name="", emoji="🔍",
-                persona_prompt="", methodology="M", knowledge_base="K",
-                bias_mitigation="B", voice="V", temperature=0.5,
+                id="a",
+                name="",
+                emoji="🔍",
+                persona_prompt="",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=0.5,
             ),
         ]
         errors = validate_profiles(profiles)
@@ -261,9 +305,15 @@ class TestValidateProfiles:
         """
         profiles = [
             AgentProfile.model_construct(
-                id="a", name="A", emoji="🔍",
-                persona_prompt="P", methodology="M", knowledge_base="K",
-                bias_mitigation="B", voice="V", temperature=3.0,
+                id="a",
+                name="A",
+                emoji="🔍",
+                persona_prompt="P",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=3.0,
             ),
         ]
         errors = validate_profiles(profiles)
@@ -274,14 +324,26 @@ class TestValidateProfiles:
         """Duplicate profile IDs should produce an error."""
         profiles = [
             AgentProfile(
-                id="dup", name="A", emoji="🔍",
-                persona_prompt="P", methodology="M", knowledge_base="K",
-                bias_mitigation="B", voice="V", temperature=0.5,
+                id="dup",
+                name="A",
+                emoji="🔍",
+                persona_prompt="P",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=0.5,
             ),
             AgentProfile(
-                id="dup", name="B", emoji="🧪",
-                persona_prompt="P", methodology="M", knowledge_base="K",
-                bias_mitigation="B", voice="V", temperature=0.7,
+                id="dup",
+                name="B",
+                emoji="🧪",
+                persona_prompt="P",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=0.7,
             ),
         ]
         errors = validate_profiles(profiles)
@@ -292,14 +354,26 @@ class TestValidateProfiles:
         """validate_profiles should report multiple issues, not just the first."""
         profiles = [
             AgentProfile.model_construct(
-                id="dup", name="", emoji="🔍",
-                persona_prompt="P", methodology="M", knowledge_base="K",
-                bias_mitigation="B", voice="V", temperature=0.5,
+                id="dup",
+                name="",
+                emoji="🔍",
+                persona_prompt="P",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=0.5,
             ),
             AgentProfile.model_construct(
-                id="dup", name="B", emoji="🧪",
-                persona_prompt="P", methodology="M", knowledge_base="K",
-                bias_mitigation="B", voice="V", temperature=3.0,
+                id="dup",
+                name="B",
+                emoji="🧪",
+                persona_prompt="P",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=3.0,
             ),
         ]
         errors = validate_profiles(profiles)
@@ -351,9 +425,15 @@ class TestValidateAll:
         """All valid data should return empty list."""
         profiles = [
             AgentProfile(
-                id="a", name="A", emoji="🔍",
-                persona_prompt="P", methodology="M", knowledge_base="K",
-                bias_mitigation="B", voice="V", temperature=0.5,
+                id="a",
+                name="A",
+                emoji="🔍",
+                persona_prompt="P",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=0.5,
             ),
         ]
         models = [{"id": "gpt-4o", "provider": "openai"}]
@@ -369,9 +449,15 @@ class TestValidateAll:
         """Errors from both profiles and models should be combined."""
         profiles = [
             AgentProfile.model_construct(
-                id="", name="", emoji="🔍",
-                persona_prompt="P", methodology="M", knowledge_base="K",
-                bias_mitigation="B", voice="V", temperature=0.5,
+                id="",
+                name="",
+                emoji="🔍",
+                persona_prompt="P",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=0.5,
             ),
         ]
         models = [{"provider": "openai"}]  # missing id
@@ -418,9 +504,15 @@ class TestErrorHandling:
 
         agents = {
             "agent-a": failing_agent,
-            "agent-b": AsyncMock(return_value=Findings(
-                agent_id="b", round=1, summary="S", key_points=["K"], perspective="P",
-            )),
+            "agent-b": AsyncMock(
+                return_value=Findings(
+                    agent_id="b",
+                    round=1,
+                    summary="S",
+                    key_points=["K"],
+                    perspective="P",
+                )
+            ),
         }
 
         results = await orch.run_round(1, agents, topic)
@@ -429,7 +521,9 @@ class TestErrorHandling:
 
     def test_orchestrator_empty_profiles_error(self):
         """Orchestrator should raise ConfigError with empty profiles."""
-        orch = Orchestrator(profiles=[], model_configs=[{"id": "gpt-4o", "default": True}])
+        orch = Orchestrator(
+            profiles=[], model_configs=[{"id": "gpt-4o", "default": True}]
+        )
         with pytest.raises(ConfigError, match="No agent profiles loaded"):
             asyncio.run(orch.configure("Test topic"))
 
@@ -445,6 +539,7 @@ class TestProgress:
     def test_progress_creation(self):
         """Progress instance can be created."""
         from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+
         progress = Progress(
             SpinnerColumn(),
             TextColumn("{task.description}"),
@@ -455,6 +550,7 @@ class TestProgress:
     def test_progress_add_task(self):
         """Adding a task to progress should work."""
         from rich.progress import Progress
+
         progress = Progress()
         task = progress.add_task("[cyan]Testing...", total=100)
         assert task is not None
@@ -463,6 +559,7 @@ class TestProgress:
     def test_progress_update(self):
         """Updating a progress task should not crash."""
         from rich.progress import Progress
+
         progress = Progress()
         task = progress.add_task("[cyan]Testing...", total=100)
         progress.update(task, advance=50)
@@ -471,6 +568,7 @@ class TestProgress:
     def test_progress_complete(self):
         """Completing a progress task should set it to 100%."""
         from rich.progress import Progress
+
         progress = Progress()
         task = progress.add_task("[cyan]Testing...", total=100)
         progress.update(task, completed=100)
@@ -490,27 +588,45 @@ class TestSessionTimeout:
     def profiles(self) -> list[AgentProfile]:
         return [
             AgentProfile(
-                id="agent-a", name="Agent Alpha", emoji="🔬",
-                persona_prompt="P", methodology="M", knowledge_base="K",
-                bias_mitigation="B", voice="V", temperature=0.5,
+                id="agent-a",
+                name="Agent Alpha",
+                emoji="🔬",
+                persona_prompt="P",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=0.5,
             ),
             AgentProfile(
-                id="agent-b", name="Agent Beta", emoji="🧪",
-                persona_prompt="P", methodology="M", knowledge_base="K",
-                bias_mitigation="B", voice="V", temperature=0.7,
+                id="agent-b",
+                name="Agent Beta",
+                emoji="🧪",
+                persona_prompt="P",
+                methodology="M",
+                knowledge_base="K",
+                bias_mitigation="B",
+                voice="V",
+                temperature=0.7,
             ),
         ]
 
     @pytest.fixture
     def model_configs(self) -> list[dict]:
         return [
-            {"id": "gpt-4o", "provider": "openai", "display_name": "GPT-4o", "default": True},
+            {
+                "id": "gpt-4o",
+                "provider": "openai",
+                "display_name": "GPT-4o",
+                "default": True,
+            },
         ]
 
     @pytest.mark.asyncio
     async def test_max_session_duration_constant_exists(self):
         """MAX_SESSION_DURATION should be defined."""
         from deepresearch.orchestrator import MAX_SESSION_DURATION
+
         assert isinstance(MAX_SESSION_DURATION, int)
         assert MAX_SESSION_DURATION > 0
 
@@ -523,23 +639,36 @@ class TestSessionTimeout:
         assert hasattr(orch, "_finalize_output")
 
     @pytest.mark.asyncio
-    async def test_timeout_does_not_break_with_fast_agents(self, profiles, model_configs):
+    async def test_timeout_does_not_break_with_fast_agents(
+        self, profiles, model_configs
+    ):
         """A fast session should complete before the session timeout."""
         # Use same pattern as the existing orchestrator test for quick mode.
 
         def mock_agent_factory(profile, model_name, **extra):
             async def agent_fn(*args, **kwargs):
                 return Findings(
-                    agent_id=profile.id, round=1, summary="S",
-                    key_points=["K"], perspective="P",
+                    agent_id=profile.id,
+                    round=1,
+                    summary="S",
+                    key_points=["K"],
+                    perspective="P",
                 )
+
             return agent_fn
 
         def mock_scribe_factory(**extra):
             async def scribe(reports):
-                return ResearchPaper(title="P", abstract="A", methodology_note="M",
-                                     sections=[], synthesis="S", key_takeaways=["T"],
-                                     conclusion="C")
+                return ResearchPaper(
+                    title="P",
+                    abstract="A",
+                    methodology_note="M",
+                    sections=[],
+                    synthesis="S",
+                    key_takeaways=["T"],
+                    conclusion="C",
+                )
+
             return scribe
 
         orch = Orchestrator(
@@ -549,8 +678,12 @@ class TestSessionTimeout:
             scribe_factory=mock_scribe_factory,
         )
 
-        result = await orch.run("Fast topic", time_budget="quick", model_mode="same",
-                                output_dir="/tmp/deepresearch_test_timeout")
+        result = await orch.run(
+            "Fast topic",
+            time_budget="quick",
+            model_mode="same",
+            output_dir="/tmp/deepresearch_test_timeout",
+        )
         assert orch.state == "COMPLETE"
         assert isinstance(result, Path)
 
@@ -611,7 +744,9 @@ class TestConfigErrorMessages:
 
     def test_empty_profiles_message(self):
         """Empty profiles should produce a clear error."""
-        orch = Orchestrator(profiles=[], model_configs=[{"id": "gpt-4o", "default": True}])
+        orch = Orchestrator(
+            profiles=[], model_configs=[{"id": "gpt-4o", "default": True}]
+        )
         with pytest.raises(ConfigError, match="No agent profiles loaded"):
             asyncio.run(orch.configure("Topic"))
 
@@ -619,9 +754,15 @@ class TestConfigErrorMessages:
         """Empty models should produce a clear error."""
         # Need at least one profile to pass the profiles check.
         profile = AgentProfile(
-            id="a", name="A", emoji="🔍",
-            persona_prompt="P", methodology="M", knowledge_base="K",
-            bias_mitigation="B", voice="V", temperature=0.5,
+            id="a",
+            name="A",
+            emoji="🔍",
+            persona_prompt="P",
+            methodology="M",
+            knowledge_base="K",
+            bias_mitigation="B",
+            voice="V",
+            temperature=0.5,
         )
         orch = Orchestrator(profiles=[profile], model_configs=[])
         with pytest.raises(ConfigError, match="No model configurations loaded"):
@@ -649,8 +790,12 @@ async def test_llm_client_token_exhaustion_no_retry():
 
     error_cases = [
         litellm.BudgetExceededError(current_cost=1.0, max_budget=0.5),
-        litellm.ContextWindowExceededError(message="context window exceeded", model="test-model", llm_provider="openai"),
-        litellm.RateLimitError(message="rate limited", llm_provider="openai", model="test-model"),
+        litellm.ContextWindowExceededError(
+            message="context window exceeded", model="test-model", llm_provider="openai"
+        ),
+        litellm.RateLimitError(
+            message="rate limited", llm_provider="openai", model="test-model"
+        ),
     ]
 
     for error_instance in error_cases:
@@ -665,15 +810,21 @@ async def test_llm_client_token_exhaustion_no_retry():
                 try:
                     await client._acompletion([], 0.7, None)
                     break  # Should not reach here
-                except (litellm.BudgetExceededError,
-                        litellm.ContextWindowExceededError,
-                        litellm.RateLimitError):
+                except (
+                    litellm.BudgetExceededError,
+                    litellm.ContextWindowExceededError,
+                    litellm.RateLimitError,
+                ):
                     # This is the code path we're testing: immediate fail, no retry
                     raised_llm_error = True
                     break
                 except Exception:
                     pass
 
-            assert raised_llm_error, f"{type(error_instance).__name__} was not caught as resource exhausted"
-            assert mock_ac.call_count == 1, f"{type(error_instance).__name__} was retried ({mock_ac.call_count} calls)"
+            assert raised_llm_error, (
+                f"{type(error_instance).__name__} was not caught as resource exhausted"
+            )
+            assert mock_ac.call_count == 1, (
+                f"{type(error_instance).__name__} was retried ({mock_ac.call_count} calls)"
+            )
             mock_ac.reset_mock()

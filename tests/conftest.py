@@ -18,6 +18,8 @@ def mock_llm_client() -> None:
     This prevents the model connectivity check (added in create_session)
     from making real API calls. The mock applies to all tests automatically.
     """
-    with patch("deepresearch.llm.client.LLMClient.generate", new_callable=AsyncMock) as mock_generate:
+    with patch(
+        "deepresearch.llm.client.LLMClient.generate", new_callable=AsyncMock
+    ) as mock_generate:
         mock_generate.return_value = "ok"
         yield

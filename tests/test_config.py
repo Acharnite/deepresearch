@@ -53,9 +53,7 @@ models:
 
 class TestLoadYaml:
     def test_load_valid_file(self, valid_profiles_yaml):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(valid_profiles_yaml)
             tmp_path = f.name
 
@@ -72,9 +70,7 @@ class TestLoadYaml:
             load_yaml("/tmp/nonexistent_file_12345.yaml")
 
     def test_invalid_yaml(self):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("{{{invalid yaml: [}")
             tmp_path = f.name
 
@@ -85,9 +81,7 @@ class TestLoadYaml:
             Path(tmp_path).unlink(missing_ok=True)
 
     def test_empty_file(self):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             tmp_path = f.name
 
         try:
@@ -102,9 +96,7 @@ class TestLoadYaml:
 
 class TestLoadAgentProfiles:
     def test_load_valid(self, valid_profiles_yaml):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(valid_profiles_yaml)
             tmp_path = f.name
 
@@ -122,9 +114,7 @@ class TestLoadAgentProfiles:
             load_agent_profiles("/tmp/nonexistent_profiles.yaml")
 
     def test_invalid_yaml_raises_error(self):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("{{{invalid: yaml")
             tmp_path = f.name
 
@@ -135,9 +125,7 @@ class TestLoadAgentProfiles:
             Path(tmp_path).unlink(missing_ok=True)
 
     def test_not_a_list_raises_error(self):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("key: value\nnested:\n  a: 1")
             tmp_path = f.name
 
@@ -165,9 +153,7 @@ class TestLoadAgentProfiles:
   # Missing required fields
   temperature: 2.0    # Out of range
 """
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(yaml_content)
             tmp_path = f.name
 
@@ -183,9 +169,7 @@ class TestLoadAgentProfiles:
 
 class TestLoadModelConfig:
     def test_load_valid(self, valid_models_yaml):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write(valid_models_yaml)
             tmp_path = f.name
 
@@ -198,9 +182,7 @@ class TestLoadModelConfig:
             Path(tmp_path).unlink(missing_ok=True)
 
     def test_missing_models_key(self):
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".yaml", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
             f.write("not_models:\n  - id: test")
             tmp_path = f.name
 

@@ -77,9 +77,22 @@ def mock_profiles() -> list[AgentProfile]:
 def mock_model_configs() -> list[dict]:
     """Two models for multi-model assignment testing."""
     return [
-        {"id": "opencode/zen/claude-sonnet-4", "provider": "opencode", "display_name": "Opencode Zen"},
-        {"id": "gpt-4o", "provider": "openai", "display_name": "GPT-4o", "default": True},
-        {"id": "claude-sonnet-4-20250514", "provider": "anthropic", "display_name": "Claude Sonnet 4"},
+        {
+            "id": "opencode/zen/claude-sonnet-4",
+            "provider": "opencode",
+            "display_name": "Opencode Zen",
+        },
+        {
+            "id": "gpt-4o",
+            "provider": "openai",
+            "display_name": "GPT-4o",
+            "default": True,
+        },
+        {
+            "id": "claude-sonnet-4-20250514",
+            "provider": "anthropic",
+            "display_name": "Claude Sonnet 4",
+        },
     ]
 
 
@@ -105,7 +118,7 @@ def build_mock_agent_factory():
                         agent_id=profile.id,
                         title=f"Refined Report by {profile.name}",
                         perspective_summary=f"{profile.name}'s refined perspective "
-                                            f"in light of {len(shared.all_summaries)} other perspectives.",
+                        f"in light of {len(shared.all_summaries)} other perspectives.",
                         key_insights=[
                             f"{profile.name}'s unique insight on the topic",
                             "Cross-perspective analysis reveals new dimensions",
@@ -295,7 +308,8 @@ class TestIntegration:
         assert orch.state == "COMPLETE"
         # Verify Round 2 was not executed (no round_start with round=2).
         round_2_events = [
-            e for e in orch.events
+            e
+            for e in orch.events
             if e.get("event_type") == "round_start" and e.get("round") == 2
         ]
         assert len(round_2_events) == 0
@@ -466,7 +480,9 @@ class TestCollaborationBusIntegration:
                 pass
             else:
                 # Round 2 was dynamically skipped — verify the skip event was logged.
-                skip_events = [e for e in orch.events if e.get("event_type") == "round2_skip"]
+                skip_events = [
+                    e for e in orch.events if e.get("event_type") == "round2_skip"
+                ]
                 assert len(skip_events) >= 1
 
         # All reports collected (works regardless of Round 2).
@@ -522,31 +538,49 @@ class TestCollaborationBusIntegration:
                 if isinstance(first, ResearchTopic):
                     if len(args) > 1 and isinstance(args[1], SharedKnowledge):
                         return IndividualReport(
-                            agent_id=profile.id, title=f"R by {profile.name}",
-                            perspective_summary="S", key_insights=["I"],
-                            analysis="A", full_text="F",
+                            agent_id=profile.id,
+                            title=f"R by {profile.name}",
+                            perspective_summary="S",
+                            key_insights=["I"],
+                            analysis="A",
+                            full_text="F",
                         )
                     return Findings(
-                        agent_id=profile.id, round=1, summary="S",
-                        key_points=["K"], perspective="P", confidence=0.5,
+                        agent_id=profile.id,
+                        round=1,
+                        summary="S",
+                        key_points=["K"],
+                        perspective="P",
+                        confidence=0.5,
                     )
                 if isinstance(first, SharedKnowledge):
                     return FollowUpQuestions(
-                        agent_id=profile.id, questions=["Q?"],
+                        agent_id=profile.id,
+                        questions=["Q?"],
                     )
                 return IndividualReport(
-                    agent_id=profile.id, title="R", perspective_summary="S",
-                    key_insights=["I"], analysis="A", full_text="F",
+                    agent_id=profile.id,
+                    title="R",
+                    perspective_summary="S",
+                    key_insights=["I"],
+                    analysis="A",
+                    full_text="F",
                 )
+
             return agent_fn
 
         def sf(**extra):
             async def scribe(reports):
                 return ResearchPaper(
-                    title="P", abstract="A", methodology_note="M",
-                    sections=[], synthesis="S", key_takeaways=["T"],
+                    title="P",
+                    abstract="A",
+                    methodology_note="M",
+                    sections=[],
+                    synthesis="S",
+                    key_takeaways=["T"],
                     conclusion="C",
                 )
+
             return scribe
 
         orch = Orchestrator(
@@ -594,9 +628,7 @@ class TestCollaborationBusIntegration:
         async def failure() -> str:
             raise ValueError("task failed")
 
-        results = await orch._run_parallel(
-            {"a": success(), "b": failure()}
-        )
+        results = await orch._run_parallel({"a": success(), "b": failure()})
 
         assert "a" in results
         assert "b" not in results
@@ -693,10 +725,7 @@ class TestPDFIntegration:
             output_path=str(output),
         )
 
-        pdf_events = [
-            e for e in orch.events
-            if e.get("event_type") == "pdf_generated"
-        ]
+        pdf_events = [e for e in orch.events if e.get("event_type") == "pdf_generated"]
         assert len(pdf_events) == 1
         assert "path" in pdf_events[0]
 
@@ -840,4 +869,6 @@ class TestClarificationProtocolIntegration:
 
         response = await orch._handle_clarification(query)
         assert isinstance(response, ClarificationResponse)
-        assert "Unable to clarify" in response.response or "crashed" in response.response
+        assert (
+            "Unable to clarify" in response.response or "crashed" in response.response
+        )

@@ -24,7 +24,9 @@ import json as _json
 from deepresearch.web.event_bus import EventBus
 
 logger = logging.getLogger(__name__)
-SESSION_DB_PATH = Path(__file__).resolve().parent.parent.parent.parent / "output" / "sessions_db.json"
+SESSION_DB_PATH = (
+    Path(__file__).resolve().parent.parent.parent.parent / "output" / "sessions_db.json"
+)
 
 
 def _load_session_db() -> dict[str, dict]:
@@ -41,7 +43,9 @@ def _save_session_db(db: dict[str, dict]) -> None:
     """Persist session metadata to disk (synchronous, no lock)."""
     try:
         SESSION_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        SESSION_DB_PATH.write_text(_json.dumps(db, indent=2, default=str), encoding="utf-8")
+        SESSION_DB_PATH.write_text(
+            _json.dumps(db, indent=2, default=str), encoding="utf-8"
+        )
     except Exception as e:
         logger.warning("Failed to save session DB: %s", e)
 
@@ -54,17 +58,17 @@ async def _save_session_db_async(db: dict[str, dict]) -> None:
     async with _session_db_lock:
         try:
             SESSION_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-            SESSION_DB_PATH.write_text(_json.dumps(db, indent=2, default=str), encoding="utf-8")
+            SESSION_DB_PATH.write_text(
+                _json.dumps(db, indent=2, default=str), encoding="utf-8"
+            )
         except Exception as e:
             logger.warning("Failed to save session DB: %s", e)
 
 
-
-
 def _slugify(text: str, max_len: int = 50) -> str:
     """Convert text to a safe filename slug."""
-    slug = re.sub(r'[^a-zA-Z0-9_-]', '_', text.lower().strip())
-    slug = re.sub(r'_+', '_', slug).strip('_')
+    slug = re.sub(r"[^a-zA-Z0-9_-]", "_", text.lower().strip())
+    slug = re.sub(r"_+", "_", slug).strip("_")
     return slug[:max_len]
 
 
@@ -179,20 +183,26 @@ class MultiSessionManager:
             info.completed_at = datetime.now().isoformat()
             db = _load_session_db()
             db[info.session_id] = {
-                "topic": info.topic, "status": info.status,
-                "time_budget": info.time_budget, "time_budget_seconds": info.time_budget_seconds,
-                "model_mode": info.model_mode, "selected_model": info.selected_model,
+                "topic": info.topic,
+                "status": info.status,
+                "time_budget": info.time_budget,
+                "time_budget_seconds": info.time_budget_seconds,
+                "model_mode": info.model_mode,
+                "selected_model": info.selected_model,
                 "agent_models": info.agent_models,
-                "created_at": info.created_at, "completed_at": info.completed_at,
+                "created_at": info.created_at,
+                "completed_at": info.completed_at,
                 "result": info.result,
                 "error": info.error,
             }
             await _save_session_db_async(db)
-            await info.event_bus.publish({
-                "event_type": "session_error",
-                "session_id": session_id,
-                "error": info.error,
-            })
+            await info.event_bus.publish(
+                {
+                    "event_type": "session_error",
+                    "session_id": session_id,
+                    "error": info.error,
+                }
+            )
             return info
 
         # Start background task.
@@ -202,7 +212,9 @@ class MultiSessionManager:
 
         return info
 
-    async def _run_session(self, session_id: str, scribe_model: str | None = None) -> None:
+    async def _run_session(
+        self, session_id: str, scribe_model: str | None = None
+    ) -> None:
         """Run the full orchestration lifecycle with a per-session event bus."""
         info = self._sessions[session_id]
         info.status = "running"
@@ -219,11 +231,13 @@ class MultiSessionManager:
 
         try:
             # Publish session_start to this session's bus.
-            await info.event_bus.publish({
-                "event_type": "session_start",
-                "session_id": session_id,
-                "topic": info.topic,
-            })
+            await info.event_bus.publish(
+                {
+                    "event_type": "session_start",
+                    "session_id": session_id,
+                    "topic": info.topic,
+                }
+            )
 
             llm = LLMClient()
             registry = AgentRegistry(llm)
@@ -235,8 +249,11 @@ class MultiSessionManager:
 
             orchestrator = Orchestrator(
                 agent_factory=registry.agent_factory,
-                scribe_factory=lambda event_callback=None, model_name=None: registry.create_scribe_agent(
-                    model_name=model_name or scribe_model, event_callback=event_callback
+                scribe_factory=lambda event_callback=None, model_name=None: (
+                    registry.create_scribe_agent(
+                        model_name=model_name or scribe_model,
+                        event_callback=event_callback,
+                    )
                 ),
                 event_bus=info.event_bus,
             )
@@ -274,7 +291,9 @@ class MultiSessionManager:
             if scribe_model is not None:
                 run_overrides["scribe_model"] = scribe_model
 
-            pdf_path = await orchestrator.run(info.topic, cancel_event=cancel_event, **run_overrides)
+            pdf_path = await orchestrator.run(
+                info.topic, cancel_event=cancel_event, **run_overrides
+            )
 
             # Determine the HTML path (same stem, .html extension).
             html_path: str | None = None
@@ -285,8 +304,19 @@ class MultiSessionManager:
                     html_path = str(html_candidate)
 
             # Check if all agents failed — mark as error instead of complete
-            total_agents = len(orchestrator.failed_agents) + len([a for a in (orchestrator.session_config.agent_profiles if orchestrator.session_config else [])])
-            all_failed = len(orchestrator.failed_agents) >= total_agents and total_agents > 0
+            total_agents = len(orchestrator.failed_agents) + len(
+                [
+                    a
+                    for a in (
+                        orchestrator.session_config.agent_profiles
+                        if orchestrator.session_config
+                        else []
+                    )
+                ]
+            )
+            all_failed = (
+                len(orchestrator.failed_agents) >= total_agents and total_agents > 0
+            )
 
             if all_failed:
                 info.result = {
@@ -296,7 +326,9 @@ class MultiSessionManager:
                     "pdf_filename": pdf_file.name,
                 }
                 info.status = "error"
-                info.error = f"All agents failed: {', '.join(orchestrator.failed_agents.keys())}"
+                info.error = (
+                    f"All agents failed: {', '.join(orchestrator.failed_agents.keys())}"
+                )
             else:
                 info.result = {
                     "status": "complete",
@@ -324,32 +356,38 @@ class MultiSessionManager:
             await _save_session_db_async(db)
             info.output_path = str(output_path)
 
-            await info.event_bus.publish({
-                "event_type": "session_end",
-                "session_id": session_id,
-                "status": "complete",
-            })
+            await info.event_bus.publish(
+                {
+                    "event_type": "session_end",
+                    "session_id": session_id,
+                    "status": "complete",
+                }
+            )
 
         except asyncio.CancelledError:
             info.status = "cancelled"
             info.error = "Cancelled by user"
             info.completed_at = datetime.now().isoformat()
-            await info.event_bus.publish({
-                "event_type": "session_end",
-                "session_id": session_id,
-                "status": "cancelled",
-            })
+            await info.event_bus.publish(
+                {
+                    "event_type": "session_end",
+                    "session_id": session_id,
+                    "status": "cancelled",
+                }
+            )
 
         except Exception as exc:
             logger.exception("Session %s failed", session_id)
             info.status = "error"
             info.error = str(exc)
             info.completed_at = datetime.now().isoformat()
-            await info.event_bus.publish({
-                "event_type": "session_error",
-                "session_id": session_id,
-                "error": str(exc),
-            })
+            await info.event_bus.publish(
+                {
+                    "event_type": "session_error",
+                    "session_id": session_id,
+                    "error": str(exc),
+                }
+            )
 
         finally:
             self._cancel_events.pop(session_id, None)
@@ -423,10 +461,18 @@ class MultiSessionManager:
             )
             # Fallback: if result wasn't persisted (legacy sessions), derive from filesystem
             if not info.result:
-                topic_slug = re.sub(r'[^a-zA-Z0-9_-]', '_', (info.topic or "").lower().strip())[:50] or "research"
+                topic_slug = (
+                    re.sub(r"[^a-zA-Z0-9_-]", "_", (info.topic or "").lower().strip())[
+                        :50
+                    ]
+                    or "research"
+                )
                 pdf_path = SESSION_DB_PATH.parent / sid / f"{topic_slug}.pdf"
                 if pdf_path.exists():
-                    info.result = {"pdf_filename": pdf_path.name, "pdf_path": str(pdf_path)}
+                    info.result = {
+                        "pdf_filename": pdf_path.name,
+                        "pdf_path": str(pdf_path),
+                    }
             self._sessions[sid] = info
         if db:
             logger.info("Restored %d sessions from disk", len(db))
@@ -454,7 +500,8 @@ class MultiSessionManager:
     def _cleanup_old(self) -> None:
         """Remove the oldest completed/error/cancelled session."""
         completed = [
-            s for s in self._sessions.values()
+            s
+            for s in self._sessions.values()
             if s.status in ("complete", "error", "cancelled")
         ]
         if not completed:
@@ -475,7 +522,8 @@ class MultiSessionManager:
     def clear_completed(self) -> int:
         """Remove all completed/error/cancelled sessions. Returns count removed."""
         to_remove = [
-            sid for sid, s in self._sessions.items()
+            sid
+            for sid, s in self._sessions.items()
             if s.status in ("complete", "error", "cancelled")
         ]
         for sid in to_remove:

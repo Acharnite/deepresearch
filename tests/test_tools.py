@@ -62,8 +62,16 @@ class TestWebSearchExecution:
         with patch("ddgs.DDGS") as mock_ddgs:
             mock_instance = MagicMock()
             mock_instance.text.return_value = [
-                {"title": "Result 1", "body": "Snippet 1", "href": "https://example.com/1"},
-                {"title": "Result 2", "body": "Snippet 2", "href": "https://example.com/2"},
+                {
+                    "title": "Result 1",
+                    "body": "Snippet 1",
+                    "href": "https://example.com/1",
+                },
+                {
+                    "title": "Result 2",
+                    "body": "Snippet 2",
+                    "href": "https://example.com/2",
+                },
             ]
             mock_ddgs.return_value.__enter__.return_value = mock_instance
 
@@ -85,7 +93,11 @@ class TestWebSearchExecution:
             # Return more results than requested
             mock_instance = MagicMock()
             mock_instance.text.return_value = [
-                {"title": f"Result {i}", "body": f"Snippet {i}", "href": f"https://example.com/{i}"}
+                {
+                    "title": f"Result {i}",
+                    "body": f"Snippet {i}",
+                    "href": f"https://example.com/{i}",
+                }
                 for i in range(20)
             ]
             mock_ddgs.return_value.__enter__.return_value = mock_instance
@@ -209,7 +221,9 @@ class TestGenerateWithTools:
                 # Return a mock response with text content
                 mock_response = MagicMock()
                 mock_response.choices = [
-                    MagicMock(message=MagicMock(content="final text response", tool_calls=[]))
+                    MagicMock(
+                        message=MagicMock(content="final text response", tool_calls=[])
+                    )
                 ]
                 return mock_response
 
@@ -283,9 +297,12 @@ class TestGenerateWithTools:
         """Streaming path should handle tool calls then final text."""
         client = LLMClient(model="gpt-4o", timeout=10)
 
-        with patch("litellm.acompletion") as mock_acompletion, \
-             patch("deepresearch.tools.web_search.web_search", new_callable=AsyncMock) as mock_ws:
-
+        with (
+            patch("litellm.acompletion") as mock_acompletion,
+            patch(
+                "deepresearch.tools.web_search.web_search", new_callable=AsyncMock
+            ) as mock_ws,
+        ):
             mock_ws.return_value = [
                 {"title": "Result", "snippet": "Snippet", "url": "https://example.com"}
             ]
@@ -310,7 +327,9 @@ class TestGenerateWithTools:
             async def second_stream():
                 chunk = MagicMock()
                 chunk.choices = [MagicMock()]
-                chunk.choices[0].delta.content = "Based on search results, here's my report."
+                chunk.choices[
+                    0
+                ].delta.content = "Based on search results, here's my report."
                 chunk.choices[0].delta.tool_calls = None
                 yield chunk
 

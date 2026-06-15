@@ -59,20 +59,24 @@ def dry_run(
     agent_assignments: list[dict[str, Any]] = []
     for profile in cfg.agent_profiles:
         model = cfg.agent_models.get(profile.id, "unknown")
-        agent_assignments.append({
-            "agent_id": profile.id,
-            "agent_name": profile.name,
-            "emoji": profile.emoji,
-            "model": model,
-            "temperature": profile.temperature,
-        })
+        agent_assignments.append(
+            {
+                "agent_id": profile.id,
+                "agent_name": profile.name,
+                "emoji": profile.emoji,
+                "model": model,
+                "temperature": profile.temperature,
+            }
+        )
 
     # Rough token estimation per agent per round.
     avg_prompt_tokens = 1500  # system + user prompt (estimate)
     avg_output_tokens = 2000  # agent response (estimate)
     total_agents = len(cfg.agent_profiles)
     total_rounds = rounds
-    estimated_tokens = total_agents * total_rounds * (avg_prompt_tokens + avg_output_tokens)
+    estimated_tokens = (
+        total_agents * total_rounds * (avg_prompt_tokens + avg_output_tokens)
+    )
 
     # Rough cost estimation using the most expensive assigned model.
     max_input_rate = max(
@@ -80,8 +84,7 @@ def dry_run(
         for m in cfg.agent_models.values()
     )
     max_output_rate = max(
-        _lookup_cost(m, 0, 1000) * 1000
-        for m in cfg.agent_models.values()
+        _lookup_cost(m, 0, 1000) * 1000 for m in cfg.agent_models.values()
     )
     input_cost = (estimated_tokens / 2 / 1000) * max_input_rate
     output_cost = (estimated_tokens / 2 / 1000) * max_output_rate

@@ -18,7 +18,9 @@ def _find_project_root() -> Path:
     # Start from the package location
     current = Path(__file__).resolve().parent
     for _ in range(6):  # Search up to 6 levels up
-        if (current / "pyproject.toml").exists() or (current / ".kodehold-state").exists():
+        if (current / "pyproject.toml").exists() or (
+            current / ".kodehold-state"
+        ).exists():
             return current
         current = current.parent
     # Fallback to the package src directory
@@ -94,8 +96,12 @@ def load_agent_profiles(path: str | Path | None = None) -> list[AgentProfile]:
             profile = AgentProfile.model_validate(entry)
             profiles.append(profile)
         except ValidationError as e:
-            fields = [f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors()]
-            errors.append(f"Entry {i} ('{entry.get('id', 'unknown')}'): " + "; ".join(fields))
+            fields = [
+                f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors()
+            ]
+            errors.append(
+                f"Entry {i} ('{entry.get('id', 'unknown')}'): " + "; ".join(fields)
+            )
 
     if errors:
         raise ConfigError("Profile validation failed:\n  " + "\n  ".join(errors))
@@ -130,14 +136,14 @@ def load_model_config(path: str | Path | None = None) -> list[dict[str, Any]]:
 
     models = raw["models"]
     if not isinstance(models, list):
-        raise ConfigError(
-            f"'models' must be a list, got {type(models).__name__}"
-        )
+        raise ConfigError(f"'models' must be a list, got {type(models).__name__}")
 
     # Basic validation
     for i, m in enumerate(models):
         if not isinstance(m, dict):
-            raise ConfigError(f"Model entry {i}: expected a mapping, got {type(m).__name__}")
+            raise ConfigError(
+                f"Model entry {i}: expected a mapping, got {type(m).__name__}"
+            )
         if "id" not in m:
             raise ConfigError(f"Model entry {i}: missing required field 'id'")
 
@@ -161,8 +167,15 @@ def validate_profiles(profiles: list[AgentProfile]) -> list[str]:
 
     for i, profile in enumerate(profiles):
         # Non-empty string-field check.
-        for field_name in ("id", "name", "persona_prompt", "methodology",
-                           "knowledge_base", "bias_mitigation", "voice"):
+        for field_name in (
+            "id",
+            "name",
+            "persona_prompt",
+            "methodology",
+            "knowledge_base",
+            "bias_mitigation",
+            "voice",
+        ):
             value = getattr(profile, field_name, "")
             if not value or not value.strip():
                 errors.append(
@@ -207,9 +220,7 @@ def validate_model_configs(models: list[dict[str, Any]]) -> list[str]:
 
         # Check model ID format — allow provider/model or simple name.
         if model_id and not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_.\-/]+$", model_id):
-            errors.append(
-                f"Model entry {i} ('{model_id}'): ID has unexpected format"
-            )
+            errors.append(f"Model entry {i} ('{model_id}'): ID has unexpected format")
 
         if model_id in seen_ids:
             errors.append(f"Model entry {i} ('{model_id}'): duplicate model ID")

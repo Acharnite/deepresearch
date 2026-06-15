@@ -38,13 +38,17 @@ _log_dir.mkdir(parents=True, exist_ok=True)
 _log_file = _log_dir / "deepresearch.log"
 
 _file_handler = logging.handlers.RotatingFileHandler(
-    _log_file, maxBytes=10_485_760, backupCount=5,  # 10 MB per file, keep 5
+    _log_file,
+    maxBytes=10_485_760,
+    backupCount=5,  # 10 MB per file, keep 5
 )
 _file_handler.setLevel(logging.DEBUG)
-_file_handler.setFormatter(logging.Formatter(
-    "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-))
+_file_handler.setFormatter(
+    logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+)
 
 # Add to root logger — catches ALL deepresearch.* loggers
 root_logger = logging.getLogger()
@@ -54,8 +58,18 @@ root_logger.setLevel(logging.DEBUG)
 logging.getLogger("deepresearch").info("File logging initialized: %s", _log_file)
 
 # Suppress noisy third-party loggers in file output.
-for _noisy in ("LiteLLM", "LiteLLM.litellm", "httpx", "httpcore", "asyncio",
-               "weasyprint", "fontTools", "PIL", "matplotlib", "fpdf"):
+for _noisy in (
+    "LiteLLM",
+    "LiteLLM.litellm",
+    "httpx",
+    "httpcore",
+    "asyncio",
+    "weasyprint",
+    "fontTools",
+    "PIL",
+    "matplotlib",
+    "fpdf",
+):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 # ── Load .env keys into os.environ at startup ──────────────────────────
@@ -83,7 +97,11 @@ HERE = Path(__file__).resolve().parent
 STATIC_DIR = HERE / "static"
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-logger.info("DeepeResearch %s starting on port %d", VERSION, __import__("os").environ.get("PORT", 7500))
+logger.info(
+    "DeepeResearch %s starting on port %d",
+    VERSION,
+    __import__("os").environ.get("PORT", 7500),
+)
 
 # ── CORS (allow browser-based access from any origin) ──────────────────
 app.add_middleware(
@@ -97,6 +115,7 @@ app.add_middleware(
 
 # ── Pydantic models for request/response ──────────────────────────────
 
+
 class RunRequest(BaseModel):
     """Request body for POST /api/run."""
 
@@ -105,7 +124,9 @@ class RunRequest(BaseModel):
     time_budget_seconds: int | None = None
     model_mode: str = "same"
     selected_model: str | None = None  # NEW: for "same" mode — which model
-    agent_models: dict[str, str] | None = None  # NEW: for "manual" mode — per-agent model mapping
+    agent_models: dict[str, str] | None = (
+        None  # NEW: for "manual" mode — per-agent model mapping
+    )
 
 
 class RunResponse(BaseModel):
@@ -145,7 +166,9 @@ async def event_stream(request: Request) -> EventSourceResponse:
     until the client disconnects.
     """
     queue = await global_event_bus.subscribe()
-    logger.debug("SSE client connected (subscriber count: %d)", global_event_bus.subscriber_count)
+    logger.debug(
+        "SSE client connected (subscriber count: %d)", global_event_bus.subscriber_count
+    )
 
     async def generate() -> AsyncGenerator[str, None]:
         try:
@@ -160,7 +183,10 @@ async def event_stream(request: Request) -> EventSourceResponse:
                     yield {"comment": "keepalive"}
         finally:
             await global_event_bus.unsubscribe(queue)
-            logger.debug("SSE subscriber cleaned up (remaining: %d)", global_event_bus.subscriber_count)
+            logger.debug(
+                "SSE subscriber cleaned up (remaining: %d)",
+                global_event_bus.subscriber_count,
+            )
 
     return EventSourceResponse(generate())
 
@@ -171,15 +197,17 @@ async def event_stream(request: Request) -> EventSourceResponse:
 @app.get("/api/status")
 async def get_status() -> JSONResponse:
     """Return the current (latest) session state as JSON (polling fallback)."""
-    return JSONResponse({
-        "state": _ws._current_state,
-        "topic": _ws._current_topic,
-        "agents": _ws._current_agents,
-        "agent_progress": _ws._agent_progress,
-        "elapsed_start": _ws._elapsed_start,
-        "session_active": _ws._session_active,
-        "phase_label": _ws._phase_label,
-    })
+    return JSONResponse(
+        {
+            "state": _ws._current_state,
+            "topic": _ws._current_topic,
+            "agents": _ws._current_agents,
+            "agent_progress": _ws._agent_progress,
+            "elapsed_start": _ws._elapsed_start,
+            "session_active": _ws._session_active,
+            "phase_label": _ws._phase_label,
+        }
+    )
 
 
 @app.get("/api/version")
@@ -216,13 +244,15 @@ async def start_research(req: RunRequest) -> JSONResponse:
             agent_models=req.agent_models,
             scribe_model=scribe_model,
         )
-        return JSONResponse({
-            "status": "started",
-            "session_id": info.session_id,
-            "topic": info.topic,
-            "time_budget": info.time_budget,
-            "model_mode": info.model_mode,
-        })
+        return JSONResponse(
+            {
+                "status": "started",
+                "session_id": info.session_id,
+                "topic": info.topic,
+                "time_budget": info.time_budget,
+                "model_mode": info.model_mode,
+            }
+        )
     except RuntimeError as e:
         return JSONResponse({"error": str(e)}, status_code=409)
 
@@ -239,18 +269,20 @@ async def get_session(session_id: str) -> JSONResponse:
     info = multi_session_manager.get_session(session_id)
     if info is None:
         return JSONResponse({"error": "Session not found"}, status_code=404)
-    return JSONResponse({
-        "session_id": info.session_id,
-        "topic": info.topic,
-        "status": info.status,
-        "time_budget": info.time_budget,
-        "time_budget_seconds": info.time_budget_seconds,
-        "model_mode": info.model_mode,
-        "created_at": info.created_at,
-        "completed_at": info.completed_at,
-        "result": info.result,
-        "error": info.error,
-    })
+    return JSONResponse(
+        {
+            "session_id": info.session_id,
+            "topic": info.topic,
+            "status": info.status,
+            "time_budget": info.time_budget,
+            "time_budget_seconds": info.time_budget_seconds,
+            "model_mode": info.model_mode,
+            "created_at": info.created_at,
+            "completed_at": info.completed_at,
+            "result": info.result,
+            "error": info.error,
+        }
+    )
 
 
 @app.get("/api/sessions/{session_id}/state")
@@ -276,7 +308,7 @@ async def get_session_state(session_id: str) -> JSONResponse:
             current_state = "CONFIGURING"
         elif event_type == "models_assigned":
             current_state = "ROUND1"
-            for agent_id in (event.get("assignments") or {}):
+            for agent_id in event.get("assignments") or {}:
                 if agent_id not in agent_states:
                     agent_states[agent_id] = {"status": "waiting", "state": "waiting"}
         elif event_type == "round_start":
@@ -287,7 +319,10 @@ async def get_session_state(session_id: str) -> JSONResponse:
         elif event_type == "agent_start":
             aid = event.get("agent_id", "")
             if aid:
-                agent_states[aid] = {"status": "running", "state": event.get("agent_state", "researching")}
+                agent_states[aid] = {
+                    "status": "running",
+                    "state": event.get("agent_state", "researching"),
+                }
         elif event_type == "agent_complete":
             aid = event.get("agent_id", "")
             if aid and aid in agent_states:
@@ -317,20 +352,24 @@ async def get_session_state(session_id: str) -> JSONResponse:
         elif event_type == "session_error":
             current_state = "ERROR"
 
-    return JSONResponse({
-        "session_id": info.session_id,
-        "topic": info.topic,
-        "status": info.status,
-        "current_state": current_state,
-        "agent_states": agent_states,
-        "scribe_info": scribe_info,
-        "event_count": len(info.event_history),
-        "elapsed_start": info.created_at,
-    })
+    return JSONResponse(
+        {
+            "session_id": info.session_id,
+            "topic": info.topic,
+            "status": info.status,
+            "current_state": current_state,
+            "agent_states": agent_states,
+            "scribe_info": scribe_info,
+            "event_count": len(info.event_history),
+            "elapsed_start": info.created_at,
+        }
+    )
 
 
 @app.get("/api/sessions/{session_id}/events")
-async def session_event_stream(session_id: str, request: Request) -> EventSourceResponse:
+async def session_event_stream(
+    session_id: str, request: Request
+) -> EventSourceResponse:
     """SSE endpoint: stream events for a specific session."""
     info = multi_session_manager.get_session(session_id)
     if info is None:
@@ -341,16 +380,18 @@ async def session_event_stream(session_id: str, request: Request) -> EventSource
     bus = info.event_bus
     if bus is None:
         # Completed/persisted session — return session data directly instead of SSE
-        return JSONResponse({
-            "event_type": "session_data",
-            "session_id": session_id,
-            "topic": info.topic or "",
-            "status": info.status or "complete",
-            "state": "COMPLETE",
-            "result": info.result,
-            "error": info.error,
-            "completed_at": info.completed_at,
-        })
+        return JSONResponse(
+            {
+                "event_type": "session_data",
+                "session_id": session_id,
+                "topic": info.topic or "",
+                "status": info.status or "complete",
+                "state": "COMPLETE",
+                "result": info.result,
+                "error": info.error,
+                "completed_at": info.completed_at,
+            }
+        )
 
     queue = await bus.subscribe()
 
@@ -390,7 +431,9 @@ async def cancel_session(session_id: str) -> JSONResponse:
     cancelled = await multi_session_manager.cancel_session(session_id)
     if cancelled:
         return JSONResponse({"status": "cancelled", "session_id": session_id})
-    return JSONResponse({"status": "not_found_or_already_done", "session_id": session_id})
+    return JSONResponse(
+        {"status": "not_found_or_already_done", "session_id": session_id}
+    )
 
 
 @app.delete("/api/sessions/{session_id}")
@@ -427,10 +470,12 @@ async def get_legacy_session() -> JSONResponse:
         return JSONResponse({"status": "idle", "result": None})
     latest = sessions[0]
     info = multi_session_manager.get_session(latest["session_id"])
-    return JSONResponse({
-        "status": info.status if info else "idle",
-        "result": info.result if info else None,
-    })
+    return JSONResponse(
+        {
+            "status": info.status if info else "idle",
+            "result": info.result if info else None,
+        }
+    )
 
 
 @app.post("/api/cancel")
@@ -460,6 +505,7 @@ async def download_file(session_id: str, filename: str) -> Any:
 
     # Only allow files from the session's output directory (absolute path)
     from deepresearch.web.sessions import SESSION_DB_PATH
+
     base_dir = SESSION_DB_PATH.parent / session_id
     safe_path = (base_dir / filename).resolve()
     if not str(safe_path).startswith(str(base_dir.resolve())):
@@ -483,7 +529,9 @@ async def download_file(session_id: str, filename: str) -> Any:
                 else "text/plain"
             )
             headers = {"Content-Disposition": f'inline; filename="{path.name}"'}
-            return FileResponse(path, media_type=media_type, filename=path.name, headers=headers)
+            return FileResponse(
+                path, media_type=media_type, filename=path.name, headers=headers
+            )
 
     return JSONResponse({"error": f"File not found: {filename}"}, status_code=404)
 
@@ -522,13 +570,15 @@ async def get_models() -> JSONResponse:
         # Append locally discovered models from settings.
         local_endpoints = settings_manager.get_local_endpoints()
         for ep in local_endpoints:
-            models.append({
-                "id": ep.get("name", "local-model"),
-                "provider": ep.get("type", "local"),
-                "display_name": f"{ep.get('name', 'Local')} ({ep.get('endpoint', '?')})",
-                "default": False,
-                "endpoint": ep.get("endpoint"),
-            })
+            models.append(
+                {
+                    "id": ep.get("name", "local-model"),
+                    "provider": ep.get("type", "local"),
+                    "display_name": f"{ep.get('name', 'Local')} ({ep.get('endpoint', '?')})",
+                    "default": False,
+                    "endpoint": ep.get("endpoint"),
+                }
+            )
 
         # Append auto-discovered Ollama models from settings.
         discovered = _get_discovered_local_models()
@@ -567,14 +617,16 @@ def _get_discovered_local_models() -> list[dict[str, Any]]:
         if resp.status_code == 200:
             data = resp.json()
             for model in data.get("models", []):
-                discovered.append({
-                    "id": f"ollama/{model['name']}",
-                    "provider": "ollama",
-                    "display_name": model["name"],
-                    "default": False,
-                    "endpoint": "http://localhost:11434",
-                    "source": "ollama",
-                })
+                discovered.append(
+                    {
+                        "id": f"ollama/{model['name']}",
+                        "provider": "ollama",
+                        "display_name": model["name"],
+                        "default": False,
+                        "endpoint": "http://localhost:11434",
+                        "source": "ollama",
+                    }
+                )
     except Exception:
         pass
 
@@ -666,7 +718,10 @@ def _parse_provider_models(provider_id: str, data: dict | list) -> list[dict[str
         # Cohere returns a top-level JSON array: [{"name": "command-r-plus", ...}]
         if isinstance(data, list):
             return [
-                {"id": m.get("name", m.get("id", "")), "display_name": m.get("name", m.get("id", ""))}
+                {
+                    "id": m.get("name", m.get("id", "")),
+                    "display_name": m.get("name", m.get("id", "")),
+                }
                 for m in data
                 if isinstance(m, dict)
             ]
@@ -686,7 +741,10 @@ async def _discover_provider_models() -> list[dict[str, Any]]:
     """
     global _discovered_provider_models_cache, _discovered_provider_models_time
     now = time.time()
-    if now - _discovered_provider_models_time < 60 and _discovered_provider_models_cache:
+    if (
+        now - _discovered_provider_models_time < 60
+        and _discovered_provider_models_cache
+    ):
         return _discovered_provider_models_cache
 
     discovered: list[dict[str, Any]] = []
@@ -713,12 +771,14 @@ async def _discover_provider_models() -> list[dict[str, Any]]:
                 raw_models = _parse_provider_models(provider_id, data)
 
                 for m in raw_models:
-                    discovered.append({
-                        "id": f"{provider_id}/{m['id']}",
-                        "provider": provider_id,
-                        "display_name": m.get("display_name", m["id"]),
-                        "default": False,
-                    })
+                    discovered.append(
+                        {
+                            "id": f"{provider_id}/{m['id']}",
+                            "provider": provider_id,
+                            "display_name": m.get("display_name", m["id"]),
+                            "default": False,
+                        }
+                    )
             except httpx.TimeoutException:
                 logger.warning("Model discovery timed out for '%s' (5s)", provider_id)
             except Exception as e:
@@ -738,13 +798,15 @@ async def _discover_provider_models() -> list[dict[str, Any]]:
                     data = resp.json()
                     for m in data.get("data", []):
                         mid = m["id"]
-                        discovered.append({
-                            "id": f"opencode/zen/{mid}",
-                            "provider": "opencode",
-                            "display_name": mid,
-                            "default": False,
-                            "endpoint": "zen",
-                        })
+                        discovered.append(
+                            {
+                                "id": f"opencode/zen/{mid}",
+                                "provider": "opencode",
+                                "display_name": mid,
+                                "default": False,
+                                "endpoint": "zen",
+                            }
+                        )
         except Exception as e:
             logger.warning("Failed to discover Opencode Zen models: %s", e)
 
@@ -759,13 +821,15 @@ async def _discover_provider_models() -> list[dict[str, Any]]:
                     data = resp.json()
                     for m in data.get("data", []):
                         mid = m["id"]
-                        discovered.append({
-                            "id": f"opencode/go/{mid}",
-                            "provider": "opencode",
-                            "display_name": mid,
-                            "default": False,
-                            "endpoint": "go",
-                        })
+                        discovered.append(
+                            {
+                                "id": f"opencode/go/{mid}",
+                                "provider": "opencode",
+                                "display_name": mid,
+                                "default": False,
+                                "endpoint": "go",
+                            }
+                        )
         except Exception as e:
             logger.warning("Failed to discover Opencode Go models: %s", e)
 
@@ -785,6 +849,7 @@ async def get_settings_keys() -> JSONResponse:
 
 class SetKeyRequest(BaseModel):
     """Request body for POST /api/settings/keys."""
+
     provider: str
     key: str
 
@@ -821,13 +886,15 @@ async def get_local_models() -> JSONResponse:
             if resp.status_code == 200:
                 data = resp.json()
                 for model in data.get("models", []):
-                    results.append({
-                        "source": "ollama",
-                        "name": model["name"],
-                        "provider": "ollama",
-                        "endpoint": "http://localhost:11434",
-                        "size": model.get("size", 0),
-                    })
+                    results.append(
+                        {
+                            "source": "ollama",
+                            "name": model["name"],
+                            "provider": "ollama",
+                            "endpoint": "http://localhost:11434",
+                            "size": model.get("size", 0),
+                        }
+                    )
     except Exception:
         pass  # Ollama not running
 
@@ -840,6 +907,7 @@ async def get_local_models() -> JSONResponse:
 
 class AddEndpointRequest(BaseModel):
     """Request body for POST /api/settings/local-endpoints."""
+
     name: str
     endpoint: str
     type: str = "openai"  # ollama, llamacpp, vllm, openai
@@ -848,11 +916,13 @@ class AddEndpointRequest(BaseModel):
 @app.post("/api/settings/local-endpoints")
 async def add_local_endpoint(req: AddEndpointRequest) -> JSONResponse:
     """Add a custom local endpoint (llama.cpp, vLLM, etc.)."""
-    settings_manager.add_local_endpoint({
-        "name": req.name,
-        "endpoint": req.endpoint,
-        "type": req.type,
-    })
+    settings_manager.add_local_endpoint(
+        {
+            "name": req.name,
+            "endpoint": req.endpoint,
+            "type": req.type,
+        }
+    )
     return JSONResponse({"status": "ok"})
 
 
@@ -877,10 +947,16 @@ async def test_local_endpoint(name: str) -> JSONResponse:
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(test_url)
             if resp.status_code == 200:
-                return JSONResponse({"status": "ok", "message": f"Connected to {endpoint_url}"})
-            return JSONResponse({"status": "error", "message": f"Unexpected status {resp.status_code}"})
+                return JSONResponse(
+                    {"status": "ok", "message": f"Connected to {endpoint_url}"}
+                )
+            return JSONResponse(
+                {"status": "error", "message": f"Unexpected status {resp.status_code}"}
+            )
     except httpx.ConnectError:
-        return JSONResponse({"status": "error", "message": f"Could not connect to {ep['endpoint']}"})
+        return JSONResponse(
+            {"status": "error", "message": f"Could not connect to {ep['endpoint']}"}
+        )
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)})
 
@@ -897,6 +973,7 @@ async def get_scribe_model() -> JSONResponse:
 
 class ScribeModelRequest(BaseModel):
     """Request body for POST /api/settings/scribe-model."""
+
     scribe_model: str
 
 

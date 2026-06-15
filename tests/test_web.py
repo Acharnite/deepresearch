@@ -140,12 +140,12 @@ def test_get_dashboard(client: TestClient) -> None:
     assert 'id="agent-output-scribe"' in html
     assert 'id="phaseIndicator"' in html
     assert 'data-phase="REFINING"' in html
-    assert 'startResearch' in html
-    assert 'showSessions' in html
-    assert 'showSettings' in html
-    assert 'customMinutesInput' in html
-    assert 'providerList' in html
-    assert 'dashboard.css' in html
+    assert "startResearch" in html
+    assert "showSessions" in html
+    assert "showSettings" in html
+    assert "customMinutesInput" in html
+    assert "providerList" in html
+    assert "dashboard.css" in html
 
 
 def test_get_status_default(client: TestClient) -> None:
@@ -198,14 +198,27 @@ def test_all_routes_registered(client: TestClient) -> None:
     """All critical routes are registered."""
     routes = [r.path for r in app.routes]
     expected = [
-        "/", "/api/status", "/api/agents", "/api/events", "/api/run",
-        "/api/sessions", "/api/sessions/{session_id}",
-        "/api/sessions/{session_id}/events", "/api/sessions/{session_id}/cancel",
-        "/api/sessions/clear-completed", "/api/session", "/api/cancel",
-        "/api/profiles", "/api/models", "/api/download/{session_id}/{filename:path}",
-        "/api/settings/keys", "/api/settings/keys/{provider}",
-        "/api/settings/local-models", "/api/settings/local-endpoints",
-        "/api/settings/local-endpoints/{name}", "/api/settings/local-endpoints/{name}/test",
+        "/",
+        "/api/status",
+        "/api/agents",
+        "/api/events",
+        "/api/run",
+        "/api/sessions",
+        "/api/sessions/{session_id}",
+        "/api/sessions/{session_id}/events",
+        "/api/sessions/{session_id}/cancel",
+        "/api/sessions/clear-completed",
+        "/api/session",
+        "/api/cancel",
+        "/api/profiles",
+        "/api/models",
+        "/api/download/{session_id}/{filename:path}",
+        "/api/settings/keys",
+        "/api/settings/keys/{provider}",
+        "/api/settings/local-models",
+        "/api/settings/local-endpoints",
+        "/api/settings/local-endpoints/{name}",
+        "/api/settings/local-endpoints/{name}/test",
     ]
     for route in expected:
         assert route in routes, f"Missing route: {route}"
@@ -225,7 +238,11 @@ def test_run_endpoint_returns_session_id(client: TestClient) -> None:
     """POST /api/run returns started status with session_id."""
     resp = client.post(
         "/api/run",
-        json={"topic": "Quantum Computing", "time_budget": "medium", "model_mode": "same"},
+        json={
+            "topic": "Quantum Computing",
+            "time_budget": "medium",
+            "model_mode": "same",
+        },
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -238,7 +255,12 @@ def test_run_endpoint_with_custom_seconds(client: TestClient) -> None:
     """POST /api/run accepts time_budget_seconds for custom budget."""
     resp = client.post(
         "/api/run",
-        json={"topic": "Test Topic", "time_budget": "custom", "time_budget_seconds": 600, "model_mode": "same"},
+        json={
+            "topic": "Test Topic",
+            "time_budget": "custom",
+            "time_budget_seconds": 600,
+            "model_mode": "same",
+        },
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -354,7 +376,11 @@ def test_add_remove_local_endpoint(client: TestClient) -> None:
     # Add
     resp = client.post(
         "/api/settings/local-endpoints",
-        json={"name": "test-llama", "endpoint": "http://localhost:8080/v1", "type": "llamacpp"},
+        json={
+            "name": "test-llama",
+            "endpoint": "http://localhost:8080/v1",
+            "type": "llamacpp",
+        },
     )
     assert resp.status_code == 200
 
@@ -380,7 +406,9 @@ def test_add_remove_local_endpoint(client: TestClient) -> None:
 async def test_multi_session_manager_create() -> None:
     """MultiSessionManager.create_session returns a valid SessionInfo."""
     mgr = MultiSessionManager(max_sessions=10)
-    info = await mgr.create_session(topic="Test Topic", time_budget="quick", model_mode="same")
+    info = await mgr.create_session(
+        topic="Test Topic", time_budget="quick", model_mode="same"
+    )
 
     assert isinstance(info, SessionInfo)
     assert info.session_id is not None
@@ -657,7 +685,9 @@ def test_settings_manager_delete_key(temp_settings: SettingsManager) -> None:
     assert keys["openai"]["configured"] is False
 
 
-def test_settings_manager_set_key_unknown_provider(temp_settings: SettingsManager) -> None:
+def test_settings_manager_set_key_unknown_provider(
+    temp_settings: SettingsManager,
+) -> None:
     """set_key with unknown provider raises ValueError."""
     with pytest.raises(ValueError):
         temp_settings.set_key("unknown_provider", "key")
@@ -667,11 +697,13 @@ def test_settings_manager_local_endpoints(temp_settings: SettingsManager) -> Non
     """Local endpoints CRUD works."""
     assert temp_settings.get_local_endpoints() == []
 
-    temp_settings.add_local_endpoint({
-        "name": "test-llama",
-        "endpoint": "http://localhost:8080/v1",
-        "type": "llamacpp",
-    })
+    temp_settings.add_local_endpoint(
+        {
+            "name": "test-llama",
+            "endpoint": "http://localhost:8080/v1",
+            "type": "llamacpp",
+        }
+    )
 
     endpoints = temp_settings.get_local_endpoints()
     assert len(endpoints) == 1
@@ -720,7 +752,14 @@ async def test_orchestrator_custom_time_budget() -> None:
 
     orch = Orchestrator(
         profiles=profiles,
-        model_configs=[{"id": "gpt-4o", "provider": "openai", "display_name": "GPT-4o", "default": True}],
+        model_configs=[
+            {
+                "id": "gpt-4o",
+                "provider": "openai",
+                "display_name": "GPT-4o",
+                "default": True,
+            }
+        ],
         agent_factory=lambda p, m, **extra: lambda **kw: None,
         scribe_factory=lambda **extra: lambda **kw: None,
     )
@@ -746,11 +785,13 @@ def test_event_bus_event_format() -> None:
     async def test_event() -> None:
         queue = await event_bus.subscribe()
         try:
-            await event_bus.publish({
-                "event_type": "session_start",
-                "topic": "Quantum Computing",
-                "state": "ROUND1",
-            })
+            await event_bus.publish(
+                {
+                    "event_type": "session_start",
+                    "topic": "Quantum Computing",
+                    "state": "ROUND1",
+                }
+            )
             received = await asyncio.wait_for(queue.get(), timeout=1.0)
             sse_event = {
                 "event": received.get("event_type", "message"),
@@ -802,7 +843,10 @@ def test_session_state_endpoint():
     assert resp.status_code == 404
 
     # Create a session and check state
-    resp = client.post("/api/run", json={"topic": "State Test", "time_budget": "quick", "model_mode": "same"})
+    resp = client.post(
+        "/api/run",
+        json={"topic": "State Test", "time_budget": "quick", "model_mode": "same"},
+    )
     assert resp.status_code == 200
     session_id = resp.json()["session_id"]
 

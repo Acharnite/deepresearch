@@ -76,7 +76,7 @@ class BaseAgent(ABC):
             logger.warning(
                 "Failed to parse JSON in %s for agent '%s', using fallback",
                 context,
-                getattr(self, 'profile', type(self).__name__),
+                getattr(self, "profile", type(self).__name__),
             )
             return {}
 
@@ -86,7 +86,9 @@ class BaseAgent(ABC):
         sections: list[PaperSection] = []
         for item in raw:
             subs = [
-                PaperSection(**s) for s in item.get("subsections", []) if isinstance(s, dict)
+                PaperSection(**s)
+                for s in item.get("subsections", [])
+                if isinstance(s, dict)
             ]
             sections.append(
                 PaperSection(

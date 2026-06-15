@@ -128,8 +128,10 @@ def round_1_findings() -> Findings:
         agent_id="test-agent",
         round=1,
         summary="AI shows promise in radiology and pathology.",
-        key_points=["85% accuracy in mammography screening",
-                     "Reduces radiologist workload by 30%"],
+        key_points=[
+            "85% accuracy in mammography screening",
+            "Reduces radiologist workload by 30%",
+        ],
         perspective="AI as augmentative tool, not replacement.",
         confidence=0.78,
     )
@@ -141,8 +143,10 @@ def round_2_findings() -> Findings:
         agent_id="test-agent",
         round=2,
         summary="Deeper analysis confirms initial findings with caveats.",
-        key_points=["Dataset bias remains a concern",
-                     "Regulatory frameworks are evolving"],
+        key_points=[
+            "Dataset bias remains a concern",
+            "Regulatory frameworks are evolving",
+        ],
         perspective="Cautious optimism — AI augments but requires oversight.",
         confidence=0.72,
     )
@@ -167,9 +171,7 @@ def mock_llm_client() -> MagicMock:
     return client
 
 
-def _make_mock_generate(
-    response_data: dict, fail_count: int = 0
-) -> AsyncMock:
+def _make_mock_generate(response_data: dict, fail_count: int = 0) -> AsyncMock:
     """Create an AsyncMock for ``LLMClient.generate``.
 
     Args:
@@ -258,12 +260,14 @@ class TestResearchAgent:
         self, profile, topic, mock_llm_client
     ):
         """research_round_1 should return a valid Findings from LLM JSON."""
-        mock_llm_client.generate_with_tools = _make_mock_generate_with_tools({
-            "summary": "AI in healthcare shows diagnostic improvements.",
-            "key_points": ["85% accuracy", "Reduces workload"],
-            "perspective": "AI as augmentative tool.",
-            "confidence": 0.8,
-        })
+        mock_llm_client.generate_with_tools = _make_mock_generate_with_tools(
+            {
+                "summary": "AI in healthcare shows diagnostic improvements.",
+                "key_points": ["85% accuracy", "Reduces workload"],
+                "perspective": "AI as augmentative tool.",
+                "confidence": 0.8,
+            }
+        )
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
         result = await agent.research_round_1(topic)
 
@@ -280,9 +284,14 @@ class TestResearchAgent:
         self, profile, topic, mock_llm_client
     ):
         """The system prompt should include the agent's persona."""
-        mock_llm_client.generate_with_tools = _make_mock_generate_with_tools({
-            "summary": "Test", "key_points": [], "perspective": "P", "confidence": 0.5,
-        })
+        mock_llm_client.generate_with_tools = _make_mock_generate_with_tools(
+            {
+                "summary": "Test",
+                "key_points": [],
+                "perspective": "P",
+                "confidence": 0.5,
+            }
+        )
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
 
         await agent.research_round_1(topic)
@@ -297,9 +306,11 @@ class TestResearchAgent:
         self, profile, shared, mock_llm_client
     ):
         """review_findings should return FollowUpQuestions."""
-        mock_llm_client.generate_stream = _make_mock_generate({
-            "questions": ["What about X?", "How does Y affect Z?"],
-        })
+        mock_llm_client.generate_stream = _make_mock_generate(
+            {
+                "questions": ["What about X?", "How does Y affect Z?"],
+            }
+        )
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
         result = await agent.review_findings(shared)
 
@@ -313,9 +324,11 @@ class TestResearchAgent:
         self, profile, shared, mock_llm_client
     ):
         """The user prompt should contain shared knowledge data."""
-        mock_llm_client.generate_stream = _make_mock_generate({
-            "questions": [],
-        })
+        mock_llm_client.generate_stream = _make_mock_generate(
+            {
+                "questions": [],
+            }
+        )
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
 
         await agent.review_findings(shared)
@@ -330,12 +343,14 @@ class TestResearchAgent:
         self, profile, topic, shared, follow_up, mock_llm_client
     ):
         """research_round_2 should return Findings."""
-        mock_llm_client.generate_stream = _make_mock_generate({
-            "summary": "Deeper analysis confirms findings.",
-            "key_points": ["Dataset bias concern", "Regulatory evolution"],
-            "perspective": "Cautious optimism.",
-            "confidence": 0.72,
-        })
+        mock_llm_client.generate_stream = _make_mock_generate(
+            {
+                "summary": "Deeper analysis confirms findings.",
+                "key_points": ["Dataset bias concern", "Regulatory evolution"],
+                "perspective": "Cautious optimism.",
+                "confidence": 0.72,
+            }
+        )
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
         result = await agent.research_round_2(topic, shared, follow_up)
 
@@ -349,23 +364,25 @@ class TestResearchAgent:
         self, profile, round_1_findings, round_2_findings, mock_llm_client
     ):
         """write_report should return an IndividualReport."""
-        mock_llm_client.generate_stream = _make_mock_generate({
-            "title": "AI in Healthcare Report",
-            "perspective_summary": "AI augments clinicians.",
-            "key_insights": ["85% accuracy in screening"],
-            "analysis": "Detailed analysis of diagnostic AI...",
-            "metaphors_or_analogies": ["AI as a second pair of eyes"],
-            "open_questions": ["Long-term outcome data?"],
-            "full_text": "Complete report text here.",
-            "sections": [
-                {
-                    "heading": "Introduction",
-                    "source_agent_id": None,
-                    "content": "Intro content.",
-                    "subsections": [],
-                }
-            ],
-        })
+        mock_llm_client.generate_stream = _make_mock_generate(
+            {
+                "title": "AI in Healthcare Report",
+                "perspective_summary": "AI augments clinicians.",
+                "key_insights": ["85% accuracy in screening"],
+                "analysis": "Detailed analysis of diagnostic AI...",
+                "metaphors_or_analogies": ["AI as a second pair of eyes"],
+                "open_questions": ["Long-term outcome data?"],
+                "full_text": "Complete report text here.",
+                "sections": [
+                    {
+                        "heading": "Introduction",
+                        "source_agent_id": None,
+                        "content": "Intro content.",
+                        "subsections": [],
+                    }
+                ],
+            }
+        )
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
         result = await agent.write_report(round_1_findings, round_2_findings)
 
@@ -382,13 +399,15 @@ class TestResearchAgent:
         self, profile, round_1_findings, mock_llm_client
     ):
         """write_report should handle None for round_2."""
-        mock_llm_client.generate_stream = _make_mock_generate({
-            "title": "Quick Report",
-            "perspective_summary": "Summary.",
-            "key_insights": ["Key finding"],
-            "analysis": "Analysis.",
-            "full_text": "Full text.",
-        })
+        mock_llm_client.generate_stream = _make_mock_generate(
+            {
+                "title": "Quick Report",
+                "perspective_summary": "Summary.",
+                "key_insights": ["Key finding"],
+                "analysis": "Analysis.",
+                "full_text": "Full text.",
+            }
+        )
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
         result = await agent.write_report(round_1_findings, None)
 
@@ -396,17 +415,18 @@ class TestResearchAgent:
         assert result.agent_id == "test-agent"
 
     @pytest.mark.asyncio
-    async def test_clarify_returns_response(
-        self, profile, mock_llm_client
-    ):
+    async def test_clarify_returns_response(self, profile, mock_llm_client):
         """clarify should return a ClarificationResponse (fallback path)."""
         from deepresearch.llm.client import LLMError
+
         mock_llm_client.generate_with_tools = AsyncMock(
-            side_effect=LLMError('Test: tools unavailable')
+            side_effect=LLMError("Test: tools unavailable")
         )
-        mock_llm_client.generate_stream = _make_mock_generate({
-            "response": "My analysis was based on recent peer-reviewed studies.",
-        })
+        mock_llm_client.generate_stream = _make_mock_generate(
+            {
+                "response": "My analysis was based on recent peer-reviewed studies.",
+            }
+        )
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
         query = ClarificationQuery(
             agent_id="test-agent",
@@ -419,13 +439,16 @@ class TestResearchAgent:
         assert "peer-reviewed" in result.response
 
     @pytest.mark.asyncio
-    async def test_temperature_used_in_llm_call(
-        self, profile, topic, mock_llm_client
-    ):
+    async def test_temperature_used_in_llm_call(self, profile, topic, mock_llm_client):
         """The profile temperature should be passed to LLM.generate_with_tools."""
-        mock_llm_client.generate_with_tools = _make_mock_generate_with_tools({
-            "summary": "Test", "key_points": [], "perspective": "P", "confidence": 0.5,
-        })
+        mock_llm_client.generate_with_tools = _make_mock_generate_with_tools(
+            {
+                "summary": "Test",
+                "key_points": [],
+                "perspective": "P",
+                "confidence": 0.5,
+            }
+        )
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
 
         await agent.research_round_1(topic)
@@ -462,9 +485,14 @@ class TestResearchAgent:
         mock_llm_client.generate_with_tools = AsyncMock(
             side_effect=LLMError("Tool calling failed")
         )
-        mock_llm_client.generate_stream = _make_mock_generate({
-            "summary": "S", "key_points": ["K"], "perspective": "P", "confidence": 0.5,
-        })
+        mock_llm_client.generate_stream = _make_mock_generate(
+            {
+                "summary": "S",
+                "key_points": ["K"],
+                "perspective": "P",
+                "confidence": 0.5,
+            }
+        )
 
         agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
         result = await agent.research_round_1(topic)
@@ -483,14 +511,21 @@ class TestResearchAgent:
         real_client = LLMClient(model="gpt-4o", timeout=10)
         mock_llm = MagicMock(spec=LLMClient)
         mock_llm.generate_with_tools = AsyncMock(
-            return_value=json.dumps({
-                "summary": "S", "key_points": [], "perspective": "P", "confidence": 0.5,
-            })
+            return_value=json.dumps(
+                {
+                    "summary": "S",
+                    "key_points": [],
+                    "perspective": "P",
+                    "confidence": 0.5,
+                }
+            )
         )
         mock_llm.parse_json_response = real_client.parse_json_response
 
         creative_agent = ResearchAgent(profile=cool_profile, llm_client=mock_llm)
-        analytical_agent = ResearchAgent(profile=analytical_profile, llm_client=mock_llm)
+        analytical_agent = ResearchAgent(
+            profile=analytical_profile, llm_client=mock_llm
+        )
 
         await creative_agent.research_round_1(topic)
         creative_prompt = mock_llm.generate_with_tools.call_args[1]["system_prompt"]
@@ -531,33 +566,33 @@ class TestScribeAgent:
         }
 
     @pytest.mark.asyncio
-    async def test_compile_returns_research_paper(
-        self, reports, mock_llm_client
-    ):
+    async def test_compile_returns_research_paper(self, reports, mock_llm_client):
         """compile should produce a ResearchPaper from agent reports."""
-        mock_llm_client.generate_stream = _make_mock_generate({
-            "title": "Synthesis Report",
-            "abstract": "This paper synthesises perspectives on AI in healthcare.",
-            "methodology_note": "Multi-agent research approach.",
-            "sections": [
-                {
-                    "heading": "Introduction",
-                    "source_agent_id": None,
-                    "content": "Research context.",
-                    "subsections": [],
-                },
-                {
-                    "heading": "Agent A Perspective",
-                    "source_agent_id": "agent-a",
-                    "content": "Diagnostic AI analysis.",
-                    "subsections": [],
-                },
-            ],
-            "synthesis": "Both agents agree on AI's transformative potential.",
-            "key_takeaways": ["AI augments clinicians", "Ethics needs attention"],
-            "conclusion": "AI will transform healthcare with proper oversight.",
-            "appendices": [],
-        })
+        mock_llm_client.generate_stream = _make_mock_generate(
+            {
+                "title": "Synthesis Report",
+                "abstract": "This paper synthesises perspectives on AI in healthcare.",
+                "methodology_note": "Multi-agent research approach.",
+                "sections": [
+                    {
+                        "heading": "Introduction",
+                        "source_agent_id": None,
+                        "content": "Research context.",
+                        "subsections": [],
+                    },
+                    {
+                        "heading": "Agent A Perspective",
+                        "source_agent_id": "agent-a",
+                        "content": "Diagnostic AI analysis.",
+                        "subsections": [],
+                    },
+                ],
+                "synthesis": "Both agents agree on AI's transformative potential.",
+                "key_takeaways": ["AI augments clinicians", "Ethics needs attention"],
+                "conclusion": "AI will transform healthcare with proper oversight.",
+                "appendices": [],
+            }
+        )
         agent = ScribeAgent(llm_client=mock_llm_client)
         paper = await agent.compile(reports)
 
@@ -568,15 +603,20 @@ class TestScribeAgent:
         assert paper.conclusion != ""
 
     @pytest.mark.asyncio
-    async def test_compile_includes_all_reports(
-        self, reports, mock_llm_client
-    ):
+    async def test_compile_includes_all_reports(self, reports, mock_llm_client):
         """The compile prompt should include all agent reports."""
-        mock_llm_client.generate_stream = _make_mock_generate({
-            "title": "Paper", "abstract": "A", "methodology_note": "M",
-            "sections": [], "synthesis": "S",
-            "key_takeaways": [], "conclusion": "C", "appendices": [],
-        })
+        mock_llm_client.generate_stream = _make_mock_generate(
+            {
+                "title": "Paper",
+                "abstract": "A",
+                "methodology_note": "M",
+                "sections": [],
+                "synthesis": "S",
+                "key_takeaways": [],
+                "conclusion": "C",
+                "appendices": [],
+            }
+        )
         agent = ScribeAgent(llm_client=mock_llm_client)
 
         await agent.compile(reports)
@@ -588,9 +628,7 @@ class TestScribeAgent:
         assert "AI improves accuracy" in user_prompt
 
     @pytest.mark.asyncio
-    async def test_compile_fallback_on_llm_failure(
-        self, reports, mock_llm_client
-    ):
+    async def test_compile_fallback_on_llm_failure(self, reports, mock_llm_client):
         """compile should return a minimal paper when LLM fails."""
         mock_llm_client.generate_stream = AsyncMock(side_effect=LLMError("LLM down"))
         agent = ScribeAgent(llm_client=mock_llm_client)
@@ -601,15 +639,20 @@ class TestScribeAgent:
         assert len(paper.key_takeaways) >= 1
 
     @pytest.mark.asyncio
-    async def test_compile_temperature_is_0_3(
-        self, reports, mock_llm_client
-    ):
+    async def test_compile_temperature_is_0_3(self, reports, mock_llm_client):
         """Scribe should always use temperature 0.3."""
-        mock_llm_client.generate_stream = _make_mock_generate({
-            "title": "P", "abstract": "A", "methodology_note": "M",
-            "sections": [], "synthesis": "S",
-            "key_takeaways": [], "conclusion": "C", "appendices": [],
-        })
+        mock_llm_client.generate_stream = _make_mock_generate(
+            {
+                "title": "P",
+                "abstract": "A",
+                "methodology_note": "M",
+                "sections": [],
+                "synthesis": "S",
+                "key_takeaways": [],
+                "conclusion": "C",
+                "appendices": [],
+            }
+        )
         agent = ScribeAgent(llm_client=mock_llm_client)
 
         await agent.compile(reports)
@@ -623,8 +666,12 @@ class TestScribeAgent:
         agent = ScribeAgent(llm_client=mock_llm_client)
         topic = ResearchTopic(question="Q", time_budget="quick", model_mode="same")
         shared = SharedKnowledge(
-            round_number=1, all_summaries={}, key_themes=[],
-            areas_of_agreement=[], areas_of_disagreement=[], knowledge_gaps=[],
+            round_number=1,
+            all_summaries={},
+            key_themes=[],
+            areas_of_agreement=[],
+            areas_of_disagreement=[],
+            knowledge_gaps=[],
         )
         questions = FollowUpQuestions(agent_id="scribe", questions=[])
 
@@ -640,9 +687,11 @@ class TestScribeAgent:
     @pytest.mark.asyncio
     async def test_clarify_returns_response(self, mock_llm_client):
         """ScribeAgent.clarify should return a ClarificationResponse."""
-        mock_llm_client.generate_stream = _make_mock_generate({
-            "response": "I prioritised recent publications for synthesis.",
-        })
+        mock_llm_client.generate_stream = _make_mock_generate(
+            {
+                "response": "I prioritised recent publications for synthesis.",
+            }
+        )
         agent = ScribeAgent(llm_client=mock_llm_client)
         query = ClarificationQuery(
             agent_id="scribe",
@@ -694,10 +743,15 @@ class TestAgentRegistry:
         factory = registry.agent_factory(profile, "gpt-4o")
 
         # Patch the underlying agent's research_round_1 to avoid LLM calls.
-        with patch.object(ResearchAgent, "research_round_1", new_callable=AsyncMock) as mock:
+        with patch.object(
+            ResearchAgent, "research_round_1", new_callable=AsyncMock
+        ) as mock:
             mock.return_value = Findings(
-                agent_id="test-agent", round=1, summary="S",
-                key_points=["K"], perspective="P",
+                agent_id="test-agent",
+                round=1,
+                summary="S",
+                key_points=["K"],
+                perspective="P",
             )
             result = await factory(topic)
 
@@ -711,8 +765,12 @@ class TestAgentRegistry:
         """Calling the factory with SharedKnowledge dispatches to review_findings."""
         factory = registry.agent_factory(profile, "gpt-4o")
 
-        with patch.object(ResearchAgent, "review_findings", new_callable=AsyncMock) as mock:
-            mock.return_value = FollowUpQuestions(agent_id="test-agent", questions=["Q?"])
+        with patch.object(
+            ResearchAgent, "review_findings", new_callable=AsyncMock
+        ) as mock:
+            mock.return_value = FollowUpQuestions(
+                agent_id="test-agent", questions=["Q?"]
+            )
             result = await factory(shared)
 
         assert isinstance(result, FollowUpQuestions)
@@ -725,10 +783,16 @@ class TestAgentRegistry:
         """Calling the factory with Findings dispatches to write_report."""
         factory = registry.agent_factory(profile, "gpt-4o")
 
-        with patch.object(ResearchAgent, "write_report", new_callable=AsyncMock) as mock:
+        with patch.object(
+            ResearchAgent, "write_report", new_callable=AsyncMock
+        ) as mock:
             mock.return_value = IndividualReport(
-                agent_id="test-agent", title="R", perspective_summary="S",
-                key_insights=["I"], analysis="A", full_text="F",
+                agent_id="test-agent",
+                title="R",
+                perspective_summary="S",
+                key_insights=["I"],
+                analysis="A",
+                full_text="F",
             )
             result = await factory(round_1_findings)
 
@@ -736,9 +800,7 @@ class TestAgentRegistry:
         mock.assert_called_once_with(round_1_findings, None)
 
     @pytest.mark.asyncio
-    async def test_agent_factory_unknown_args_raises(
-        self, registry, profile
-    ):
+    async def test_agent_factory_unknown_args_raises(self, registry, profile):
         """Calling the factory with unrecognised args raises TypeError."""
         factory = registry.agent_factory(profile, "gpt-4o")
 
@@ -769,22 +831,32 @@ async def test_scribe_parallel_clarification_handles_task_failure():
     llm.timeout = 10
     real_client = RealLLMClient(model="gpt-4o", timeout=10)
     llm.parse_json_response = real_client.parse_json_response
-    llm.generate_stream = AsyncMock(return_value=json.dumps({
-        "title": "Test",
-        "abstract": "Test abstract",
-        "methodology_note": "Test",
-        "sections": [{"heading": "Section 1", "content": "Content", "subsections": []}],
-        "synthesis": "Test",
-        "key_takeaways": ["Key 1"],
-        "conclusion": "Test conclusion",
-    }))
+    llm.generate_stream = AsyncMock(
+        return_value=json.dumps(
+            {
+                "title": "Test",
+                "abstract": "Test abstract",
+                "methodology_note": "Test",
+                "sections": [
+                    {"heading": "Section 1", "content": "Content", "subsections": []}
+                ],
+                "synthesis": "Test",
+                "key_takeaways": ["Key 1"],
+                "conclusion": "Test conclusion",
+            }
+        )
+    )
 
     scribe = ScribeAgent(llm_client=llm)
 
     reports = {
         "agent-1": IndividualReport(
-            agent_id="agent-1", title="Report 1", perspective_summary="Perspective 1",
-            key_insights=["Insight 1"], analysis="Analysis 1", open_questions=[],
+            agent_id="agent-1",
+            title="Report 1",
+            perspective_summary="Perspective 1",
+            key_insights=["Insight 1"],
+            analysis="Analysis 1",
+            open_questions=[],
             sections=[PaperSection(heading="H1", content="C1")],
             full_text="Full report text.",
         )

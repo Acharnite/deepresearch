@@ -144,7 +144,10 @@ class ResearchAgent(BaseAgent):
         data = self._try_parse_json(response, "research_round_1")
         # If web search + tools produced empty content, retry without tools
         if not data.get("summary") and not data.get("key_points"):
-            logger.warning("Empty response from agent '%s' with tools, retrying without", self.profile.id)
+            logger.warning(
+                "Empty response from agent '%s' with tools, retrying without",
+                self.profile.id,
+            )
             response2 = await self._generate_with_retry(user_prompt)
             data2 = self._try_parse_json(response2, "research_round_1")
             if data2.get("summary") or data2.get("key_points"):
@@ -202,14 +205,20 @@ class ResearchAgent(BaseAgent):
         """
         if not questions.questions:
             return current_findings or Findings(
-                agent_id=self.profile.id, round=1, summary="", key_points=[], perspective="",
+                agent_id=self.profile.id,
+                round=1,
+                summary="",
+                key_points=[],
+                perspective="",
             )
 
         await self._log_agent_state("refining")
         user_prompt = build_refine_prompt(
             questions=questions.questions,
             current_summary=(current_findings.summary if current_findings else ""),
-            current_key_points=(current_findings.key_points if current_findings else []),
+            current_key_points=(
+                current_findings.key_points if current_findings else []
+            ),
         )
         user_prompt += _ROUND_1_FORMAT
 
@@ -237,16 +246,31 @@ class ResearchAgent(BaseAgent):
                 self.profile.id,
             )
             return current_findings or Findings(
-                agent_id=self.profile.id, round=1, summary="", key_points=[], perspective="",
+                agent_id=self.profile.id,
+                round=1,
+                summary="",
+                key_points=[],
+                perspective="",
             )
 
         return Findings(
             agent_id=self.profile.id,
             round=1,
-            summary=data.get("summary", current_findings.summary if current_findings else ""),
-            key_points=data.get("key_points", current_findings.key_points if current_findings else []),
-            perspective=data.get("perspective", current_findings.perspective if current_findings else ""),
-            confidence=float(data.get("confidence", current_findings.confidence if current_findings else 0.5)),
+            summary=data.get(
+                "summary", current_findings.summary if current_findings else ""
+            ),
+            key_points=data.get(
+                "key_points", current_findings.key_points if current_findings else []
+            ),
+            perspective=data.get(
+                "perspective", current_findings.perspective if current_findings else ""
+            ),
+            confidence=float(
+                data.get(
+                    "confidence",
+                    current_findings.confidence if current_findings else 0.5,
+                )
+            ),
             raw_response=response,
         )
 
@@ -258,9 +282,7 @@ class ResearchAgent(BaseAgent):
     ) -> Findings:
         """Deeper research after seeing shared context and follow-up questions."""
         await self._log_agent_state("researching")
-        user_prompt = build_round_2_prompt(
-            topic.question, shared, questions.questions
-        )
+        user_prompt = build_round_2_prompt(topic.question, shared, questions.questions)
         user_prompt += _ROUND_2_FORMAT
         response = await self._generate_with_retry(user_prompt)
         data = self._try_parse_json(response, "research_round_2")
@@ -320,6 +342,7 @@ class ResearchAgent(BaseAgent):
         user_prompt += "\nUse the web_search tool if you need up-to-date information."
         try:
             from deepresearch.tools.web_search import WEB_SEARCH_TOOL
+
             response = await self.llm.generate_with_tools(
                 system_prompt=self._system_prompt,
                 user_prompt=user_prompt,
@@ -328,7 +351,9 @@ class ResearchAgent(BaseAgent):
                 max_tokens=2048,
             )
         except LLMError:
-            logger.warning("Clarify with tools failed for '%s', retrying without", self.profile.id)
+            logger.warning(
+                "Clarify with tools failed for '%s', retrying without", self.profile.id
+            )
             response = await self._generate_with_retry(user_prompt)
         data = self._try_parse_json(response, "clarify")
         return ClarificationResponse(
@@ -342,7 +367,7 @@ class ResearchAgent(BaseAgent):
 
     async def _log_agent_state(self, state: str) -> None:
         """Send an agent state update through the LLM client's event callback."""
-        if self.llm and hasattr(self.llm, 'event_callback') and self.llm.event_callback:
+        if self.llm and hasattr(self.llm, "event_callback") and self.llm.event_callback:
             try:
                 await self.llm.event_callback({"type": "agent_state", "state": state})
             except Exception:
@@ -365,9 +390,7 @@ class ResearchAgent(BaseAgent):
             return await self.llm.generate_stream(
                 system_prompt=self._system_prompt
                 + "\n\nYou MUST respond with valid JSON only — no markdown, "
-                  "no explanation, no code fences.",
+                "no explanation, no code fences.",
                 user_prompt=user_prompt,
                 temperature=self.profile.temperature,
             )
-
-

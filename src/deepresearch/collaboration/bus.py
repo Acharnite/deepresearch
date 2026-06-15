@@ -98,10 +98,7 @@ class CollaborationBus:
         quality and nuance.
         """
         async with self._lock:
-            all_summaries = {
-                aid: f.summary
-                for aid, f in self.round_1_findings.items()
-            }
+            all_summaries = {aid: f.summary for aid, f in self.round_1_findings.items()}
 
             # Themes: unique first-5-word prefixes from key points.
             theme_counter: Counter[str] = Counter()
@@ -124,20 +121,24 @@ class CollaborationBus:
                     all_points[normalized].add(f.agent_id)
 
             areas_of_agreement = [
-                point
-                for point, agents in all_points.items()
-                if len(agents) > 1
+                point for point, agents in all_points.items() if len(agents) > 1
             ][:10]
 
             # Areas of disagreement: compare perspective fields for
             # contradictory language markers.
             perspectives = {
-                aid: f.perspective.lower()
-                for aid, f in self.round_1_findings.items()
+                aid: f.perspective.lower() for aid, f in self.round_1_findings.items()
             }
             disagreement_markers = [
-                "however", "but", "contrary", "disagree", "opposing",
-                "limitation", "flaw", "weakness", "contradict",
+                "however",
+                "but",
+                "contrary",
+                "disagree",
+                "opposing",
+                "limitation",
+                "flaw",
+                "weakness",
+                "contradict",
             ]
             areas_of_disagreement = []
             if len(perspectives) >= 2:
@@ -155,9 +156,16 @@ class CollaborationBus:
 
             # Knowledge gaps: look for gap-indicating phrases in summaries.
             gap_markers = [
-                "further research", "unclear", "unknown", "need",
-                "gap", "not understood", "further investigation",
-                "requires more", "limited evidence", "insufficient",
+                "further research",
+                "unclear",
+                "unknown",
+                "need",
+                "gap",
+                "not understood",
+                "further investigation",
+                "requires more",
+                "limited evidence",
+                "insufficient",
             ]
             knowledge_gaps_set: set[str] = set()
             for aid, f in self.round_1_findings.items():
@@ -200,9 +208,7 @@ class CollaborationBus:
     # Follow-up Questions
     # ------------------------------------------------------------------
 
-    async def publish_followup(
-        self, agent_id: str, questions: list[str]
-    ) -> None:
+    async def publish_followup(self, agent_id: str, questions: list[str]) -> None:
         """Publish follow-up questions from an agent after reviewing shared knowledge."""
         async with self._lock:
             self.followup_questions[agent_id] = list(questions)
@@ -227,19 +233,21 @@ class CollaborationBus:
             self.round_2_findings[agent_id] = findings
             logger.debug("Round 2 findings published for agent '%s'", agent_id)
 
-    async def publish_round(self, agent_id: str, round_num: int, findings: Findings) -> None:
+    async def publish_round(
+        self, agent_id: str, round_num: int, findings: Findings
+    ) -> None:
         """Publish an agent's findings for any round (generic)."""
         async with self._lock:
             self.other_rounds_findings[(agent_id, round_num)] = findings
-            logger.debug("Round %d findings published for agent '%s'", round_num, agent_id)
+            logger.debug(
+                "Round %d findings published for agent '%s'", round_num, agent_id
+            )
 
     # ------------------------------------------------------------------
     # Individual Reports
     # ------------------------------------------------------------------
 
-    async def publish_report(
-        self, agent_id: str, report: IndividualReport
-    ) -> None:
+    async def publish_report(self, agent_id: str, report: IndividualReport) -> None:
         """Publish an agent's final individual report."""
         async with self._lock:
             self.individual_reports[agent_id] = report
@@ -268,9 +276,7 @@ class CollaborationBus:
                     "response": response,
                 }
             )
-            logger.debug(
-                "Clarification recorded for agent '%s'", query.agent_id
-            )
+            logger.debug("Clarification recorded for agent '%s'", query.agent_id)
 
     async def get_clarifications(self) -> list[dict[str, Any]]:
         """Return all recorded clarification pairs."""

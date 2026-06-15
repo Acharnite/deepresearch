@@ -205,6 +205,7 @@ class TestRenderHTML:
         html = gen.render_html(sample_paper)
         # Should contain month name (e.g., "June") and year.
         import datetime
+
         expected_month = datetime.datetime.now().strftime("%B")
         assert expected_month in html
 
@@ -273,7 +274,7 @@ class TestCSS:
         """HTML should link to the stylesheet."""
         gen = PDFGenerator()
         html = gen.render_html(sample_paper)
-        assert 'href="styles.css"' in html or 'href=styles.css' in html
+        assert 'href="styles.css"' in html or "href=styles.css" in html
 
 
 class TestGeneratePDF:

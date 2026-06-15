@@ -147,8 +147,12 @@ class Orchestrator:
         """Interactively ask user for model assignment mode."""
         console.print("\n[bold]Model Assignment Mode[/bold]")
         console.print("  [cyan]same[/cyan]   — Use the same model for all agents")
-        console.print("  [cyan]random[/cyan]  — Assign models randomly (deterministic per topic)")
-        console.print("  [cyan]manual[/cyan]  — Pick a model for each agent individually")
+        console.print(
+            "  [cyan]random[/cyan]  — Assign models randomly (deterministic per topic)"
+        )
+        console.print(
+            "  [cyan]manual[/cyan]  — Pick a model for each agent individually"
+        )
         return self._prompt(
             "Select model mode",
             choices=["same", "random", "manual"],
@@ -186,6 +190,7 @@ class Orchestrator:
         Delegates to :func:`deepresearch.orchestrator.config.configure`.
         """
         from deepresearch.orchestrator.config import configure as _configure_impl
+
         return await _configure_impl(self, topic_str, **overrides)
 
     async def assign_models(
@@ -199,8 +204,17 @@ class Orchestrator:
 
         Delegates to :func:`deepresearch.orchestrator.config.assign_models`.
         """
-        from deepresearch.orchestrator.config import assign_models as _assign_models_impl
-        return await _assign_models_impl(self, mode, profiles, selected_model=selected_model, agent_models=agent_models)
+        from deepresearch.orchestrator.config import (
+            assign_models as _assign_models_impl,
+        )
+
+        return await _assign_models_impl(
+            self,
+            mode,
+            profiles,
+            selected_model=selected_model,
+            agent_models=agent_models,
+        )
 
     @property
     def _topic_seed(self) -> str:
@@ -239,12 +253,17 @@ class Orchestrator:
 
         for agent_id, agent_fn in agents.items():
             if agent_id in self.failed_agents:
-                logger.debug("Skipping failed agent '%s' in round %d", agent_id, round_num)
+                logger.debug(
+                    "Skipping failed agent '%s' in round %d", agent_id, round_num
+                )
                 continue
 
             # Check cancellation before launching each agent task.
             if self._cancel_event and self._cancel_event.is_set():
-                logger.info("Cancel event set — skipping remaining agents in round %d", round_num)
+                logger.info(
+                    "Cancel event set — skipping remaining agents in round %d",
+                    round_num,
+                )
                 self._log_event("round_cancelled", round=round_num, agent_id=agent_id)
                 break
 
@@ -253,9 +272,14 @@ class Orchestrator:
             agent_model = "unknown"
             if self.session_config and hasattr(self.session_config, "agent_models"):
                 agent_model = self.session_config.agent_models.get(agent_id, "unknown")
-            self._log_event("agent_start", agent_id=agent_id, round=round_num,
-                            model=agent_model, timeout=timeout,
-                            agent_state="researching")
+            self._log_event(
+                "agent_start",
+                agent_id=agent_id,
+                round=round_num,
+                model=agent_model,
+                timeout=timeout,
+                agent_state="researching",
+            )
 
             coro = agent_fn(topic, shared) if shared is not None else agent_fn(topic)
             tasks[agent_id] = asyncio.create_task(
@@ -266,7 +290,10 @@ class Orchestrator:
         for agent_id, task in tasks.items():
             # Check cancellation before awaiting each task result.
             if self._cancel_event and self._cancel_event.is_set():
-                logger.info("Cancel event set — cancelling remaining tasks in round %d", round_num)
+                logger.info(
+                    "Cancel event set — cancelling remaining tasks in round %d",
+                    round_num,
+                )
                 for t in tasks.values():
                     if not t.done():
                         t.cancel()
@@ -280,21 +307,34 @@ class Orchestrator:
                 is_empty = False
                 if result is None:
                     is_empty = True
-                elif hasattr(result, 'summary') and not result.summary:
+                elif hasattr(result, "summary") and not result.summary:
                     is_empty = True
-                elif hasattr(result, 'key_points') and not result.key_points:
+                elif hasattr(result, "key_points") and not result.key_points:
                     is_empty = True
 
                 if is_empty and result_size < 200:
-                    logger.warning("Agent '%s' returned empty/meaningless result (%d chars), marking as failed", agent_id, result_size)
+                    logger.warning(
+                        "Agent '%s' returned empty/meaningless result (%d chars), marking as failed",
+                        agent_id,
+                        result_size,
+                    )
                     self.handle_agent_failure(agent_id, "empty_result")
                     del results[agent_id]  # Remove from valid results
                 else:
-                    self._log_event("agent_complete", agent_id=agent_id,
-                                    round=round_num, result_chars=result_size,
-                                    status="success")
+                    self._log_event(
+                        "agent_complete",
+                        agent_id=agent_id,
+                        round=round_num,
+                        result_chars=result_size,
+                        status="success",
+                    )
             except asyncio.TimeoutError:
-                logger.warning("Agent '%s' timed out in Round %d (timeout=%ds)", agent_id, round_num, timeout)
+                logger.warning(
+                    "Agent '%s' timed out in Round %d (timeout=%ds)",
+                    agent_id,
+                    round_num,
+                    timeout,
+                )
                 self.handle_agent_failure(agent_id, "timeout")
             except Exception as e:
                 self.handle_agent_failure(agent_id, str(e))
@@ -382,6 +422,7 @@ class Orchestrator:
         for agent_id, agent_fn in agents.items():
             if agent_id in self.failed_agents:
                 continue
+
             # The dispatch wrapper accepts SharedKnowledge; we inject
             # agent_ids via kwargs so the agent can direct questions.
             async def _call_with_ids(_fn=agent_fn, _ids=agent_ids):
@@ -398,8 +439,10 @@ class Orchestrator:
                 if result is None:
                     logger.warning("Agent '%s' returned None follow-up", agent_id)
                     continue
-                if hasattr(result, 'questions') and not result.questions:
-                    logger.warning("Agent '%s' returned empty follow-up questions", agent_id)
+                if hasattr(result, "questions") and not result.questions:
+                    logger.warning(
+                        "Agent '%s' returned empty follow-up questions", agent_id
+                    )
                     continue
                 results[agent_id] = result
             except asyncio.TimeoutError:
@@ -466,8 +509,10 @@ class Orchestrator:
                 from deepresearch.agents.scribe_agent import ScribeAgent
 
                 if isinstance(scribe, ScribeAgent):
+
                     async def _scribe_status(status: str) -> None:
                         self._log_event("scribe_clarifying", step=status)
+
                     paper = await scribe.compile(
                         reports,
                         clarification_fn=self._handle_clarification,
@@ -481,7 +526,10 @@ class Orchestrator:
                 paper = await scribe(reports)
 
             self._log_event("scribe_end")
-            logger.info("Scribe compilation successful — %d sections", len(paper.sections) if paper.sections else 0)
+            logger.info(
+                "Scribe compilation successful — %d sections",
+                len(paper.sections) if paper.sections else 0,
+            )
             return paper
         except Exception as e:
             logger.error("Scribe compilation failed: %s", e, exc_info=True)
@@ -618,8 +666,11 @@ class Orchestrator:
         console.print(f"[yellow]Topic:[/yellow] {topic}")
 
         config = await self.configure(topic, **overrides)
-        logger.info("Config validated — budget=%s, model_mode=%s",
-                     config.topic.time_budget, config.topic.model_mode)
+        logger.info(
+            "Config validated — budget=%s, model_mode=%s",
+            config.topic.time_budget,
+            config.topic.model_mode,
+        )
         # Resolve output path.
         if "output_path" in overrides:
             output_path = Path(overrides["output_path"])
@@ -661,9 +712,9 @@ class Orchestrator:
         )
 
         # Propagate cancel_event to the scribe's LLM client.
-        if self._cancel_event and hasattr(scribe, 'llm') and scribe.llm is not None:
+        if self._cancel_event and hasattr(scribe, "llm") and scribe.llm is not None:
             scribe.llm.cancel_event = self._cancel_event
-        elif self._cancel_event and hasattr(scribe, '__wrapped__'):
+        elif self._cancel_event and hasattr(scribe, "__wrapped__"):
             # ScribeAgent instance wrapped by dispatch — try to reach it.
             pass
 
@@ -678,7 +729,11 @@ class Orchestrator:
         )
 
         # ── Session-level timeout wrapper ────────────────────────────
-        logger.info("Starting _run_session — session_timeout=%ds, agents=%d", session_timeout, len(agents))
+        logger.info(
+            "Starting _run_session — session_timeout=%ds, agents=%d",
+            session_timeout,
+            len(agents),
+        )
         try:
             await asyncio.wait_for(
                 self._run_session(
@@ -698,9 +753,12 @@ class Orchestrator:
                 f"— partial results available[/yellow]"
             )
             live_agents = [aid for aid in agents if aid not in self.failed_agents]
-            self._log_event("session_timeout", timeout=session_timeout,
-                            running_agents=live_agents,
-                            failed_agents=list(self.failed_agents.keys()))
+            self._log_event(
+                "session_timeout",
+                timeout=session_timeout,
+                running_agents=live_agents,
+                failed_agents=list(self.failed_agents.keys()),
+            )
 
         # ── Generate final output ──────────────────────────────────────
         pdf_path = await self._finalize_output(output_path)
@@ -727,7 +785,11 @@ class Orchestrator:
             config.topic,
         )
 
-        logger.info("Round 1 complete — %d/%d agents succeeded", len(round_1_results), len(agents))
+        logger.info(
+            "Round 1 complete — %d/%d agents succeeded",
+            len(round_1_results),
+            len(agents),
+        )
         # Publish Round 1 findings to the collaboration bus.
         for agent_id, findings in round_1_results.items():
             await self.bus.publish_round_1(agent_id, findings)
@@ -741,18 +803,23 @@ class Orchestrator:
                     continue
                 agent_file = agents_dir / f"{agent_id}_round1.json"
                 agent_file.write_text(
-                    json.dumps({
-                        "agent_id": findings.agent_id,
-                        "round": findings.round,
-                        "summary": findings.summary,
-                        "key_points": findings.key_points,
-                        "perspective": findings.perspective,
-                        "confidence": findings.confidence,
-                        "raw_response": findings.raw_response,
-                    }, indent=2),
+                    json.dumps(
+                        {
+                            "agent_id": findings.agent_id,
+                            "round": findings.round,
+                            "summary": findings.summary,
+                            "key_points": findings.key_points,
+                            "perspective": findings.perspective,
+                            "confidence": findings.confidence,
+                            "raw_response": findings.raw_response,
+                        },
+                        indent=2,
+                    ),
                     encoding="utf-8",
                 )
-            logger.info("Saved %d Round 1 findings to %s", len(round_1_results), agents_dir)
+            logger.info(
+                "Saved %d Round 1 findings to %s", len(round_1_results), agents_dir
+            )
         except Exception as e:
             logger.warning("Failed to save Round 1 findings: %s", e)
 
@@ -760,13 +827,18 @@ class Orchestrator:
         self.state = "COLLABORATING"
         console.print("\n[bold]Collaboration:[/bold] Sharing findings across agents")
         shared = await self.bus.compute_shared_knowledge()
-        logger.info("Collaboration complete — shared knowledge from %d agents", len(round_1_results))
+        logger.info(
+            "Collaboration complete — shared knowledge from %d agents",
+            len(round_1_results),
+        )
         self._log_event("collaboration_phase", shared_agent_count=len(round_1_results))
 
         # ── Follow-up Questions ────────────────────────────────────────
         self.state = "FOLLOWUP"
         console.print("\n[bold]Follow-up:[/bold] Collecting follow-up questions")
-        logger.info("Follow-up: collecting questions from %d agents", len(active_agents()))
+        logger.info(
+            "Follow-up: collecting questions from %d agents", len(active_agents())
+        )
         self._log_event("followup_start", active_agents=len(active_agents()))
         followup_results = await self.collect_followup_questions(
             {aid: agents[aid] for aid in active_agents()},
@@ -782,7 +854,9 @@ class Orchestrator:
                 await self.bus.publish_followup(agent_id, questions.questions)
                 if questions.questions:
                     qa_questions[agent_id] = list(questions.questions)
-                    qa_targets[agent_id] = list(questions.target_agent_ids or [None] * len(questions.questions))
+                    qa_targets[agent_id] = list(
+                        questions.target_agent_ids or [None] * len(questions.questions)
+                    )
             else:
                 logger.warning(
                     "Unexpected follow-up result type for agent '%s': %s",
@@ -804,7 +878,9 @@ class Orchestrator:
         # This happens BEFORE the Round 2 decision so refined findings
         # are used for both the Round 2 question and final reports.
         self.state = "REFINING"
-        console.print("\n[bold]Refinement:[/bold] Agents refining findings from questions")
+        console.print(
+            "\n[bold]Refinement:[/bold] Agents refining findings from questions"
+        )
         self._log_event("refinement_start")
 
         async def _refine_agent(agent_id: str, followup: FollowUpQuestions):
@@ -830,7 +906,11 @@ class Orchestrator:
                     agents[agent_id](targeted_followup),
                     timeout=max(30, self._get_timeout() // 2),
                 )
-                if refined and isinstance(refined, Findings) and (refined.summary or refined.key_points):
+                if (
+                    refined
+                    and isinstance(refined, Findings)
+                    and (refined.summary or refined.key_points)
+                ):
                     return (agent_id, refined)
             except Exception as e:
                 logger.warning("Agent '%s' refinement failed: %s", agent_id, e)
@@ -847,35 +927,52 @@ class Orchestrator:
                 logger.info("Agent '%s' refined findings", agent_id)
 
         if _refined_count:
-            console.print(f"  [dim]{_refined_count} agent(s) refined their findings[/dim]")
+            console.print(
+                f"  [dim]{_refined_count} agent(s) refined their findings[/dim]"
+            )
         self._log_event("refinement_complete", refined_agents=_refined_count)
 
         # ── Round 2: Refined Research ──────────────────────────────────
         # Dynamic decision: run Round 2 only if there are significant
         # knowledge gaps or low-confidence agents.
         _gap_threshold = 2
-        _knowledge_gaps = len(shared.knowledge_gaps) if hasattr(shared, 'knowledge_gaps') else 0
-        _disagreements = len(shared.areas_of_disagreement) if hasattr(shared, 'areas_of_disagreement') else 0
+        _knowledge_gaps = (
+            len(shared.knowledge_gaps) if hasattr(shared, "knowledge_gaps") else 0
+        )
+        _disagreements = (
+            len(shared.areas_of_disagreement)
+            if hasattr(shared, "areas_of_disagreement")
+            else 0
+        )
         _total_gaps = _knowledge_gaps + _disagreements
 
         _low_confidence_agents = sum(
-            1 for f in round_1_results.values()
-            if hasattr(f, 'confidence') and f.confidence < 0.5
+            1
+            for f in round_1_results.values()
+            if hasattr(f, "confidence") and f.confidence < 0.5
         )
 
-        _should_run_round_2 = _total_gaps >= _gap_threshold or _low_confidence_agents > 0
+        _should_run_round_2 = (
+            _total_gaps >= _gap_threshold or _low_confidence_agents > 0
+        )
 
         if not _should_run_round_2:
             # Skip Round 2 — sufficient agreement
             reason = f"Sufficient agreement ({_total_gaps} gaps, {_low_confidence_agents} low-confidence agents)"
             console.print(f"\n[bold]{reason}:[/bold] Skipping Round 2")
-            self._log_event("round2_skip", budget=config.topic.time_budget,
-                            gaps=_total_gaps, low_confidence=_low_confidence_agents)
+            self._log_event(
+                "round2_skip",
+                budget=config.topic.time_budget,
+                gaps=_total_gaps,
+                low_confidence=_low_confidence_agents,
+            )
             round_2_results = {}
         else:
             self.state = "ROUND2"
-            console.print(f"\n[bold]Round 2:[/bold] Refined Research with Shared Context "
-                          f"({_total_gaps} gaps, {_low_confidence_agents} low-confidence agents)")
+            console.print(
+                f"\n[bold]Round 2:[/bold] Refined Research with Shared Context "
+                f"({_total_gaps} gaps, {_low_confidence_agents} low-confidence agents)"
+            )
             self._log_event("round_start", round=2)
             round_2_results = await self.run_round(
                 2,
@@ -908,9 +1005,17 @@ class Orchestrator:
         scribe_model = "unknown"
         if self.session_config:
             pass  # scribe model isn't stored in session_config
-        self._log_event("scribe_start", report_count=report_count,
-                        total_reports_chars=total_chars, model=scribe_model)
-        logger.info("Scribe compiling paper from %d reports (%d chars)", report_count, total_chars)
+        self._log_event(
+            "scribe_start",
+            report_count=report_count,
+            total_reports_chars=total_chars,
+            model=scribe_model,
+        )
+        logger.info(
+            "Scribe compiling paper from %d reports (%d chars)",
+            report_count,
+            total_chars,
+        )
         paper = await self.compile(all_reports, scribe)
         self._current_paper = paper
 
@@ -973,15 +1078,20 @@ class Orchestrator:
         console.print(f"  Output: {pdf_path}")
         console.print(f"  Agents used: {agent_count}")
         if self.failed_agents:
-            console.print(f"  [yellow]Failed agents: {len(self.failed_agents)}[/yellow]")
+            console.print(
+                f"  [yellow]Failed agents: {len(self.failed_agents)}[/yellow]"
+            )
             for aid, err in self.failed_agents.items():
                 console.print(f"    [dim]• {aid}: {err}[/dim]")
 
-        self._log_event("pipeline_summary",
+        self._log_event(
+            "pipeline_summary",
             total_agents=agent_count,
             failed_agents=list(self.failed_agents.keys()),
             state_history=[],
-            elapsed=round((datetime.now() - self._session_start_time).total_seconds(), 1),
+            elapsed=round(
+                (datetime.now() - self._session_start_time).total_seconds(), 1
+            ),
         )
 
         return Path(pdf_path)
@@ -990,7 +1100,9 @@ class Orchestrator:
     # Agent / Scribe Construction
     # ------------------------------------------------------------------
 
-    def _make_stream_callback(self, agent_id: str) -> Callable[[dict[str, Any]], Awaitable[None]]:
+    def _make_stream_callback(
+        self, agent_id: str
+    ) -> Callable[[dict[str, Any]], Awaitable[None]]:
         """Create an event callback that streams agent output via the event bus.
 
         The returned async callable accepts stream chunks and publishes them
@@ -999,6 +1111,7 @@ class Orchestrator:
         Also handles ``agent_state`` and ``search`` event types so the
         dashboard shows real-time state badges.
         """
+
         async def callback(data: dict[str, Any]) -> None:
             if data.get("type") == "stream":
                 self._log_event(
@@ -1020,6 +1133,7 @@ class Orchestrator:
                     agent_state=data.get("state", ""),
                     text="",
                 )
+
         return callback
 
     def _build_agents(
@@ -1043,9 +1157,10 @@ class Orchestrator:
             # Pass cancel_event through kwargs if the factory accepts it.
             try:
                 agents[profile.id] = factory(
-                    profile, model_name,
+                    profile,
+                    model_name,
                     event_callback=cb,
-                    cancel_event=getattr(self, '_cancel_event', None),
+                    cancel_event=getattr(self, "_cancel_event", None),
                 )
             except TypeError:
                 # Factory doesn't accept cancel_event — fallback.
@@ -1113,6 +1228,7 @@ class Orchestrator:
         Delegates to :func:`deepresearch.orchestrator.dry_run.dry_run`.
         """
         from deepresearch.orchestrator.dry_run import dry_run as _dry_run_impl
+
         return _dry_run_impl(self, topic_str, time_budget, model_mode, config=config)
 
     def _show_dry_run_table(
@@ -1130,11 +1246,19 @@ class Orchestrator:
 
         Delegates to :func:`deepresearch.orchestrator.dry_run._show_dry_run_table`.
         """
-        from deepresearch.orchestrator.dry_run import _show_dry_run_table as _show_table_impl
+        from deepresearch.orchestrator.dry_run import (
+            _show_dry_run_table as _show_table_impl,
+        )
+
         _show_table_impl(
-            topic_str, time_budget_label, time_budget_seconds,
-            model_mode, rounds, agent_assignments,
-            estimated_cost, estimated_tokens,
+            topic_str,
+            time_budget_label,
+            time_budget_seconds,
+            model_mode,
+            rounds,
+            agent_assignments,
+            estimated_cost,
+            estimated_tokens,
         )
 
     def _show_dry_run(self, config: SessionConfig) -> None:
@@ -1143,6 +1267,7 @@ class Orchestrator:
         Legacy method — delegates to :func:`deepresearch.orchestrator.dry_run.show_dry_run`.
         """
         from deepresearch.orchestrator.dry_run import show_dry_run as _show_dry_run_impl
+
         _show_dry_run_impl(self, config)
 
     # ------------------------------------------------------------------
@@ -1155,4 +1280,5 @@ class Orchestrator:
         Delegates to :func:`deepresearch.orchestrator.events.log_event`.
         """
         from deepresearch.orchestrator.events import log_event as _log_event_impl
+
         _log_event_impl(self, event_type, **details)

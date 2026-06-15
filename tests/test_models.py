@@ -128,7 +128,9 @@ class TestModelConfig:
         assert config.temperature_override is None
 
     def test_with_overrides(self):
-        config = ModelConfig(selected_model="claude-sonnet-4-20250514", temperature_override=0.5)
+        config = ModelConfig(
+            selected_model="claude-sonnet-4-20250514", temperature_override=0.5
+        )
         assert config.selected_model == "claude-sonnet-4-20250514"
         assert config.temperature_override == 0.5
 
@@ -369,9 +371,15 @@ class TestSessionConfig:
     def test_time_budget_limits(self):
         topic = ResearchTopic(question="Test")
         profile = AgentProfile(
-            id="a", name="A", emoji="🔍",
-            persona_prompt="P", methodology="M", knowledge_base="K",
-            bias_mitigation="B", voice="V", temperature=0.5,
+            id="a",
+            name="A",
+            emoji="🔍",
+            persona_prompt="P",
+            methodology="M",
+            knowledge_base="K",
+            bias_mitigation="B",
+            voice="V",
+            temperature=0.5,
         )
         with pytest.raises(ValidationError):
             SessionConfig(
@@ -384,9 +392,15 @@ class TestSessionConfig:
     def test_time_budget_upper_limit(self):
         topic = ResearchTopic(question="Test")
         profile = AgentProfile(
-            id="a", name="A", emoji="🔍",
-            persona_prompt="P", methodology="M", knowledge_base="K",
-            bias_mitigation="B", voice="V", temperature=0.5,
+            id="a",
+            name="A",
+            emoji="🔍",
+            persona_prompt="P",
+            methodology="M",
+            knowledge_base="K",
+            bias_mitigation="B",
+            voice="V",
+            temperature=0.5,
         )
         with pytest.raises(ValidationError):
             SessionConfig(

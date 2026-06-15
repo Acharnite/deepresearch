@@ -17,15 +17,51 @@ logger = logging.getLogger(__name__)
 
 # Supported LLM providers and their environment variable names.
 PROVIDERS: dict[str, dict[str, str]] = {
-    "openai": {"env_var": "OPENAI_API_KEY", "name": "OpenAI", "url": "https://api.openai.com/v1"},
-    "anthropic": {"env_var": "ANTHROPIC_API_KEY", "name": "Anthropic", "url": "https://api.anthropic.com"},
-    "groq": {"env_var": "GROQ_API_KEY", "name": "Groq", "url": "https://api.groq.com/openai/v1"},
-    "gemini": {"env_var": "GEMINI_API_KEY", "name": "Google Gemini", "url": "https://generativelanguage.googleapis.com"},
-    "cohere": {"env_var": "COHERE_API_KEY", "name": "Cohere", "url": "https://api.cohere.ai"},
-    "together": {"env_var": "TOGETHER_API_KEY", "name": "Together AI", "url": "https://api.together.xyz/v1"},
-    "deepseek": {"env_var": "DEEPSEEK_API_KEY", "name": "DeepSeek", "url": "https://api.deepseek.com"},
-    "openrouter": {"env_var": "OPENROUTER_API_KEY", "name": "OpenRouter", "url": "https://openrouter.ai/api/v1"},
-    "opencode": {"env_var": "OPENCODE_API_KEY", "name": "Opencode AI", "url": "https://api.opencode.ai/v1"},
+    "openai": {
+        "env_var": "OPENAI_API_KEY",
+        "name": "OpenAI",
+        "url": "https://api.openai.com/v1",
+    },
+    "anthropic": {
+        "env_var": "ANTHROPIC_API_KEY",
+        "name": "Anthropic",
+        "url": "https://api.anthropic.com",
+    },
+    "groq": {
+        "env_var": "GROQ_API_KEY",
+        "name": "Groq",
+        "url": "https://api.groq.com/openai/v1",
+    },
+    "gemini": {
+        "env_var": "GEMINI_API_KEY",
+        "name": "Google Gemini",
+        "url": "https://generativelanguage.googleapis.com",
+    },
+    "cohere": {
+        "env_var": "COHERE_API_KEY",
+        "name": "Cohere",
+        "url": "https://api.cohere.ai",
+    },
+    "together": {
+        "env_var": "TOGETHER_API_KEY",
+        "name": "Together AI",
+        "url": "https://api.together.xyz/v1",
+    },
+    "deepseek": {
+        "env_var": "DEEPSEEK_API_KEY",
+        "name": "DeepSeek",
+        "url": "https://api.deepseek.com",
+    },
+    "openrouter": {
+        "env_var": "OPENROUTER_API_KEY",
+        "name": "OpenRouter",
+        "url": "https://openrouter.ai/api/v1",
+    },
+    "opencode": {
+        "env_var": "OPENCODE_API_KEY",
+        "name": "Opencode AI",
+        "url": "https://api.opencode.ai/v1",
+    },
 }
 
 
@@ -49,7 +85,9 @@ class SettingsManager:
         """Return all configured providers and whether they have keys set."""
         result: dict[str, dict[str, Any]] = {}
         for provider_id, info in PROVIDERS.items():
-            key = os.environ.get(info["env_var"]) or self._get_from_file(info["env_var"])
+            key = os.environ.get(info["env_var"]) or self._get_from_file(
+                info["env_var"]
+            )
             preview = None
             if key:
                 preview = key[:8] + "..." if len(key) > 8 else "***"
@@ -154,7 +192,6 @@ class SettingsManager:
         endpoints = [e for e in self.get_local_endpoints() if e.get("name") != name]
         self._endpoints_path.write_text(json.dumps(endpoints, indent=2))
         logger.info("Removed local endpoint: %s", name)
-
 
     # ── Scribe Model ────────────────────────────────────────────────────
 

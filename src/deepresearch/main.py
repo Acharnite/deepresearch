@@ -61,7 +61,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="Run a research session")
     run_parser.add_argument("topic", type=str, help="Research topic or question")
     run_parser.add_argument(
-        "-t", "--time",
+        "-t",
+        "--time",
         type=int,
         default=30,
         help="Time budget in minutes (1-480, default: 30)",
@@ -105,7 +106,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Random seed for deterministic model assignment (not yet implemented)",
     )
     run_parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=str,
         default="./output",
         help="Output directory path (default: ./output)",
@@ -134,9 +136,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # --- serve subcommand ---
-    serve_parser = subparsers.add_parser(
-        "serve", help="Start the web dashboard server"
-    )
+    serve_parser = subparsers.add_parser("serve", help="Start the web dashboard server")
     serve_parser.add_argument(
         "--host",
         type=str,
@@ -151,18 +151,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # --- profiles subcommand ---
-    profiles_parser = subparsers.add_parser(
-        "profiles", help="Manage agent profiles"
-    )
+    profiles_parser = subparsers.add_parser("profiles", help="Manage agent profiles")
     profiles_sub = profiles_parser.add_subparsers(
         dest="profiles_command", help="Profiles commands"
     )
     profiles_sub.add_parser("list", help="List available agent profiles")
 
     # --- models subcommand ---
-    models_parser = subparsers.add_parser(
-        "models", help="Manage LLM models"
-    )
+    models_parser = subparsers.add_parser("models", help="Manage LLM models")
     models_sub = models_parser.add_subparsers(
         dest="models_command", help="Models commands"
     )
@@ -239,7 +235,9 @@ def _create_progress() -> Progress:
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Execute the 'run' command using the Orchestrator."""
-    console.print("[bold green]DeepeResearch[/bold green] — Multi-Agent Research System")
+    console.print(
+        "[bold green]DeepeResearch[/bold green] — Multi-Agent Research System"
+    )
     console.print(f"Topic: [yellow]{args.topic}[/yellow]")
     console.print(f"Output: {args.output}")
 
@@ -275,8 +273,10 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     orchestrator = Orchestrator(
         agent_factory=registry.agent_factory,
-        scribe_factory=lambda event_callback=None, model_name=None: registry.create_scribe_agent(
-            model_name=model_name, event_callback=event_callback
+        scribe_factory=lambda event_callback=None, model_name=None: (
+            registry.create_scribe_agent(
+                model_name=model_name, event_callback=event_callback
+            )
         ),
     )
 
@@ -324,7 +324,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     try:
         with _create_progress() as progress:
             session_task = progress.add_task(
-                "[cyan]Researching...", total=100,
+                "[cyan]Researching...",
+                total=100,
             )
             progress.update(session_task, advance=5, description="[cyan]Configuring...")
 
@@ -341,7 +342,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
             progress.update(session_task, completed=100, description="[green]Complete!")
 
-        console.print(f"\n[bold green]✓ Session complete![/bold green] Output: {result}")
+        console.print(
+            f"\n[bold green]✓ Session complete![/bold green] Output: {result}"
+        )
         return 0
 
     except KeyboardInterrupt:

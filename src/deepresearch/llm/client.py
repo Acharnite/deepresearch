@@ -259,6 +259,7 @@ class LLMClient:
             env_var = PROVIDER_ROUTES[provider]["api_key_env"]
             if env_var:
                 import os
+
                 return os.environ.get(env_var)
         return None
 
@@ -323,9 +324,11 @@ class LLMClient:
                 )
                 logger.warning(str(last_exception))
 
-            except (litellm.BudgetExceededError,
-                    litellm.ContextWindowExceededError,
-                    litellm.RateLimitError) as e:
+            except (
+                litellm.BudgetExceededError,
+                litellm.ContextWindowExceededError,
+                litellm.RateLimitError,
+            ) as e:
                 # Token/rate errors are NOT retryable — fail immediately
                 raise LLMError(
                     f"LLM resource exhausted (model={self.model}): {e}"
@@ -455,11 +458,12 @@ class LLMClient:
                     await self.event_callback({"type": "stream", "text": delta})
 
         except Exception as e:
-            logger.warning(
-                "Streaming failed, falling back to non-streaming: %s", e
-            )
+            logger.warning("Streaming failed, falling back to non-streaming: %s", e)
             result = await self.generate(
-                system_prompt, user_prompt, temperature, max_tokens,
+                system_prompt,
+                user_prompt,
+                temperature,
+                max_tokens,
                 cancel_event=_cancel,
             )
             if self.event_callback and result:
@@ -500,7 +504,10 @@ class LLMClient:
         _cancel = cancel_event or self.cancel_event
         if not tools:
             return await self.generate_stream(
-                system_prompt, user_prompt, temperature, max_tokens,
+                system_prompt,
+                user_prompt,
+                temperature,
+                max_tokens,
                 cancel_event=_cancel,
             )
 
@@ -556,9 +563,11 @@ class LLMClient:
                                 targs += tc.function.arguments
                             tool_calls[idx] = (tid, tname, targs)
 
-            except (litellm.BudgetExceededError,
-                    litellm.ContextWindowExceededError,
-                    litellm.RateLimitError) as e:
+            except (
+                litellm.BudgetExceededError,
+                litellm.ContextWindowExceededError,
+                litellm.RateLimitError,
+            ) as e:
                 raise LLMError(
                     f"LLM resource exhausted (model={self.model}): {e}"
                 ) from e
@@ -567,8 +576,10 @@ class LLMClient:
                 logger.warning(
                     "Tool calling with streaming failed (tool_round=%d, tools=%s): %s. "
                     "Retrying without stream.",
-                    tool_round, [t.get("function", {}).get("name", "?") for t in (tools or [])],
-                    e, exc_info=True,
+                    tool_round,
+                    [t.get("function", {}).get("name", "?") for t in (tools or [])],
+                    e,
+                    exc_info=True,
                 )
                 # Fallback: non-streaming
                 kwargs["stream"] = False
@@ -587,7 +598,11 @@ class LLMClient:
                     while len(tool_calls) <= idx:
                         tool_calls.append(("", "", ""))
                     args_str = tc.function.arguments if tc.function else ""
-                    tool_calls[idx] = (tc.id, tc.function.name if tc.function else "", args_str)
+                    tool_calls[idx] = (
+                        tc.id,
+                        tc.function.name if tc.function else "",
+                        args_str,
+                    )
 
                 # Track usage from non-streaming response
                 self._track_usage(response)
@@ -610,11 +625,13 @@ class LLMClient:
                 }
                 for tc_id, tc_name, tc_args in tool_calls
             ]
-            messages.append({
-                "role": "assistant",
-                "content": None,
-                "tool_calls": assistant_tool_calls,
-            })
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": assistant_tool_calls,
+                }
+            )
 
             # Execute tool calls
             import json
@@ -626,7 +643,12 @@ class LLMClient:
             for tool_id, tool_name, tool_args_str in tool_calls:
                 args = json.loads(tool_args_str) if tool_args_str else {}
 
-                logger.debug("Executing tool '%s' (round %d, query='%s')", tool_name, tool_round, args.get("query", ""))
+                logger.debug(
+                    "Executing tool '%s' (round %d, query='%s')",
+                    tool_name,
+                    tool_round,
+                    args.get("query", ""),
+                )
                 if tool_name == "web_search":
                     query = args.get("query", "")
                     max_res = args.get("max_results", 5)
@@ -635,25 +657,31 @@ class LLMClient:
 
                     # Stream search activity to the output panel
                     if self.event_callback and results:
-                        search_summary = f"\n[🔍 Web Search] Query: \"{query}\"\n"
+                        search_summary = f'\n[🔍 Web Search] Query: "{query}"\n'
                         for r in results[:3]:
-                            title = (r.get('title', '') or '')[:60]
+                            title = (r.get("title", "") or "")[:60]
                             search_summary += f"  • {title}\n"
-                        await self.event_callback({"type": "stream", "text": search_summary})
+                        await self.event_callback(
+                            {"type": "stream", "text": search_summary}
+                        )
 
                     # Add tool result to messages
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_id,
-                        "content": result_text,
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_id,
+                            "content": result_text,
+                        }
+                    )
                 else:
                     logger.warning("Unknown tool call: %s", tool_name)
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_id,
-                        "content": f"Error: Unknown tool '{tool_name}'",
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_id,
+                            "content": f"Error: Unknown tool '{tool_name}'",
+                        }
+                    )
 
         if self.event_callback and full_text:
             await self.event_callback(
@@ -672,7 +700,9 @@ class LLMClient:
                 self.total_input_tokens += prompt_tokens
                 self.total_output_tokens += completion_tokens
                 self.total_cost += _lookup_cost(
-                    self.actual_model, prompt_tokens, completion_tokens,
+                    self.actual_model,
+                    prompt_tokens,
+                    completion_tokens,
                 )
         except Exception:
             logger.debug("Failed to track token usage", exc_info=True)
@@ -718,7 +748,7 @@ class LLMClient:
         try:
             start = response.index("{")
             end = response.rindex("}")
-            return json.loads(response[start:end+1])
+            return json.loads(response[start : end + 1])
         except (ValueError, json.JSONDecodeError):
             pass
 
