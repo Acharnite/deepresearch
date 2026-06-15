@@ -55,7 +55,7 @@ export function renderAgents() {
     for (const id of agentIds) {
       const info = agents[id] || {};
       const status = info.status || 'waiting';
-      const stateClass = status === 'done' ? 'done' : status === 'failed' ? 'failed' : (info.state || 'waiting');
+      const stateClass = info.state || status || 'waiting';
       const label = stateLabels[stateClass] || stateClass;
       const name = state.agentNames[id] || id;
       const emoji = state.agentEmojis[id] || '🤖';
@@ -87,7 +87,7 @@ export function renderAgents() {
 
   // ── Scribe row (spans full width below the grid) ──
   const sc = state.scribeInfo || { status: 'waiting' };
-  const scStateClass = sc.status === 'done' ? 'done' : sc.status === 'failed' ? 'failed' : (sc.state || 'waiting');
+  const scStateClass = sc.state || sc.status || "waiting";
   const scLabel = stateLabels[scStateClass] || scStateClass;
   const scDisplay = (sc.status === 'running' || sc.status === 'done') ? 'block' : 'none';
 

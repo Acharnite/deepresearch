@@ -274,7 +274,7 @@ export function processEvent(data) {
   if (eventType === 'agent_complete') {
     console.log('[Agent Debug] agent_complete:', data.agent_id);
     const aid = data.agent_id;
-    if (state.agents[aid]) { state.agents[aid].status = 'done'; state.agents[aid].state = 'done'; }
+    if (state.agents[aid]) { state.agents[aid].status = 'done'; }  // DON'T set state to 'done' — agent may still refine/answer
     renderAgents();
   }
 

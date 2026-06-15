@@ -76,7 +76,7 @@ if _settings_env_path.exists():
     if _loaded:
         logger.info("Loaded %d API key(s) from .env into environment", _loaded)
 
-VERSION = "v0.0.54"  # Bump this when making changes to verify deployment
+VERSION = "v0.0.55"  # Bump this when making changes to verify deployment
 app = FastAPI(title="DeepeResearch Dashboard")
 
 # ── Serve static files (CSS, JS modules) ────────────────────────────────
