@@ -1,0 +1,13 @@
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+output/
+logs/
+node_modules/
+npm/
+tests/
+docs/
+*.pdf
+.github/

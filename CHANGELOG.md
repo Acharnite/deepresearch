@@ -2,6 +2,18 @@
 
 All notable changes to DeepeResearch will be documented in this file.
 
+## [0.7.0] - 2026-06-15
+
+### Added
+- GitHub Actions CI pipeline (test + lint + build on push/PR)
+- GitHub Actions release pipeline (PyPI + Docker + npm + GitHub Release on tag push)
+- npm wrapper package (`npm install -g deepresearch`)
+- Dockerfile with multi-stage build (amd64 + arm64)
+- Docker healthcheck via curl
+- Supply chain security (PyPI OIDC, npm provenance, cosign signing)
+- Trivy vulnerability scanning in Docker pipeline
+- Version sync check between pyproject.toml and npm/package.json
+
 ## [0.6.0] - 2026-06-15
 
 ### Fixed

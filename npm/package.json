@@ -1,0 +1,20 @@
+{
+  "name": "deepresearch",
+  "version": "0.7.0",
+  "description": "Multi-agent AI research system — 6 AI agents collaborate to produce research papers",
+  "bin": {
+    "deepresearch": "bin/deepresearch.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["ai", "research", "multi-agent", "llm", "pdf"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Acharnite/deepresearch"
+  }
+}
