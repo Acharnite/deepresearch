@@ -258,3 +258,14 @@ Before a session starts, `MultiSessionManager.create_session()` runs a connectiv
 - Added scribe output panel
 - Added pipeline visualization at top
 - Session reconnection with state fetch
+
+**Implemented beyond original scope:**
+
+| Feature | Status | Reference |
+|---------|--------|-----------|
+| Q&A panel and visual graph | ✅ Implemented | ADR-0008 |
+| Pipeline visualization bar | ✅ Implemented | ADR-0008 |
+| Scribe output panel | ✅ Implemented | ADR-0008 |
+| Collapsible agent logs | ✅ Implemented | ADR-0008 |
+| Session reconnection with state fetch | ✅ Implemented | ADR-0008 |
+| Demo page for layout testing | ✅ Implemented | ADR-0008 |

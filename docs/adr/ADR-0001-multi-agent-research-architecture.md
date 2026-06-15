@@ -231,3 +231,12 @@ The `web_search()` function:
 - Added clarification protocol — scribe can ask agents for clarification
 - Added refinement phase — agents refine findings based on follow-up questions
 - Dynamic Round 2 — may be skipped based on gap analysis (fixed in ADR-0004)
+
+**Implemented beyond original scope:**
+
+| Feature | Status | Reference |
+|---------|--------|-----------|
+| Web search (DuckDuckGo) | ✅ Implemented | ADR-0006 |
+| Clarification protocol | ✅ Implemented | ADR-0007 |
+| Refinement phase | ✅ Implemented | ADR-0007 |
+| Dynamic Round 2 | ✅ Implemented | Fixed in ADR-0004 |

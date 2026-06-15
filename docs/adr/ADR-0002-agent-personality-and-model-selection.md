@@ -363,3 +363,10 @@ Becoming the default means new users can run research immediately with just an O
 - Added Opencode AI as default provider (not in original)
 - Added web search tool calling — agents search DuckDuckGo
 - Added `target_agent_ids` for directed questions between agents
+
+**Implemented beyond original scope:**
+
+| Feature | Status | Reference |
+|---------|--------|-----------|
+| Opencode AI as default provider | ✅ Implemented | Not in original scope |
+| target_agent_ids for directed questions | ✅ Implemented | ADR-0007 |
