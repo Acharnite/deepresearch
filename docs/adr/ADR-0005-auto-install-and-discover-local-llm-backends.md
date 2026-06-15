@@ -76,7 +76,11 @@ DeepeResearch currently supports cloud-based LLM providers (OpenAI, Anthropic, O
 
 ### Auto-Discovery Protocol
 
-On startup and on-demand, the server probes common ports:
+On startup and on-demand, the server probes backends in this order:
+
+1. **User-configured addresses** — Check each backend's saved custom address first
+2. **Default ports** — Probe `localhost:<default-port>` for each backend
+3. **Process detection** — Check running processes (`ps aux`) for backends on non-standard ports
 
 | Backend | Default Port | Probe Endpoint | Response |
 |---------|:------------:|----------------|----------|
@@ -85,7 +89,89 @@ On startup and on-demand, the server probes common ports:
 | vLLM | 8000 | `GET /v1/models` | `{"data": [{"id": "..."}]}` |
 | SGLang | 30000 | `GET /v1/models` | `{"data": [{"id": "..."}]}` |
 
-Discovery also checks process list (`ps aux`) to detect running backends on non-standard ports.
+If a custom address is configured, it takes priority over the default port. The probe is a lightweight HTTP GET with a 2-second timeout.
+
+### Custom Address Configuration
+
+Users may run backends on non-standard addresses, remote machines, or Docker containers with port mapping. Each backend supports a configurable `host:port` address.
+
+#### Configuration Model
+
+```python
+class LocalBackendConfig(BaseModel):
+    name: str                           # "ollama", "llamacpp", "vllm", "sglang"
+    address: str = ""                   # Custom host:port (e.g. "192.168.1.50:11434")
+    auto_install: bool = True           # Allow auto-install if not found
+    enabled: bool = True                # Enable/disable this backend
+```
+
+Address resolution order:
+1. User-configured `address` (from Settings tab or config file)
+2. Auto-discovered address (from probe scan)
+3. Default address (`localhost:<default-port>`)
+
+#### Web UI — Address Configuration
+
+In Settings → Local Models, each backend card has:
+
+```
+┌──────────────────────────────────────────────────┐
+│ 🟢 Ollama                                        │
+│ Status: Running on localhost:11434                │
+│                                                    │
+│ Address: [localhost:11434          ] [Test] [Save]│
+│ ☑ Enable auto-install if not found                │
+│                                                    │
+│ [Start] [Stop] [Logs] [Install]                  │
+└──────────────────────────────────────────────────┘
+```
+
+- **Address input field** — editable, shows current address
+- **"Test" button** — probes the address and shows connectivity status
+- **"Save" button** — persists the custom address
+- If user changes address to a non-default, auto-discovery still probes defaults AND the custom address
+
+#### Remote Backend Support
+
+Custom addresses enable running inference on remote machines:
+
+| Scenario | Address | Notes |
+|----------|---------|-------|
+| Local Ollama | `localhost:11434` | Default |
+| Remote Ollama | `192.168.1.50:11434` | Same network |
+| Docker Ollama | `localhost:11434` | Port mapped |
+| Remote vLLM | `gpu-server.local:8000` | Network inference |
+| SSH tunnel | `localhost:8000` | Via `ssh -L 8000:localhost:8000` |
+| Cloud VM | `10.0.0.5:8000` | VPC or public IP |
+
+#### Storage
+
+Custom addresses stored in `~/.deepresearch/local_backends.json`:
+
+```json
+{
+  "ollama": {
+    "address": "192.168.1.50:11434",
+    "auto_install": true,
+    "enabled": true
+  },
+  "llamacpp": {
+    "address": "",
+    "auto_install": true,
+    "enabled": true
+  },
+  "vllm": {
+    "address": "gpu-server:8000",
+    "auto_install": false,
+    "enabled": true
+  },
+  "sglang": {
+    "address": "",
+    "auto_install": true,
+    "enabled": false
+  }
+}
+```
 
 ### Installation Implementation
 
@@ -158,12 +244,14 @@ def detect_hardware() -> HardwareInfo:
 ### API Endpoints
 
 ```
-GET  /api/local-backends              — List all backends with status
-POST /api/local-backends/{name}/install — Start installation (SSE stream)
-POST /api/local-backends/{name}/start   — Start a stopped backend
-POST /api/local-backends/{name}/stop    — Stop a running backend
-GET  /api/local-backends/{name}/logs    — Stream installation/runtime logs (SSE)
-GET  /api/hardware                      — Detected hardware info
+GET    /api/local-backends                  — List all backends with status + address
+POST   /api/local-backends/{name}/install   — Start installation (SSE stream)
+POST   /api/local-backends/{name}/start     — Start a stopped backend
+POST   /api/local-backends/{name}/stop      — Stop a running backend
+GET    /api/local-backends/{name}/logs      — Stream installation/runtime logs (SSE)
+PUT    /api/local-backends/{name}/address   — Update custom address
+POST   /api/local-backends/{name}/test      — Test connectivity to address
+GET    /api/hardware                        — Detected hardware info
 ```
 
 ### SSE Installation Stream
@@ -186,6 +274,7 @@ data: {"status": "complete", "progress": 100, "message": "Ollama installed succe
 - Hardware-aware recommendations — users get the best backend for their system
 - Graceful handling of existing installations (no overwrites)
 - Consistent API for all backends (start/stop/logs/status)
+- Custom address configuration — supports remote, Docker, and non-standard deployments
 
 ### Negative
 - Installation scripts may fail on non-standard systems
@@ -197,12 +286,16 @@ data: {"status": "complete", "progress": 100, "message": "Ollama installed succe
 - Install scripts from external sources (Ollama, llama.cpp releases) could change
 - Port conflicts if user already has something running on default ports
 - Disk space requirements vary (Ollama: ~500MB, vLLM: ~5GB with PyTorch)
+- Remote backends may have higher latency affecting research speed
+- Custom addresses may become stale if services move
 
 ### Mitigations
 - Verify checksums for binary downloads
 - Check port availability before starting
 - Show disk space requirements before installation
 - Cache installation logs for debugging
+- "Test" button validates address before saving
+- Periodic health check on configured addresses (warn if unreachable)
 
 ## References
 - ADR-0001: Multi-Agent Research Architecture (backend integration point)
