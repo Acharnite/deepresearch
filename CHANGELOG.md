@@ -2,6 +2,13 @@
 
 All notable changes to DeepeResearch will be documented in this file.
 
+## [0.3.0] - 2026-06-15
+
+### Added
+- Directed agent questions — agents can target specific agents by expertise via `target_agent_ids` in FollowUpQuestions
+- Parallel clarification — scribe fires clarification requests as concurrent asyncio tasks instead of sequential await
+- Force-stop cancel — `cancel_event` propagated through sessions→orchestrator→agent→LLM client, cancel takes effect within seconds
+
 ## [0.2.0] - 2026-06-15
 
 ### Added
