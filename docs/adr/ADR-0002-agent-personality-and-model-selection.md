@@ -343,3 +343,23 @@ Becoming the default means new users can run research immediately with just an O
 ## ADR References
 - **ADR-0001** (Multi-Agent Research Architecture)
 - **ADR-0003** (Web Frontend & Multi-Session Architecture)
+
+---
+
+## Implementation Status (Updated 2026-06-15)
+
+| Decision | Status | Notes |
+|----------|--------|-------|
+| 6 YAML-defined personalities | ✅ Implemented | src/profiles/default.yaml |
+| Temperature-based differentiation | ✅ Implemented | 0.20–0.95 range |
+| Same Model mode (default) | ✅ Implemented | All agents same LLM |
+| Random Model mode | ✅ Implemented | Deterministic seed |
+| Manual Model mode | ✅ Implemented | Per-agent selection |
+| Provider prefix routing | ✅ Implemented | 10+ providers supported |
+| Model auto-discovery | ✅ Implemented | Cloud + Ollama |
+| Cost tracking | ✅ Implemented | Per-model rates |
+
+**Deviations from original design:**
+- Added Opencode AI as default provider (not in original)
+- Added web search tool calling — agents search DuckDuckGo
+- Added `target_agent_ids` for directed questions between agents

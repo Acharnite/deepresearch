@@ -211,3 +211,23 @@ The `web_search()` function:
 ## ADR References
 - **ADR-0002** (Agent Personality & Model Selection)
 - **ADR-0003** (Web Frontend & Multi-Session Architecture)
+
+---
+
+## Implementation Status (Updated 2026-06-15)
+
+| Decision | Status | Notes |
+|----------|--------|-------|
+| Single-process asyncio | ✅ Implemented | Working as designed |
+| In-memory CollaborationBus | ✅ Implemented | Zero-latency, working |
+| Custom orchestrator FSM | ✅ Implemented | IDLE→COMPLETE lifecycle |
+| asyncio.gather() parallel | ✅ Implemented | All 6 agents run parallel |
+| Timeout-based fault isolation | ✅ Implemented | Fixed timeout floor to 120s (ADR-0004) |
+| No third-party frameworks | ✅ Maintained | No LangGraph/AutoGen/CrewAI |
+| WeasyPrint PDF | ✅ Implemented | HTML fallback working |
+
+**Deviations from original design:**
+- Added web search (DuckDuckGo) — not in original ADR-0001
+- Added clarification protocol — scribe can ask agents for clarification
+- Added refinement phase — agents refine findings based on follow-up questions
+- Dynamic Round 2 — may be skipped based on gap analysis (fixed in ADR-0004)

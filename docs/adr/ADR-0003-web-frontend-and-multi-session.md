@@ -235,3 +235,26 @@ Before a session starts, `MultiSessionManager.create_session()` runs a connectiv
 ## ADR References
 - **ADR-0001** (Multi-Agent Research Architecture) — core architecture this frontend connects to
 - **ADR-0002** (Agent Personality & Model Selection) — model selection and configuration
+
+---
+
+## Implementation Status (Updated 2026-06-15)
+
+| Decision | Status | Notes |
+|----------|--------|-------|
+| FastAPI + SSE streaming | ✅ Implemented | Real-time events |
+| Dark-themed dashboard | ✅ Implemented | GitHub-dark aesthetic |
+| Multi-session support | ✅ Implemented | Max concurrent sessions |
+| Session persistence | ✅ Implemented | sessions_db.json |
+| API key management | ✅ Implemented | Settings tab |
+| Model selector dropdown | ✅ Implemented | Auto-discovery + cache |
+| Cancel button | ✅ Implemented | CancelEvent propagation |
+| Delete/Clear sessions | ✅ Implemented | With file cleanup |
+| 3-column layout | ✅ Implemented | Agent progress + sidebar |
+
+**Deviations from original design:**
+- Added Q&A panel and visual graph (ADR-0005 scope)
+- Added state badges instead of progress bars
+- Added scribe output panel
+- Added pipeline visualization at top
+- Session reconnection with state fetch
