@@ -23,6 +23,23 @@ export function renderAgents() {
     return;
   }
 
+  // Flush any pending output buffers before saving (prevents race condition
+  // where renderAgents() fires before the 50ms buffer timer in processEvent)
+  for (const id of ids) {
+    const existing = document.getElementById('agent-output-' + id);
+    if (existing && existing._outputBuffer) {
+      const pre = existing.querySelector('.agent-output-text');
+      if (pre) {
+        pre.textContent += existing._outputBuffer;
+        existing._outputBuffer = '';
+      }
+      if (existing._outputTimer) {
+        clearTimeout(existing._outputTimer);
+        existing._outputTimer = null;
+      }
+    }
+  }
+
   // Save collapsed state (FIX 1) and output text before re-render
   // Only check classList for collapsed state — not style.display (newly created panels start hidden)
   const savedCollapsed = {};

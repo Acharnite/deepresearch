@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any, Callable, Coroutine
 
 from deepresearch.agents.base_agent import BaseAgent
@@ -212,13 +213,28 @@ class ScribeAgent(BaseAgent):
         """
         clarifications_per_agent: dict[str, int] = {}
         total_rounds = 0
-        max_total_rounds = _MAX_CLARIFICATION_ROUNDS * len(reports)
+        # Hard cap total rounds to prevent runaway clarification loops.
+        max_total_rounds = min(_MAX_CLARIFICATION_ROUNDS * len(reports), 5)
         _asked_claims: set[str] = set()
+        _consecutive_empties = 0
+
+        # Time budget: stop clarification after 3 minutes.
+        start_time = time.monotonic()
+        max_clarification_seconds = 180  # 3 minutes
 
         # (claim, agent_id, task) tuples for concurrent clarification.
         pending: list[tuple[str, str, asyncio.Task[str | None]]] = []
 
         while total_rounds < max_total_rounds:
+            # Time budget check.
+            elapsed = time.monotonic() - start_time
+            if elapsed > max_clarification_seconds:
+                logger.info(
+                    "Clarification time budget exceeded (%.0fs), stopping",
+                    elapsed,
+                )
+                break
+
             # Ask the scribe LLM to identify claims needing clarification.
             if status_callback:
                 await status_callback("identifying_claims")
@@ -275,8 +291,20 @@ class ScribeAgent(BaseAgent):
                 )
                 continue
 
-            if response is None:
+            # Skip empty responses — don't waste time recompiling.
+            if response is None or not response.strip():
+                _consecutive_empties += 1
+                logger.info(
+                    "Empty clarification from '%s' (%d consecutive), skipping recompilation",
+                    agent_id,
+                    _consecutive_empties,
+                )
+                if _consecutive_empties >= 2:
+                    logger.info("2 consecutive empty clarifications, stopping protocol")
+                    break
                 continue
+
+            _consecutive_empties = 0  # Reset on successful response.
 
             clarifications_per_agent[agent_id] = (
                 clarifications_per_agent.get(agent_id, 0) + 1
