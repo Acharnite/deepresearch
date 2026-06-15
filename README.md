@@ -32,18 +32,35 @@ The result is a nuanced, multi-perspective research paper that no single-prompt 
 ## Quick Install
 
 ```bash
-# Install from the KodeHold workspace
-cd workspaces/deepresearch
+# Clone the repo
+git clone https://github.com/Acharnite/deepresearch.git
+cd deepresearch
+
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+# .venv\Scripts\activate   # Windows
+
+# Install
 pip install -e ".[dev]"
 
-# Verify
-deepresearch --version
+# Set your API key (at least one)
+export OPENCODE_API_KEY="your-key-here"
+# or: export OPENAI_API_KEY="your-key-here"
+
+# Run
+deepresearch run "The future of renewable energy" --web
 ```
 
 **Prerequisites:**
 - Python 3.11+
-- An API key for at least one LLM provider (see [Model Selection](#model-selection))
+- Git
 - WeasyPrint system deps (Linux only): `sudo apt install libpango-1.0-0 libcairo2 libgdk-pixbuf2.0-dev`
+
+**No API key?** Run a dry test without LLM calls:
+```bash
+deepresearch run "Test topic" --dry-run
+```
 
 ---
 
