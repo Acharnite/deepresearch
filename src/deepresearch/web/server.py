@@ -76,7 +76,7 @@ if _settings_env_path.exists():
     if _loaded:
         logger.info("Loaded %d API key(s) from .env into environment", _loaded)
 
-VERSION = "v0.0.56"  # Bump this when making changes to verify deployment
+VERSION = "v0.0.57"  # Bump this when making changes to verify deployment
 app = FastAPI(title="DeepeResearch Dashboard")
 
 # ── Serve static files (CSS, JS modules) ────────────────────────────────
@@ -265,9 +265,17 @@ async def session_event_stream(session_id: str, request: Request) -> EventSource
 
     bus = info.event_bus
     if bus is None:
-        return EventSourceResponse(
-            async_generator=lambda: _error_generator("Session has no event bus"),
-        )
+        # Completed/persisted session — return session data directly instead of SSE
+        return JSONResponse({
+            "event_type": "session_data",
+            "session_id": session_id,
+            "topic": info.topic or "",
+            "status": info.status or "complete",
+            "state": "COMPLETE",
+            "result": info.result,
+            "error": info.error,
+            "completed_at": info.completed_at,
+        })
 
     queue = await bus.subscribe()
 
