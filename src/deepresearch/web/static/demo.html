@@ -180,7 +180,7 @@ a { color: var(--accent); text-decoration: none; }
   margin: 0 8px 8px 48px;
   background: var(--surface-2);
   border-radius: 4px;
-  max-height: 160px;
+  max-height: 250px;
   overflow-y: auto;
   border-left: 3px solid var(--text-muted);
   font-family: "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", monospace;
@@ -219,7 +219,7 @@ a { color: var(--accent); text-decoration: none; }
 .qa-from { color: var(--accent); font-weight: 500; }
 .qa-arrow { color: var(--text-muted); }
 .qa-to { color: var(--text); font-weight: 500; }
-.qa-question { color: var(--text-muted); font-style: italic; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qa-question { color: var(--text-muted); font-style: italic; flex: 1; overflow: hidden; text-overflow: ellipsis; word-break: break-word; overflow-wrap: break-word; }
 
 /* ── Scribe Card ───────────────────────────────────── */
 .scribe-card {
@@ -321,24 +321,24 @@ a { color: var(--accent); text-decoration: none; }
     <!-- Left Column: Agents -->
     <div class="agent-column">
 
-      <!-- Agent 1: AI/ML Architect — DONE -->
+      <!-- Agent 1: AI/ML Architect — WAITING -->
       <div class="agent-section">
         <div class="agent-card">
           <div class="agent-card-header">
             <span>🤖 Agent 1 — AI/ML Architect</span>
             <div style="display:flex;align-items:center;gap:8px;">
-              <span class="state-badge state-done">✅ Done</span>
+              <span class="state-badge state-waiting">⏳ Waiting</span>
               <button class="agent-toggle" onclick="this.closest('.agent-section').querySelector('.agent-output').classList.toggle('collapsed')" title="Toggle output">▾</button>
             </div>
           </div>
           <div class="agent-row">
-            <span class="agent-emoji">🔍</span>
-            <span class="agent-name">Searching</span>
+            <span class="agent-emoji">⏳</span>
+            <span class="agent-name">Queued</span>
             <div class="agent-bar-wrap">
-              <div class="agent-bar-bg"><div class="agent-bar-fill done" style="width:100%"></div></div>
+              <div class="agent-bar-bg"><div class="agent-bar-fill waiting" style="width:0%"></div></div>
             </div>
-            <span class="agent-pct">100%</span>
-            <span class="agent-status-icon">✅</span>
+            <span class="agent-pct">0%</span>
+            <span class="agent-status-icon">⏸</span>
           </div>
         </div>
         <div class="agent-output" data-agent="agent-1">
@@ -359,24 +359,24 @@ Automated testing has evolved from simple unit test generation to comprehensive 
         </div>
       </div>
 
-      <!-- Agent 2: DevOps Engineer — DONE -->
+      <!-- Agent 2: DevOps Engineer — WAITING -->
       <div class="agent-section">
         <div class="agent-card">
           <div class="agent-card-header">
             <span>⚙️ Agent 2 — DevOps Engineer</span>
             <div style="display:flex;align-items:center;gap:8px;">
-              <span class="state-badge state-done">✅ Done</span>
+              <span class="state-badge state-waiting">⏳ Waiting</span>
               <button class="agent-toggle" onclick="this.closest('.agent-section').querySelector('.agent-output').classList.toggle('collapsed')" title="Toggle output">▾</button>
             </div>
           </div>
           <div class="agent-row">
-            <span class="agent-emoji">🔍</span>
-            <span class="agent-name">Searching</span>
+            <span class="agent-emoji">⏳</span>
+            <span class="agent-name">Queued</span>
             <div class="agent-bar-wrap">
-              <div class="agent-bar-bg"><div class="agent-bar-fill done" style="width:100%"></div></div>
+              <div class="agent-bar-bg"><div class="agent-bar-fill waiting" style="width:0%"></div></div>
             </div>
-            <span class="agent-pct">100%</span>
-            <span class="agent-status-icon">✅</span>
+            <span class="agent-pct">0%</span>
+            <span class="agent-status-icon">⏸</span>
           </div>
         </div>
         <div class="agent-output" data-agent="agent-2">
@@ -397,24 +397,24 @@ AI-driven security scanning tools can now identify vulnerabilities in real-time 
         </div>
       </div>
 
-      <!-- Agent 3: Product Strategist — RESEARCHING -->
+      <!-- Agent 3: Product Strategist — WAITING -->
       <div class="agent-section">
         <div class="agent-card">
           <div class="agent-card-header">
             <span>💡 Agent 3 — Product Strategist</span>
             <div style="display:flex;align-items:center;gap:8px;">
-              <span class="state-badge state-researching">🔬 Researching</span>
+              <span class="state-badge state-waiting">⏳ Waiting</span>
               <button class="agent-toggle" onclick="this.closest('.agent-section').querySelector('.agent-output').classList.toggle('collapsed')" title="Toggle output">▾</button>
             </div>
           </div>
           <div class="agent-row">
-            <span class="agent-emoji">🔍</span>
-            <span class="agent-name">Searching</span>
+            <span class="agent-emoji">⏳</span>
+            <span class="agent-name">Queued</span>
             <div class="agent-bar-wrap">
-              <div class="agent-bar-bg"><div class="agent-bar-fill running" style="width:72%"></div></div>
+              <div class="agent-bar-bg"><div class="agent-bar-fill waiting" style="width:0%"></div></div>
             </div>
-            <span class="agent-pct">72%</span>
-            <span class="agent-status-icon">🔄</span>
+            <span class="agent-pct">0%</span>
+            <span class="agent-status-icon">⏸</span>
           </div>
         </div>
         <div class="agent-output" data-agent="agent-3">
@@ -435,24 +435,24 @@ AI tools represent significant upfront investment but demonstrate clear ROI thro
         </div>
       </div>
 
-      <!-- Agent 4: Security Analyst — DONE -->
+      <!-- Agent 4: Security Analyst — WAITING -->
       <div class="agent-section">
         <div class="agent-card">
           <div class="agent-card-header">
             <span>🛡️ Agent 4 — Security Analyst</span>
             <div style="display:flex;align-items:center;gap:8px;">
-              <span class="state-badge state-done">✅ Done</span>
+              <span class="state-badge state-waiting">⏳ Waiting</span>
               <button class="agent-toggle" onclick="this.closest('.agent-section').querySelector('.agent-output').classList.toggle('collapsed')" title="Toggle output">▾</button>
             </div>
           </div>
           <div class="agent-row">
-            <span class="agent-emoji">🔍</span>
-            <span class="agent-name">Searching</span>
+            <span class="agent-emoji">⏳</span>
+            <span class="agent-name">Queued</span>
             <div class="agent-bar-wrap">
-              <div class="agent-bar-bg"><div class="agent-bar-fill done" style="width:100%"></div></div>
+              <div class="agent-bar-bg"><div class="agent-bar-fill waiting" style="width:0%"></div></div>
             </div>
-            <span class="agent-pct">100%</span>
-            <span class="agent-status-icon">✅</span>
+            <span class="agent-pct">0%</span>
+            <span class="agent-status-icon">⏸</span>
           </div>
         </div>
         <div class="agent-output" data-agent="agent-4">
@@ -498,24 +498,24 @@ As AI becomes more prevalent in development tools, adversarial attacks targeting
         </div>
       </div>
 
-      <!-- Agent 6: Data Scientist — DONE -->
+      <!-- Agent 6: Data Scientist — WAITING -->
       <div class="agent-section">
         <div class="agent-card">
           <div class="agent-card-header">
             <span>📊 Agent 6 — Data Scientist</span>
             <div style="display:flex;align-items:center;gap:8px;">
-              <span class="state-badge state-done">✅ Done</span>
+              <span class="state-badge state-waiting">⏳ Waiting</span>
               <button class="agent-toggle" onclick="this.closest('.agent-section').querySelector('.agent-output').classList.toggle('collapsed')" title="Toggle output">▾</button>
             </div>
           </div>
           <div class="agent-row">
-            <span class="agent-emoji">🔍</span>
-            <span class="agent-name">Searching</span>
+            <span class="agent-emoji">⏳</span>
+            <span class="agent-name">Queued</span>
             <div class="agent-bar-wrap">
-              <div class="agent-bar-bg"><div class="agent-bar-fill done" style="width:100%"></div></div>
+              <div class="agent-bar-bg"><div class="agent-bar-fill waiting" style="width:0%"></div></div>
             </div>
-            <span class="agent-pct">100%</span>
-            <span class="agent-status-icon">✅</span>
+            <span class="agent-pct">0%</span>
+            <span class="agent-status-icon">⏸</span>
           </div>
         </div>
         <div class="agent-output" data-agent="agent-6">
