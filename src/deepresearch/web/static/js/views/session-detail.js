@@ -370,12 +370,8 @@ export function processEvent(data) {
     const panel = document.getElementById('agent-output-' + aid);
     const pre = panel ? panel.querySelector('.agent-output-text') : null;
     if (pre) {
-      // Only auto-show panel if not manually collapsed (user toggled it closed)
-      // Check if user has explicitly collapsed this panel by checking toggle button text
-      const section = document.getElementById('agent-section-' + aid);
-      const btn = section ? section.querySelector('.agent-toggle') : null;
-      const isCollapsed = btn && btn.textContent === '▸';
-      if (!isCollapsed) {
+      // FIX 1: respect collapsed state — only auto-show if panel is NOT collapsed
+      if (!panel.classList.contains('collapsed')) {
         panel.style.display = 'block';
       }
       // Buffer text and batch DOM updates (throttle to ~20fps)
@@ -386,8 +382,8 @@ export function processEvent(data) {
           pre.textContent += panel._outputBuffer || '';
           panel._outputBuffer = '';
           panel._outputTimer = null;
-          // Auto-scroll to bottom (not top!)
-          if (!isCollapsed) {
+          // Auto-scroll to bottom (not top!) — only if not collapsed
+          if (!panel.classList.contains('collapsed')) {
             panel.scrollTop = panel.scrollHeight;
           }
         }, 50);
@@ -396,8 +392,10 @@ export function processEvent(data) {
   }
 
   if (eventType === 'collaboration_phase') {
+    // FIX 2: Agents finished research, now waiting for scribe — not done yet
     Object.keys(state.agents).forEach(id => {
-      if (state.agents[id].status !== 'done') { state.agents[id].status = 'done'; state.agents[id].state = 'done'; }
+      state.agents[id].status = 'waiting';
+      state.agents[id].state = 'waiting';
     });
     renderAgents();
   }

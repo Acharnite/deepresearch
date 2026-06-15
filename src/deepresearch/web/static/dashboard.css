@@ -253,7 +253,7 @@ a:hover { text-decoration: underline; }
 .qa-from { color: var(--accent); font-weight: 500; }
 .qa-arrow { color: var(--text-muted); }
 .qa-to { color: var(--text); font-weight: 500; }
-.qa-question { color: var(--text-muted); font-style: italic; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qa-question { color: var(--text-muted); font-style: italic; flex: 1; word-break: break-word; overflow-wrap: break-word; }
 
 /* ── Agent Section (collapsible wrapper) ────────────── */
 .agent-section { margin-bottom: 2px; }

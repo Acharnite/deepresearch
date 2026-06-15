@@ -24,13 +24,14 @@ export function renderAgents() {
   }
 
   // Save collapsed state (FIX 1) and output text before re-render
+  // Only check classList for collapsed state — not style.display (newly created panels start hidden)
   const savedCollapsed = {};
   const savedOutputs = {};
   const savedScrollTops = {};
   for (const id of ids) {
     const existing = document.getElementById('agent-output-' + id);
     if (existing) {
-      savedCollapsed[id] = (existing.style.display === 'none');
+      savedCollapsed[id] = existing.classList.contains('collapsed');
       const pre = existing.querySelector('.agent-output-text');
       if (pre) savedOutputs[id] = pre.textContent;
       savedScrollTops[id] = existing.scrollTop;
@@ -87,28 +88,27 @@ export function renderAgents() {
     scribePanel.style.display = scDisplay;
   }
 
-  // Restore saved output text after re-render
+  // Restore saved output text after re-render (FIX 1: use classList for collapsed state)
   for (const id of ids) {
-    if (savedOutputs[id]) {
-      const newPanel = document.getElementById('agent-output-' + id);
-      if (newPanel) {
-        const pre = newPanel.querySelector('.agent-output-text');
-        if (pre) {
-          pre.textContent = savedOutputs[id];
-          // Restore collapsed state (FIX 1)
-          if (savedCollapsed[id]) {
-            newPanel.style.display = 'none';
-            const section = document.getElementById('agent-section-' + id);
-            const btn = section ? section.querySelector('.agent-toggle') : null;
-            if (btn) btn.textContent = '▸';
+    const newPanel = document.getElementById('agent-output-' + id);
+    if (newPanel && savedOutputs[id]) {
+      const pre = newPanel.querySelector('.agent-output-text');
+      if (pre) {
+        pre.textContent = savedOutputs[id];
+        if (!savedCollapsed[id]) {
+          newPanel.classList.remove('collapsed');
+          newPanel.style.display = 'block';
+          if (savedScrollTops[id] !== undefined) {
+            newPanel.scrollTop = savedScrollTops[id];
           } else {
-            newPanel.style.display = 'block';
-            if (savedScrollTops[id] !== undefined) {
-              newPanel.scrollTop = savedScrollTops[id];
-            } else {
-              newPanel.scrollTop = newPanel.scrollHeight;
-            }
+            newPanel.scrollTop = newPanel.scrollHeight;
           }
+        } else {
+          newPanel.classList.add('collapsed');
+          newPanel.style.display = 'none';
+          const section = document.getElementById('agent-section-' + id);
+          const btn = section ? section.querySelector('.agent-toggle') : null;
+          if (btn) btn.textContent = '▸';
         }
       }
     }
@@ -118,17 +118,19 @@ export function renderAgents() {
   if (col1El) col1El.scrollTop = savedColumnScrollTop;
 }
 
-/* ── Collapsible agent output toggle ───────────────── */
+/* ── Collapsible agent output toggle (FIX 1: use classList) ── */
 export function toggleAgentOutput(agentId) {
   const panel = document.getElementById('agent-output-' + agentId);
   const section = document.getElementById('agent-section-' + agentId);
   if (!panel) return;
   const btn = section ? section.querySelector('.agent-toggle') : null;
-  if (panel.style.display === 'none' || !panel.style.display) {
+  if (panel.classList.contains('collapsed')) {
+    panel.classList.remove('collapsed');
     panel.style.display = 'block';
     if (btn) btn.textContent = '▴';
     panel.scrollTop = panel.scrollHeight;
   } else {
+    panel.classList.add('collapsed');
     panel.style.display = 'none';
     if (btn) btn.textContent = '▾';
   }
