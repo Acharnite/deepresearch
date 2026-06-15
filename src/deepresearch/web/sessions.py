@@ -104,6 +104,7 @@ class MultiSessionManager:
         # Load persisted sessions from disk
         self._load_sessions_from_disk()
         self._tasks: dict[str, asyncio.Task[Any]] = {}
+        self._cancel_events: dict[str, asyncio.Event] = {}
         self._max = max_sessions
 
     # ── Properties ────────────────────────────────────────────────────
@@ -206,6 +207,11 @@ class MultiSessionManager:
         info = self._sessions[session_id]
         info.status = "running"
 
+        # Create a cancel event for this session so cancellation is
+        # immediate even when an agent is inside a long LLM call.
+        cancel_event = asyncio.Event()
+        self._cancel_events[session_id] = cancel_event
+
         # Lazy imports to break circular dependency chain.
         from deepresearch.agents.registry import AgentRegistry
         from deepresearch.llm.client import LLMClient
@@ -266,7 +272,7 @@ class MultiSessionManager:
             if scribe_model is not None:
                 run_overrides["scribe_model"] = scribe_model
 
-            pdf_path = await orchestrator.run(info.topic, **run_overrides)
+            pdf_path = await orchestrator.run(info.topic, cancel_event=cancel_event, **run_overrides)
 
             # Determine the HTML path (same stem, .html extension).
             html_path: str | None = None
@@ -310,6 +316,7 @@ class MultiSessionManager:
 
         except asyncio.CancelledError:
             info.status = "cancelled"
+            info.error = "Cancelled by user"
             info.completed_at = datetime.now().isoformat()
             await info.event_bus.publish({
                 "event_type": "session_end",
@@ -327,6 +334,9 @@ class MultiSessionManager:
                 "session_id": session_id,
                 "error": str(exc),
             })
+
+        finally:
+            self._cancel_events.pop(session_id, None)
 
     # ── Query methods ─────────────────────────────────────────────────
 
@@ -359,11 +369,21 @@ class MultiSessionManager:
     # ── Cancel ────────────────────────────────────────────────────────
 
     async def cancel_session(self, session_id: str) -> bool:
-        """Cancel a running session. Returns True if cancelled."""
+        """Cancel a running session. Returns True if cancelled.
+
+        Sets the per-session cancel event so that LLM retry loops
+        and other cancel-aware code can exit immediately, then
+        cancels the asyncio Task for interruptible await points.
+        """
         if session_id in self._tasks and not self._tasks[session_id].done():
+            # Signal cancellation immediately — cancel_event.is_set()
+            # is checked before each retry and before each agent task.
+            if session_id in self._cancel_events:
+                self._cancel_events[session_id].set()
             self._tasks[session_id].cancel()
             if session_id in self._sessions:
                 self._sessions[session_id].status = "cancelled"
+                self._sessions[session_id].error = "Cancelled by user"
             return True
         return False
 
@@ -430,6 +450,7 @@ class MultiSessionManager:
         """Remove a session from internal state."""
         self._sessions.pop(session_id, None)
         self._tasks.pop(session_id, None)
+        self._cancel_events.pop(session_id, None)
         # Clean up output files.
         output_dir = Path(f"./output/{session_id}")
         if output_dir.exists():

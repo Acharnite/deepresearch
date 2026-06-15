@@ -224,6 +224,7 @@ class LLMClient:
         self.total_output_tokens: int = 0
         self.total_cost: float = 0.0
         self.call_count: int = 0
+        self.cancel_event: asyncio.Event | None = None
 
     # ── Provider routing helpers ───────────────────────────────────────
 
@@ -275,6 +276,7 @@ class LLMClient:
         user_prompt: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        cancel_event: asyncio.Event | None = None,
     ) -> str:
         """Send a completion request to the LLM.
 
@@ -286,6 +288,8 @@ class LLMClient:
             user_prompt: The user-specific prompt.
             temperature: Sampling temperature (0.0–1.0).
             max_tokens: Maximum tokens in the response (None = model default).
+            cancel_event: Optional cancellation event — checked before each
+                retry attempt.  Falls back to ``self.cancel_event`` if None.
 
         Returns:
             The generated text response.
@@ -293,11 +297,16 @@ class LLMClient:
         Raises:
             LLMError: If all retries fail or the request times out.
         """
+        _cancel = cancel_event or self.cancel_event
         messages = self._build_messages(system_prompt, user_prompt)
 
         last_exception: Exception | None = None
 
         for attempt in range(3):  # initial + 2 retries
+            # Check cancellation before each attempt.
+            if _cancel and _cancel.is_set():
+                raise LLMError("Session cancelled")
+
             try:
                 response = await asyncio.wait_for(
                     self._acompletion(messages, temperature, max_tokens),
@@ -332,6 +341,9 @@ class LLMClient:
                 )
 
             if attempt < 2:
+                # Check cancellation before sleeping for retry.
+                if _cancel and _cancel.is_set():
+                    raise LLMError("Session cancelled")
                 backoff = 2 ** (attempt + 1)  # 2s, 4s
                 logger.info("Retrying in %ds...", backoff)
                 await asyncio.sleep(backoff)
@@ -398,6 +410,7 @@ class LLMClient:
         user_prompt: str,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        cancel_event: asyncio.Event | None = None,
     ) -> str:
         """Generate a response with streaming.
 
@@ -410,10 +423,17 @@ class LLMClient:
             user_prompt: The user-specific prompt.
             temperature: Sampling temperature (0.0–1.0).
             max_tokens: Maximum tokens in the response (``None`` = model default).
+            cancel_event: Optional cancellation event — checked before the
+                LLM call.  Falls back to ``self.cancel_event`` if None.
 
         Returns:
             The full generated text.
         """
+        _cancel = cancel_event or self.cancel_event
+        # Check cancellation before the LLM call.
+        if _cancel and _cancel.is_set():
+            raise LLMError("Session cancelled")
+
         messages = self._build_messages(system_prompt, user_prompt)
         full_text = ""
 
@@ -440,6 +460,7 @@ class LLMClient:
             )
             result = await self.generate(
                 system_prompt, user_prompt, temperature, max_tokens,
+                cancel_event=_cancel,
             )
             if self.event_callback and result:
                 await self.event_callback({"type": "stream", "text": result})
@@ -454,6 +475,7 @@ class LLMClient:
         tools: list[dict[str, Any]] | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        cancel_event: asyncio.Event | None = None,
     ) -> str:
         """Generate a response with tool calling support.
 
@@ -469,13 +491,17 @@ class LLMClient:
                 :meth:`generate_stream`.
             temperature: Sampling temperature.
             max_tokens: Max output tokens.
+            cancel_event: Optional cancellation event — checked before each
+                tool round.  Falls back to ``self.cancel_event`` if None.
 
         Returns:
             Final response text.
         """
+        _cancel = cancel_event or self.cancel_event
         if not tools:
             return await self.generate_stream(
                 system_prompt, user_prompt, temperature, max_tokens,
+                cancel_event=_cancel,
             )
 
         messages = self._build_messages(system_prompt, user_prompt)
@@ -483,6 +509,10 @@ class LLMClient:
         max_tool_rounds = 5  # Prevent infinite loops
 
         for tool_round in range(max_tool_rounds):
+            # Check cancellation before each tool round.
+            if _cancel and _cancel.is_set():
+                raise LLMError("Session cancelled")
+
             kwargs = self._build_acompletion_kwargs(messages, temperature, max_tokens)
             kwargs["tools"] = tools
 

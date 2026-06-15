@@ -202,11 +202,20 @@ class ScribeAgent(BaseAgent):
         claims, formulates clarification questions to specific agents,
         and incorporates the responses (up to
         ``_MAX_CLARIFICATION_ROUNDS`` per agent).
+
+        Clarification requests to agents are fired concurrently — the
+        scribe identifies claims one by one (fast LLM call), fires agent
+        clarifications as background tasks, and only waits + recompiles
+        at the end.  This allows multiple agents to be clarified in
+        parallel.
         """
         clarifications_per_agent: dict[str, int] = {}
         total_rounds = 0
         max_total_rounds = _MAX_CLARIFICATION_ROUNDS * len(reports)
         _asked_claims: set[str] = set()
+
+        # (claim, agent_id, task) tuples for concurrent clarification.
+        pending: list[tuple[str, str, asyncio.Task[str | None]]] = []
 
         while total_rounds < max_total_rounds:
             # Ask the scribe LLM to identify claims needing clarification.
@@ -246,25 +255,33 @@ class ScribeAgent(BaseAgent):
                 )
                 continue
 
-            # Ask the agent for clarification.
+            # Fire clarification as a concurrent task (don't await).
             if status_callback:
                 await status_callback(f"asking_agent:{agent_id}")
+            task = asyncio.create_task(
+                self._clarify_claim(claim, agent_id, context, clarification_fn)
+            )
+            pending.append((claim, agent_id, task))
+            total_rounds += 1
+
+        # Wait for all pending clarifications and apply them.
+        for claim, agent_id, task in pending:
             try:
-                response = await self._clarify_claim(
-                    claim, agent_id, context, clarification_fn
-                )
+                response = await task
             except Exception as _exc:
-                logger.warning("Clarification request to agent '%s' failed: %s", agent_id, _exc)
-                break
+                logger.warning(
+                    "Clarification from agent '%s' failed: %s", agent_id, _exc
+                )
+                continue
+
             if response is None:
-                break
+                continue
 
             clarifications_per_agent[agent_id] = (
                 clarifications_per_agent.get(agent_id, 0) + 1
             )
-            total_rounds += 1
 
-            # Incorporate the clarification into the paper by re-compiling.
+            # Incorporate the clarification into the paper.
             if status_callback:
                 await status_callback("recompiling")
             try:

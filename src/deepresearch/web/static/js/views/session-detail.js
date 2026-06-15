@@ -351,10 +351,13 @@ export function processEvent(data) {
   }
 
   if (eventType === 'followup_complete' && data.questions) {
+    var targets = data.targets || {};
     Object.entries(data.questions).forEach(function([agentId, questions]) {
       if (Array.isArray(questions)) {
-        questions.forEach(function(q) {
-          addQA(agentId, q, 'All Agents');
+        var qTargets = targets[agentId] || [];
+        questions.forEach(function(q, idx) {
+          var toAgent = qTargets[idx] || 'All Agents';
+          addQA(agentId, q, toAgent);
         });
       }
     });

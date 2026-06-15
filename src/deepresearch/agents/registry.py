@@ -112,6 +112,7 @@ class AgentRegistry:
         profile: AgentProfile,
         model_name: str,
         event_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        cancel_event: Any | None = None,
     ) -> Callable[..., Any]:
         """Factory for the Orchestrator.
 
@@ -122,12 +123,18 @@ class AgentRegistry:
             profile: The agent's personality profile.
             model_name: The LLM model to use for this agent.
             event_callback: Async callback for streaming output chunks.
+            cancel_event: Optional ``asyncio.Event`` for force-stop
+                cancellation.  Stored on the LLM client so all calls
+                check it automatically.
 
         Returns:
             An ``AgentFunc`` — an async callable that handles all lifecycle
             phases via type-based dispatch.
         """
         agent = self.create_research_agent(profile, model_name, event_callback)
+        # Propagate cancel_event to the agent's LLM client.
+        if cancel_event is not None and agent.llm is not None:
+            agent.llm.cancel_event = cancel_event
 
         # Internal state tracked across lifecycle calls.
         _round_1: Findings | None = None
@@ -141,7 +148,7 @@ class AgentRegistry:
                 except Exception:
                     pass  # Fire-and-forget.
 
-        async def dispatch(*args: Any) -> Any:
+        async def dispatch(*args: Any, **kwargs: Any) -> Any:
             nonlocal _round_1, _questions
 
             if len(args) == 1:
@@ -154,8 +161,12 @@ class AgentRegistry:
 
                 if isinstance(first, SharedKnowledge):
                     # Follow-up questions.
+                    agent_ids = kwargs.get("agent_ids")
                     await _dispatch_state("questioning")
-                    _questions = await agent.review_findings(first)
+                    if agent_ids is not None:
+                        _questions = await agent.review_findings(first, agent_ids=agent_ids)
+                    else:
+                        _questions = await agent.review_findings(first)
                     return _questions
 
                 if isinstance(first, FollowUpQuestions):

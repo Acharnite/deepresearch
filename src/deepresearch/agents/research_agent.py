@@ -55,7 +55,8 @@ Respond with valid JSON **only**:
   "questions": [
     "What specific aspect needs deeper investigation?",
     "How does X relate to Y based on other agents' findings?"
-  ]
+  ],
+  "target_agent_ids": ["agent-id-or-null", "agent-id-or-null"]
 }
 """
 
@@ -160,16 +161,34 @@ class ResearchAgent(BaseAgent):
             raw_response=response,
         )
 
-    async def review_findings(self, shared: SharedKnowledge) -> FollowUpQuestions:
-        """Review aggregated shared knowledge and pose follow-up questions."""
+    async def review_findings(
+        self,
+        shared: SharedKnowledge,
+        agent_ids: list[str] | None = None,
+    ) -> FollowUpQuestions:
+        """Review aggregated shared knowledge and pose follow-up questions.
+
+        Args:
+            shared: Shared knowledge from all agents.
+            agent_ids: List of active agent IDs — used to instruct the
+                LLM which agents are available to target.
+        """
         await self._log_agent_state("questioning")
         user_prompt = build_review_prompt(shared)
+        if agent_ids:
+            user_prompt += (
+                "\n\n## Available Agents\n"
+                "You may direct questions to specific agents by their ID. "
+                "Use null for questions that apply to all agents.\n"
+                f"Agent IDs: {agent_ids}\n"
+            )
         user_prompt += _REVIEW_FORMAT
         response = await self._generate_with_retry(user_prompt)
         data = self._try_parse_json(response, "review_findings")
         return FollowUpQuestions(
             agent_id=self.profile.id,
             questions=data.get("questions", []),
+            target_agent_ids=data.get("target_agent_ids"),
         )
 
     async def refine_findings(

@@ -59,10 +59,17 @@ class SharedKnowledge(BaseModel):
 
 
 class FollowUpQuestions(BaseModel):
-    """Questions an agent wants to explore further."""
+    """Questions an agent wants to explore further.
+
+    ``target_agent_ids`` is an optional parallel list — one entry per
+    question.  When set, a question is only sent to the specified agent.
+    When ``None`` or when a particular entry is ``None``, the question
+    goes to all agents (backward-compatible default).
+    """
 
     agent_id: str
     questions: list[str]
+    target_agent_ids: list[str | None] | None = None
 
 
 class PaperSection(BaseModel):

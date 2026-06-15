@@ -121,6 +121,7 @@ class Orchestrator:
         self.failed_agents: dict[str, str] = {}
         self.events: list[dict[str, Any]] = []
         self._session_start_time: datetime | None = None
+        self._cancel_event: asyncio.Event | None = None
 
     # ------------------------------------------------------------------
     # Prompt helpers (overridable for testing / non-interactive mode)
@@ -241,6 +242,12 @@ class Orchestrator:
                 logger.debug("Skipping failed agent '%s' in round %d", agent_id, round_num)
                 continue
 
+            # Check cancellation before launching each agent task.
+            if self._cancel_event and self._cancel_event.is_set():
+                logger.info("Cancel event set — skipping remaining agents in round %d", round_num)
+                self._log_event("round_cancelled", round=round_num, agent_id=agent_id)
+                break
+
             # Publish start event BEFORE creating task so the dashboard
             # immediately shows the agent as "running" (🔄).
             agent_model = "unknown"
@@ -257,6 +264,13 @@ class Orchestrator:
 
         results: dict[str, Any] = {}
         for agent_id, task in tasks.items():
+            # Check cancellation before awaiting each task result.
+            if self._cancel_event and self._cancel_event.is_set():
+                logger.info("Cancel event set — cancelling remaining tasks in round %d", round_num)
+                for t in tasks.values():
+                    if not t.done():
+                        t.cancel()
+                break
             try:
                 result = await task
                 results[agent_id] = result
@@ -341,15 +355,25 @@ class Orchestrator:
         agents: dict[str, AgentFunc],
         shared: SharedKnowledge,
     ) -> dict[str, FollowUpQuestions]:
-        """Each non-failed agent submits questions based on shared knowledge."""
+        """Each non-failed agent submits questions based on shared knowledge.
+
+        Agent IDs are passed so each agent knows which other agents are
+        available for targeted questions.
+        """
         timeout = max(30, self._get_timeout() // 2)
+        agent_ids = list(agents.keys())
         tasks: dict[str, asyncio.Task[Any]] = {}
 
         for agent_id, agent_fn in agents.items():
             if agent_id in self.failed_agents:
                 continue
+            # The dispatch wrapper accepts SharedKnowledge; we inject
+            # agent_ids via kwargs so the agent can direct questions.
+            async def _call_with_ids(_fn=agent_fn, _ids=agent_ids):
+                return await _fn(shared, agent_ids=_ids)
+
             tasks[agent_id] = asyncio.create_task(
-                asyncio.wait_for(agent_fn(shared), timeout=timeout),
+                asyncio.wait_for(_call_with_ids(), timeout=timeout),
             )
 
         results: dict[str, FollowUpQuestions] = {}
@@ -555,10 +579,14 @@ class Orchestrator:
             output_dir (str): Deprecated — use ``output_path`` instead.
             agent_factory (callable or ``None``): Per-run factory override.
             scribe_factory (callable or ``None``): Per-run scribe override.
+            cancel_event (asyncio.Event | None): When set, the session
+                should stop as soon as possible.  Checked before each
+                agent task and in LLM retry loops.
 
         Returns:
             ``Path`` to the output PDF (or placeholder path in dry-run mode).
         """
+        self._cancel_event = overrides.get("cancel_event")
         self._session_start_time = datetime.now()
         logger.info("Session started — topic: %s", topic)
         self._log_event("session_start", topic=topic)
@@ -607,6 +635,13 @@ class Orchestrator:
             event_callback=scribe_cb,
             model_name=scribe_model,
         )
+
+        # Propagate cancel_event to the scribe's LLM client.
+        if self._cancel_event and hasattr(scribe, 'llm') and scribe.llm is not None:
+            scribe.llm.cancel_event = self._cancel_event
+        elif self._cancel_event and hasattr(scribe, '__wrapped__'):
+            # ScribeAgent instance wrapped by dispatch — try to reach it.
+            pass
 
         # Active agent IDs (excludes failed agents at each step).
         def active_agents() -> list[str]:
@@ -717,11 +752,13 @@ class Orchestrator:
 
         # Publish follow-up questions to the collaboration bus.
         qa_questions: dict[str, list[str]] = {}
+        qa_targets: dict[str, list[str | None]] = {}
         for agent_id, questions in followup_results.items():
             if isinstance(questions, FollowUpQuestions):
                 await self.bus.publish_followup(agent_id, questions.questions)
                 if questions.questions:
                     qa_questions[agent_id] = list(questions.questions)
+                    qa_targets[agent_id] = list(questions.target_agent_ids or [None] * len(questions.questions))
             else:
                 logger.warning(
                     "Unexpected follow-up result type for agent '%s': %s",
@@ -734,6 +771,7 @@ class Orchestrator:
             "followup_complete",
             results=len(followup_results),
             questions=qa_questions,
+            targets=qa_targets,
         )
 
         # ── Refinement Phase (parallel) ────────────────────────────────
@@ -750,9 +788,22 @@ class Orchestrator:
                 return None
             if agent_id in self.failed_agents:
                 return None
+            # Filter questions by target_agent_ids — only send questions
+            # that target this agent or have no specific target.
+            targeted_questions: list[str] = []
+            targets = followup.target_agent_ids or [None] * len(followup.questions)
+            for q, target in zip(followup.questions, targets):
+                if target is None or target == agent_id:
+                    targeted_questions.append(q)
+            if not targeted_questions:
+                return None
+            targeted_followup = FollowUpQuestions(
+                agent_id=followup.agent_id,
+                questions=targeted_questions,
+            )
             try:
                 refined = await asyncio.wait_for(
-                    agents[agent_id](followup),
+                    agents[agent_id](targeted_followup),
                     timeout=max(30, self._get_timeout() // 2),
                 )
                 if refined and isinstance(refined, Findings) and (refined.summary or refined.key_points):
@@ -962,12 +1013,25 @@ class Orchestrator:
 
         Each agent gets a stream callback so that LLM output chunks are
         published as ``agent_output`` events in real time.
+
+        If ``self._cancel_event`` is set, it is propagated to each
+        agent's LLM client so that ``cancel_event.is_set()`` is checked
+        before every LLM call and retry.
         """
         agents: dict[str, AgentFunc] = {}
         for profile in config.agent_profiles:
             model_name = config.agent_models.get(profile.id, "")
             cb = self._make_stream_callback(profile.id)
-            agents[profile.id] = factory(profile, model_name, event_callback=cb)
+            # Pass cancel_event through kwargs if the factory accepts it.
+            try:
+                agents[profile.id] = factory(
+                    profile, model_name,
+                    event_callback=cb,
+                    cancel_event=getattr(self, '_cancel_event', None),
+                )
+            except TypeError:
+                # Factory doesn't accept cancel_event — fallback.
+                agents[profile.id] = factory(profile, model_name, event_callback=cb)
         return agents
 
     @staticmethod
