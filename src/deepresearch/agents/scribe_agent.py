@@ -43,7 +43,7 @@ _SCRIBE_SYSTEM_PROMPT = (
     "- A clear title reflecting the research topic\n"
     "- An abstract summarising key findings across all perspectives\n"
     "- A methodology note explaining the multi-agent approach\n"
-    "- Per-agent sections presenting each perspective faithfully\n"
+    "- Per-agent sections titled exactly with each agent\'s real ID and name (e.g., \"Curious Teen\", not invented titles). Do NOT rename agents or create new perspective names.\n"
     "- A synthesis section connecting the perspectives and identifying "
     "themes, agreements, and disagreements\n"
     "- Key takeaways\n"
@@ -143,7 +143,7 @@ class ScribeAgent(BaseAgent):
             f"The following are individual reports from {len(reports)} "
             f"research agents. Synthesise them into a coherent paper.\n\n"
             f"{reports_text}\n\n"
-            "Ensure every perspective is represented fairly. "
+            "Use the EXACT agent names from the reports. Do NOT rename or regroup. "
             "Highlight areas of agreement and disagreement."
         )
         user_prompt += _COMPILE_FORMAT
