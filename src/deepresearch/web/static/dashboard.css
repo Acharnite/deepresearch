@@ -222,9 +222,13 @@ a:hover { text-decoration: underline; }
 .agent-row {
   display: flex; align-items: center;
   padding: 4px 8px; gap: 8px;
-  border-radius: 4px; transition: background 0.2s;
 }
-.agent-row:hover { background: var(--surface-2); }
+.agent-row.clickable {
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+.agent-row.clickable:hover { background: var(--surface-2); }
 .agent-emoji { font-size: 16px; width: 22px; text-align: center; flex-shrink: 0; }
 .agent-name { font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
 .agent-bar-wrap { flex: 2; min-width: 80px; }
@@ -258,11 +262,14 @@ a:hover { text-decoration: underline; }
 /* ── Agent Section (collapsible wrapper) ────────────── */
 .agent-section { margin-bottom: 2px; }
 .agent-toggle {
-  background: none; border: none; color: var(--text-muted);
-  cursor: pointer; font-size: 12px; padding: 2px 4px;
-  border-radius: 3px; transition: color 0.2s;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  margin-left: auto;
+  transition: color 0.2s;
 }
-.agent-toggle:hover { color: var(--text); background: var(--surface-2); }
+.agent-toggle:hover { color: var(--text); }
 
 /* ── Agent Output (live stream panel) ──────────────── */
 .agent-output {

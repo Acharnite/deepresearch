@@ -68,11 +68,11 @@ export function renderAgents() {
 
       // Agent header row + output panel together (no interleaving)
       html += '<div class="agent-section" id="agent-section-' + id + '">';
-      html += '<div class="agent-row">' +
+      html += '<div class="agent-row clickable" onclick="toggleAgentOutput(\'' + id + '\')">' +
         '<span class="agent-emoji">' + emoji + '</span>' +
         '<span class="agent-name">' + esc(name) + '</span>' +
         '<span class="state-badge state-' + stateClass + '">' + label + '</span>' +
-        '<button class="agent-toggle" onclick="toggleAgentOutput(\'' + id + '\')" title="Toggle log">▾</button>' +
+        '<span class="agent-toggle">▾</span>' +
       '</div>';
       // Output panel starts collapsed (FIX 5) — must have 'collapsed' class
       // so savedCollapsed check correctly identifies new panels as collapsed
