@@ -124,7 +124,7 @@ def test_get_dashboard(client: TestClient) -> None:
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/html")
     assert "DeepeResearch" in resp.text
-    assert "EventSource" in resp.text
+    assert "dashboard.js" in resp.text  # ES module entry point
 
 
 def test_get_status_default(client: TestClient) -> None:
@@ -239,9 +239,9 @@ def test_dashboard_contains_required_sections(client: TestClient) -> None:
     assert 'showSessions' in html
     assert 'showSettings' in html
     assert 'customMinutesInput' in html
-    assert 'loadProviderList' in html
-    assert '/api/sessions' in html
-    assert '/api/run' in html
+    assert 'providerList' in html
+    assert 'dashboard.css' in html
+    assert 'dashboard.js' in html
 
 
 # ─── Multi-Session API Tests ────────────────────────────────────────────

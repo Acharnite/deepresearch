@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
+from fastapi.staticfiles import StaticFiles
 
 from deepresearch.config import load_agent_profiles, load_model_config
 from deepresearch.web.event_bus import event_bus as global_event_bus
@@ -75,8 +76,14 @@ if _settings_env_path.exists():
     if _loaded:
         logger.info("Loaded %d API key(s) from .env into environment", _loaded)
 
-VERSION = "v0.0.51"  # Bump this when making changes to verify deployment
+VERSION = "v0.0.52"  # Bump this when making changes to verify deployment
 app = FastAPI(title="DeepeResearch Dashboard")
+
+# ── Serve static files (CSS, JS modules) ────────────────────────────────
+HERE = Path(__file__).resolve().parent
+STATIC_DIR = HERE / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 logger.info("DeepeResearch %s starting on port %d", VERSION, __import__("os").environ.get("PORT", 7500))
 
 # ── CORS (allow browser-based access from any origin) ──────────────────
