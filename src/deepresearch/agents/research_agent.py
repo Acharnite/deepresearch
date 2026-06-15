@@ -353,32 +353,4 @@ class ResearchAgent(BaseAgent):
                 temperature=self.profile.temperature,
             )
 
-    def _try_parse_json(self, response: str, context: str) -> dict[str, Any]:
-        """Parse JSON from an LLM response, returning ``{}`` on failure."""
-        try:
-            return self.llm.parse_json_response(response)
-        except LLMError:
-            logger.warning(
-                "Failed to parse JSON in %s for agent '%s', using fallback",
-                context,
-                self.profile.id,
-            )
-            return {}
 
-    @staticmethod
-    def _parse_sections(raw: list[dict[str, Any]]) -> list[PaperSection]:
-        """Deep-parse a list of section dicts into PaperSection objects."""
-        sections: list[PaperSection] = []
-        for item in raw:
-            subs = [
-                PaperSection(**s) for s in item.get("subsections", []) if isinstance(s, dict)
-            ]
-            sections.append(
-                PaperSection(
-                    heading=item.get("heading", ""),
-                    source_agent_id=item.get("source_agent_id"),
-                    content=item.get("content", ""),
-                    subsections=subs,
-                )
-            )
-        return sections

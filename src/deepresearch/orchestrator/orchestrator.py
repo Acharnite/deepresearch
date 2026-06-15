@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import random
 from datetime import datetime
 from pathlib import Path
 from collections.abc import Awaitable
@@ -23,11 +22,9 @@ from typing import Any, Callable
 
 from rich.console import Console
 from rich.prompt import Prompt
-from rich.table import Table
 
 from deepresearch.collaboration import CollaborationBus
-from deepresearch.config import ConfigError, load_agent_profiles, load_model_config
-from deepresearch.web.event_bus import event_bus
+from deepresearch.config import ConfigError
 from deepresearch.models import (
     AgentProfile,
     ClarificationQuery,
@@ -185,86 +182,10 @@ class Orchestrator:
     ) -> SessionConfig:
         """Create a validated SessionConfig for a research session.
 
-        Overrides (passed from CLI flags or tests):
-            time_budget (str): ``"quick"``, ``"medium"``, ``"deep"``, or ``"custom"``.
-            time_budget_seconds (int): Custom time budget in seconds (overrides
-                ``time_budget`` keyword when provided).
-            model_mode (str): ``"same"``, ``"random"``, or ``"manual"``.
-            selected_model (str | None): Model ID to use for all agents
-                when ``model_mode="same"``.
-            agent_models (dict[str, str] | None): Per-agent model mapping
-                when ``model_mode="manual"``.
-
-        When an override is absent the method falls back to interactive
-        prompts so it can also be used as a pure CLI flow.
+        Delegates to :func:`deepresearch.orchestrator.config.configure`.
         """
-        self.state = "CONFIGURING"
-        self._log_event("config_validated", topic=topic_str)
-
-        # --- load configs (from override or from file) ---
-        try:
-            if self._profiles_override is not None:
-                profiles = self._profiles_override
-            else:
-                profiles = load_agent_profiles(self.profiles_path)
-
-            if self._model_configs_override is not None:
-                self.model_configs = self._model_configs_override
-            else:
-                self.model_configs = load_model_config(self.models_path)
-        except ConfigError as e:
-            console.print(f"[red]Configuration error:[/red] {e}")
-            raise
-
-        if not profiles:
-            raise ConfigError("No agent profiles loaded — at least one profile is required.")
-        if not self.model_configs:
-            raise ConfigError("No model configurations loaded — cannot assign models.")
-
-        # --- time budget ---
-        time_budget: str = overrides.get("time_budget")  # type: ignore[assignment]
-        if time_budget is None:
-            time_budget = self._prompt_time_budget()
-
-        # --- custom time budget seconds ---
-        time_budget_seconds: int | None = overrides.get("time_budget_seconds")
-        if time_budget_seconds is not None:
-            # If custom seconds are provided, use "custom" as budget keyword.
-            time_budget = self._CUSTOM_BUDGET_KEY
-
-        # --- model mode ---
-        model_mode: str = overrides.get("model_mode")  # type: ignore[assignment]
-        if model_mode is None:
-            model_mode = self._prompt_model_mode()
-
-        topic = ResearchTopic(
-            question=topic_str,
-            time_budget=time_budget,
-            model_mode=model_mode,
-        )
-
-        selected_model: str | None = overrides.get("selected_model")
-        agent_models: dict[str, str] | None = overrides.get("agent_models")
-        agent_models = await self.assign_models(
-            model_mode, profiles,
-            selected_model=selected_model,
-            agent_models=agent_models,
-        )
-
-        if time_budget_seconds is not None:
-            budget_seconds = time_budget_seconds
-        else:
-            budget_seconds = self.TIME_BUDGET_SECONDS.get(time_budget, 300)
-
-        config = SessionConfig(
-            topic=topic,
-            agent_profiles=profiles,
-            agent_models=agent_models,
-            time_budget_seconds=budget_seconds,
-        )
-        self.session_config = config
-        self._log_event("models_assigned", assignments=agent_models)
-        return config
+        from deepresearch.orchestrator.config import configure as _configure_impl
+        return await _configure_impl(self, topic_str, **overrides)
 
     async def assign_models(
         self,
@@ -275,49 +196,10 @@ class Orchestrator:
     ) -> dict[str, str]:
         """Assign LLM models to agent profiles.
 
-        Three modes:
-            ``"same"``   — Every agent gets the default model.
-            ``"random"`` — Models are randomly assigned (deterministic per
-                           topic string via ``hash``).
-            ``"manual"`` — Interactive selection per agent.
-
-        Args:
-            mode: Model assignment mode (same/random/manual).
-            profiles: List of agent profiles to assign models to.
-            selected_model: Optional override for "same" mode — use this
-                specific model for all agents instead of the default.
-            agent_models: Optional override for "manual" mode — use this
-                per-agent mapping instead of interactive CLI prompts.
-
-        Returns:
-            ``dict[str, str]`` mapping ``agent_id → model_name``.
+        Delegates to :func:`deepresearch.orchestrator.config.assign_models`.
         """
-        available = self.model_configs
-        if not available:
-            raise ConfigError("No model configurations loaded — cannot assign models.")
-
-        if mode == "same":
-            if selected_model:
-                return {p.id: selected_model for p in profiles}
-            default = next((m for m in available if m.get("default")), available[0])
-            return {p.id: default["id"] for p in profiles}
-
-        if mode == "random":
-            seed_str = self._topic_seed
-            random.seed(hash(seed_str))
-            selected = random.choices(available, k=len(profiles))
-            return {p.id: m["id"] for p, m in zip(profiles, selected)}
-
-        if mode == "manual":
-            if agent_models:
-                return agent_models
-            configs: dict[str, str] = {}
-            for profile in profiles:
-                model = self._prompt_for_model(profile, available)
-                configs[profile.id] = model["id"]
-            return configs
-
-        raise ConfigError(f"Unknown model assignment mode: {mode}")
+        from deepresearch.orchestrator.config import assign_models as _assign_models_impl
+        return await _assign_models_impl(self, mode, profiles, selected_model=selected_model, agent_models=agent_models)
 
     @property
     def _topic_seed(self) -> str:
@@ -716,7 +598,7 @@ class Orchestrator:
         agents = self._build_agents(config, agent_factory)
         self._agents = agents  # Store for clarification routing.
         scribe_cb = self._make_stream_callback("scribe")
-        scribe_model = overrides.get("selected_model", None)
+        scribe_model = overrides.get("scribe_model") or overrides.get("selected_model")
         scribe = self._build_scribe(
             scribe_factory,
             event_callback=scribe_cb,
@@ -1133,86 +1015,10 @@ class Orchestrator:
     ) -> dict[str, Any]:
         """Preview a session without executing any agents.
 
-        Args:
-            topic_str: The research topic string.
-            time_budget: Time budget keyword (``"quick"``, ``"medium"``, ``"deep"``).
-            model_mode: Model assignment mode (``"same"``, ``"random"``, ``"manual"``).
-            config: Optional pre-built SessionConfig.  If ``None``, one is
-                    built from the current configuration.
-
-        Returns:
-            Dict with preview information:
-            - ``topic``, ``time_budget``, ``model_mode``
-            - ``agent_assignments``: list of ``{agent_id, agent_name, emoji, model, temperature}``
-            - ``estimated_cost``: float (USD)
-            - ``estimated_tokens``: int
-            - ``rounds``: int (1 for quick, 2 otherwise)
-            - ``agents_count``: int
+        Delegates to :func:`deepresearch.orchestrator.dry_run.dry_run`.
         """
-        cfg = config or self.session_config
-        if cfg is None:
-            raise ConfigError(
-                "No session config available for dry-run. "
-                "Call configure() first or pass a config."
-            )
-
-        time_budget_label = self.TIME_BUDGET_OPTIONS.get(time_budget, time_budget)
-        rounds = 1 if time_budget == "quick" else 2
-
-        agent_assignments: list[dict[str, Any]] = []
-        for profile in cfg.agent_profiles:
-            model = cfg.agent_models.get(profile.id, "unknown")
-            agent_assignments.append({
-                "agent_id": profile.id,
-                "agent_name": profile.name,
-                "emoji": profile.emoji,
-                "model": model,
-                "temperature": profile.temperature,
-            })
-
-        # Rough token estimation per agent per round.
-        avg_prompt_tokens = 1500  # system + user prompt (estimate)
-        avg_output_tokens = 2000  # agent response (estimate)
-        total_agents = len(cfg.agent_profiles)
-        total_rounds = rounds
-        estimated_tokens = total_agents * total_rounds * (avg_prompt_tokens + avg_output_tokens)
-
-        # Rough cost estimation using the most expensive assigned model.
-        from deepresearch.llm.client import _lookup_cost
-        max_input_rate = max(
-            _lookup_cost(m, 1000, 0) * 1000  # USD per 1K input tokens
-            for m in cfg.agent_models.values()
-        )
-        max_output_rate = max(
-            _lookup_cost(m, 0, 1000) * 1000
-            for m in cfg.agent_models.values()
-        )
-        input_cost = (estimated_tokens / 2 / 1000) * max_input_rate
-        output_cost = (estimated_tokens / 2 / 1000) * max_output_rate
-        estimated_cost = round(input_cost + output_cost, 4)
-
-        # Show the Rich table.
-        self._show_dry_run_table(
-            topic_str=topic_str,
-            time_budget_label=time_budget_label,
-            time_budget_seconds=cfg.time_budget_seconds,
-            model_mode=model_mode,
-            rounds=rounds,
-            agent_assignments=agent_assignments,
-            estimated_cost=estimated_cost,
-            estimated_tokens=estimated_tokens,
-        )
-
-        return {
-            "topic": topic_str,
-            "time_budget": time_budget,
-            "model_mode": model_mode,
-            "agent_assignments": agent_assignments,
-            "estimated_cost": estimated_cost,
-            "estimated_tokens": estimated_tokens,
-            "rounds": rounds,
-            "agents_count": total_agents,
-        }
+        from deepresearch.orchestrator.dry_run import dry_run as _dry_run_impl
+        return _dry_run_impl(self, topic_str, time_budget, model_mode, config=config)
 
     def _show_dry_run_table(
         self,
@@ -1225,58 +1031,24 @@ class Orchestrator:
         estimated_cost: float,
         estimated_tokens: int,
     ) -> None:
-        """Display dry-run preview as a Rich Table."""
-        from rich.panel import Panel
+        """Display dry-run preview as a Rich Table.
 
-        # Assignment table.
-        table = Table(
-            title="DeepeResearch — Dry Run",
-            title_style="bold cyan",
-            border_style="blue",
+        Delegates to :func:`deepresearch.orchestrator.dry_run._show_dry_run_table`.
+        """
+        from deepresearch.orchestrator.dry_run import _show_dry_run_table as _show_table_impl
+        _show_table_impl(
+            topic_str, time_budget_label, time_budget_seconds,
+            model_mode, rounds, agent_assignments,
+            estimated_cost, estimated_tokens,
         )
-        table.add_column("Agent", style="green")
-        table.add_column("Model", style="yellow")
-        table.add_column("Temperature", justify="center")
-
-        for a in agent_assignments:
-            table.add_row(
-                f"{a['emoji']} {a['agent_name']}",
-                a["model"],
-                str(a["temperature"]),
-            )
-
-        # Summary panel.
-        summary_lines = [
-            f"[bold]Topic:[/bold] {topic_str}",
-            f"[bold]Budget:[/bold] {time_budget_label} ({time_budget_seconds}s)",
-            f"[bold]Model Mode:[/bold] {model_mode}",
-            f"[bold]Rounds:[/bold] {rounds}",
-            f"[bold]Agents:[/bold] {len(agent_assignments)}",
-            "",
-            f"[bold]Est. Cost:[/bold] ${estimated_cost:.4f}",
-            f"[bold]Est. Tokens:[/bold] {estimated_tokens:,}",
-        ]
-        summary = Panel(
-            "\n".join(summary_lines),
-            border_style="green",
-        )
-
-        console.print()
-        console.print(summary)
-        console.print(table)
-        console.print("[bold green]✓ Configuration valid![/bold green]")
 
     def _show_dry_run(self, config: SessionConfig) -> None:
         """Display configuration preview without executing any agents.
-        
-        Legacy method — delegates to ``dry_run()``.
+
+        Legacy method — delegates to :func:`deepresearch.orchestrator.dry_run.show_dry_run`.
         """
-        self.dry_run(
-            topic_str=config.topic.question,
-            time_budget=config.topic.time_budget,
-            model_mode=config.topic.model_mode,
-            config=config,
-        )
+        from deepresearch.orchestrator.dry_run import show_dry_run as _show_dry_run_impl
+        _show_dry_run_impl(self, config)
 
     # ------------------------------------------------------------------
     # Event Logging
@@ -1285,27 +1057,7 @@ class Orchestrator:
     def _log_event(self, event_type: str, **details: Any) -> None:
         """Record a session event for observability / testing.
 
-        Also publishes to the web ``EventBus`` so SSE subscribers receive
-        real-time updates.  This is a fire-and-forget operation — failures
-        are silently ignored to avoid disrupting the session.
+        Delegates to :func:`deepresearch.orchestrator.events.log_event`.
         """
-        elapsed = 0.0
-        if self._session_start_time is not None:
-            elapsed = (datetime.now() - self._session_start_time).total_seconds()
-        event = {
-            "timestamp": datetime.now().isoformat(),
-            "event_type": event_type,
-            "state": self.state,
-            "elapsed_seconds": round(elapsed, 1),
-            **details,
-        }
-        self.events.append(event)
-        logger.debug("Session event: %s %s", event_type, details)
-        # Fire-and-forget publish to web event bus (per-session if available).
-        bus = self._event_bus or event_bus
-        try:
-            loop = asyncio.get_running_loop()
-            if loop.is_running():
-                loop.create_task(bus.publish(event))
-        except RuntimeError:
-            pass  # No running event loop — skip web event bus.
+        from deepresearch.orchestrator.events import log_event as _log_event_impl
+        _log_event_impl(self, event_type, **details)

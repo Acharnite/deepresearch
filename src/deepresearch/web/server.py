@@ -76,7 +76,7 @@ if _settings_env_path.exists():
     if _loaded:
         logger.info("Loaded %d API key(s) from .env into environment", _loaded)
 
-VERSION = "v0.0.52"  # Bump this when making changes to verify deployment
+VERSION = "v0.0.53"  # Bump this when making changes to verify deployment
 app = FastAPI(title="DeepeResearch Dashboard")
 
 # ── Serve static files (CSS, JS modules) ────────────────────────────────
@@ -207,6 +207,7 @@ async def start_research(req: RunRequest) -> JSONResponse:
     SSE endpoint or the session listing.
     """
     try:
+        scribe_model = settings_manager.get_scribe_model()
         info = await multi_session_manager.create_session(
             topic=req.topic,
             time_budget=req.time_budget,
@@ -214,6 +215,7 @@ async def start_research(req: RunRequest) -> JSONResponse:
             model_mode=req.model_mode,
             selected_model=req.selected_model,
             agent_models=req.agent_models,
+            scribe_model=scribe_model,
         )
         return JSONResponse({
             "status": "started",

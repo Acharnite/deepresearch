@@ -128,6 +128,7 @@ class MultiSessionManager:
         model_mode: str = "same",
         selected_model: str | None = None,
         agent_models: dict[str, str] | None = None,
+        scribe_model: str | None = None,
     ) -> SessionInfo:
         """Create and start a new research session. Returns immediately."""
         # Enforce max sessions — clean up oldest completed/errored first.
@@ -195,12 +196,12 @@ class MultiSessionManager:
 
         # Start background task.
         self._tasks[session_id] = asyncio.create_task(
-            self._run_session(session_id),
+            self._run_session(session_id, scribe_model=scribe_model),
         )
 
         return info
 
-    async def _run_session(self, session_id: str) -> None:
+    async def _run_session(self, session_id: str, scribe_model: str | None = None) -> None:
         """Run the full orchestration lifecycle with a per-session event bus."""
         info = self._sessions[session_id]
         info.status = "running"
@@ -221,9 +222,8 @@ class MultiSessionManager:
             llm = LLMClient()
             registry = AgentRegistry(llm)
 
-            # Pick the scribe model: settings > selected_model > first agent_models > None
-            import os as _os
-            scribe_model = _os.environ.get("SCRIBE_MODEL") or info.selected_model
+            # Pick the scribe model: passed scribe_model > selected_model > first agent_models > None
+            scribe_model = scribe_model or info.selected_model
             if scribe_model is None and info.agent_models:
                 scribe_model = next(iter(info.agent_models.values()), None)
 
@@ -263,6 +263,8 @@ class MultiSessionManager:
                 run_overrides["selected_model"] = info.selected_model
             if info.agent_models is not None:
                 run_overrides["agent_models"] = info.agent_models
+            if scribe_model is not None:
+                run_overrides["scribe_model"] = scribe_model
 
             pdf_path = await orchestrator.run(info.topic, **run_overrides)
 

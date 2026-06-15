@@ -552,34 +552,4 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
             conclusion="Compilation incomplete due to scribe error.",
         )
 
-    def _try_parse_json(self, response: str, context: str) -> dict[str, Any]:
-        """Parse JSON from an LLM response, returning ``{}`` on failure."""
-        try:
-            return self.llm.parse_json_response(response)
-        except LLMError:
-            logger.warning(
-                "Failed to parse JSON in scribe %s, using fallback", context
-            )
-            return {}
 
-    @staticmethod
-    def _parse_sections(raw: list[dict[str, Any]]) -> list[PaperSection]:
-        """Deep-parse section dicts into PaperSection objects."""
-        sections: list[PaperSection] = []
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            subs = [
-                PaperSection(**s)
-                for s in item.get("subsections", [])
-                if isinstance(s, dict)
-            ]
-            sections.append(
-                PaperSection(
-                    heading=item.get("heading", ""),
-                    source_agent_id=item.get("source_agent_id"),
-                    content=item.get("content", ""),
-                    subsections=subs,
-                )
-            )
-        return sections
