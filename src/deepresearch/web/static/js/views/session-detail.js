@@ -9,6 +9,14 @@ import { renderAgents } from '../agent-panels.js';
 import { addQA, renderQA } from '../qa-log.js';
 import { getModelPicker } from '../model-picker.js';
 
+// ── Render Q&A graph (wraps qa-graph module) ─────────
+function renderGraph() {
+  const qaGraphEl = document.getElementById('qaGraph');
+  if (qaGraphEl && window.renderQAGraph) {
+    window.renderQAGraph(qaGraphEl, window._qaInteractions || []);
+  }
+}
+
 // ── Timer refs (local to this module) ───────────────
 let sessionStartTime = null;
 let elapsedTimer = null;
@@ -352,7 +360,9 @@ export function processEvent(data) {
 
   if (eventType === 'followup_start') {
     state.qaLog = [];
+    window._qaInteractions = [];
     renderQA();
+    renderGraph();
   }
 
   if (eventType === 'followup_complete' && data.questions) {
@@ -363,9 +373,14 @@ export function processEvent(data) {
         questions.forEach(function(q, idx) {
           var toAgent = qTargets[idx] || 'All Agents';
           addQA(agentId, q, toAgent);
+          // Add to visual graph: agent asked a question
+          if (window.addQAInteraction) {
+            window.addQAInteraction(agentId, toAgent === 'All Agents' ? 'scribe' : toAgent, 'question', q);
+          }
         });
       }
     });
+    renderGraph();
   }
 
   if (eventType === 'agent_output') {
@@ -416,6 +431,14 @@ export function processEvent(data) {
   if (eventType === 'scribe_end') {
     state.scribeInfo = { status: 'done', state: 'done' };
     renderAgents();
+  }
+
+  if (eventType === 'scribe_clarifying' && data.step && data.step.startsWith('asking_agent:')) {
+    const targetAgent = data.step.split(':')[1];
+    if (targetAgent && window.addQAInteraction) {
+      window.addQAInteraction('scribe', targetAgent, 'clarification', 'clarification request');
+      renderGraph();
+    }
   }
 
   if (eventType === 'refinement_start') {

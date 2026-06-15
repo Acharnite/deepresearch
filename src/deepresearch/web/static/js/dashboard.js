@@ -9,6 +9,7 @@ import './views/session-detail.js';  // registers window.showDetail, startResear
 import './views/session-list.js';    // registers window.downloadSessionPDF, deleteSession, etc.
 import './views/settings.js';        // registers window.saveApiKey, deleteApiKey, addEndpoint, etc.
 import './views/system-log.js';     // registers window.clearSystemLog, refreshSystemLog
+import './qa-graph.js';             // registers window.addQAInteraction, renderQAGraph
 
 // ── Init ─────────────────────────────────────────────
 loadAgentProfiles();

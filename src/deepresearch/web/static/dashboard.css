@@ -259,6 +259,19 @@ a:hover { text-decoration: underline; }
 .qa-to { color: var(--text); font-weight: 500; }
 .qa-question { color: var(--text-muted); font-style: italic; flex: 1; word-break: break-word; overflow-wrap: break-word; }
 
+/* ── Q&A Graph ──────────────────────────────────── */
+.qa-graph {
+  margin: 0 0 8px 0;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+.qa-graph svg {
+  display: block;
+}
+.qa-graph text {
+  font-family: inherit;
+}
+
 /* ── Agent Section (collapsible wrapper) ────────────── */
 .agent-section { margin-bottom: 2px; }
 .agent-toggle {
