@@ -2,7 +2,7 @@
 import { getState, resetDetailState } from '../state.js';
 import { STATE_ORDER, STATE_LABELS, STATE_BADGE_CLASSES, STATE_COLORS, stateLabels } from '../constants.js';
 import { esc, showToast, $ } from '../helpers.js';
-import { fetchSessionDetailAPI, startResearchAPI } from '../api.js';
+import { fetchSessionDetailAPI, fetchSessionStateAPI, startResearchAPI } from '../api.js';
 import { connectSessionSSE, disconnectSSE } from '../sse.js';
 import { addEvent } from '../event-log.js';
 import { renderAgents } from '../agent-panels.js';
@@ -114,39 +114,87 @@ export function showDetail(sessionId) {
   renderQA();
   stopElapsedTimer();
 
-  // Fetch session info and start SSE
-  fetchSessionDetail(sessionId);
-  connectSessionSSE(sessionId);
+  // First fetch current state, then connect SSE (SSE replays event_history)
+  fetchSessionDetail(sessionId).then(() => {
+    connectSessionSSE(sessionId);
+  });
 }
 
 // ── Fetch session detail ────────────────────────────
 async function fetchSessionDetail(sessionId) {
-  const data = await fetchSessionDetailAPI(sessionId);
-  if (!data) return;
+  const [data, stateData] = await Promise.all([
+    fetchSessionDetailAPI(sessionId),
+    fetchSessionStateAPI(sessionId),
+  ]);
 
-  const detailTopic = document.getElementById('detailTopic');
-  const detailSessionId = document.getElementById('detailSessionId');
-  const detailStatusBadge = document.getElementById('detailStatusBadge');
-  const topicDisplay = document.getElementById('topicDisplay');
+  if (data) {
+    const detailTopic = document.getElementById('detailTopic');
+    const detailSessionId = document.getElementById('detailSessionId');
+    const detailStatusBadge = document.getElementById('detailStatusBadge');
+    const topicDisplay = document.getElementById('topicDisplay');
 
-  if (detailTopic) detailTopic.textContent = esc(data.topic);
-  if (detailSessionId) detailSessionId.textContent = 'Session ' + data.session_id;
-  if (detailStatusBadge) {
-    detailStatusBadge.textContent = data.status;
-    detailStatusBadge.className = 'session-status-badge ' + data.status;
+    if (detailTopic) detailTopic.textContent = esc(data.topic);
+    if (detailSessionId) detailSessionId.textContent = 'Session ' + data.session_id;
+    if (detailStatusBadge) {
+      detailStatusBadge.textContent = data.status;
+      detailStatusBadge.className = 'session-status-badge ' + data.status;
+    }
+
+    const state = getState();
+    state.currentTopic = data.topic || '';
+    if (topicDisplay) {
+      const t = state.currentTopic;
+      topicDisplay.textContent = t.length > 60 ? t.slice(0, 60) + '…' : t;
+    }
+
+    if (data.status === 'complete' && data.result) {
+      showResult(data.result, data.topic, sessionId);
+      return; // Don't restore state for completed sessions
+    } else if (data.status === 'error') {
+      showError(data.error);
+      return;
+    }
   }
 
-  const state = getState();
-  state.currentTopic = data.topic || '';
-  if (topicDisplay) {
-    const t = state.currentTopic;
-    topicDisplay.textContent = t.length > 60 ? t.slice(0, 60) + '…' : t;
-  }
+  // Restore live state from event history for running sessions
+  if (stateData && stateData.status === 'running') {
+    const state = getState();
 
-  if (data.status === 'complete' && data.result) {
-    showResult(data.result, data.topic, sessionId);
-  } else if (data.status === 'error') {
-    showError(data.error);
+    // Restore agent states
+    if (stateData.agent_states) {
+      Object.entries(stateData.agent_states).forEach(([id, agentState]) => {
+        state.agents[id] = {
+          status: agentState.status || 'waiting',
+          state: agentState.state || 'waiting',
+        };
+      });
+    }
+
+    // Restore scribe info
+    if (stateData.scribe_info) {
+      state.scribeInfo = stateData.scribe_info;
+    }
+
+    // Restore current pipeline state
+    if (stateData.current_state) {
+      updateState(stateData.current_state);
+      const phaseDisplay = document.getElementById('phaseDisplay');
+      if (phaseDisplay) {
+        phaseDisplay.textContent = STATE_LABELS[stateData.current_state] || stateData.current_state;
+      }
+    }
+
+    // Restore event count
+    if (stateData.event_count !== undefined) {
+      state.eventCount = stateData.event_count;
+      const eventCountEl = document.getElementById('eventCount');
+      if (eventCountEl) {
+        eventCountEl.textContent = stateData.event_count + ' event' + (stateData.event_count !== 1 ? 's' : '');
+      }
+    }
+
+    // Re-render agents with restored state
+    renderAgents();
   }
 }
 
@@ -323,7 +371,7 @@ export function processEvent(data) {
           pre.textContent += panel._outputBuffer || '';
           panel._outputBuffer = '';
           panel._outputTimer = null;
-          // Auto-scroll to bottom
+          // Auto-scroll to bottom (not top!)
           panel.scrollTop = panel.scrollHeight;
         }, 50);
       }
@@ -348,6 +396,16 @@ export function processEvent(data) {
   if (eventType === 'scribe_end') {
     state.scribeInfo = { status: 'done', state: 'done' };
     renderAgents();
+  }
+
+  if (eventType === 'refinement_start') {
+    updateState('REFINING');
+    const phaseDisplay = document.getElementById('phaseDisplay');
+    if (phaseDisplay) phaseDisplay.textContent = STATE_LABELS['REFINING'] || 'Refining';
+  }
+
+  if (eventType === 'refinement_complete') {
+    // Refinement complete, will transition to ROUND2 or COMPILING
   }
 
   addEvent(eventType, data);

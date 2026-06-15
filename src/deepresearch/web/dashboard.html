@@ -161,15 +161,48 @@
     <span id="detailStatusBadge" class="session-status-badge"></span>
   </div>
 
+  <!-- Research Pipeline (full-width bar above grid) -->
+  <div class="pipeline-bar">
+    <div class="phase-indicator" id="phaseIndicator">
+      <span class="phase-step" data-phase="IDLE">⏸ Idle</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step" data-phase="CONFIGURING">⚙ Config</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step" data-phase="ROUND1">🔍 Round 1</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step" data-phase="COLLABORATING">🤝 Collaborate</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step" data-phase="FOLLOWUP">❓ Follow-up</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step" data-phase="REFINING">🔄 Refining</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step" data-phase="ROUND2">🔎 Round 2</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step" data-phase="COMPILING">📝 Compile</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step" data-phase="OUTPUT">📄 Output</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step" data-phase="COMPLETE">✅ Done</span>
+    </div>
+  </div>
+
   <div class="progress-grid" id="progressView">
-    <!-- Left Column: Agents 1-3 -->
+    <!-- Left Column: Agents (stacked vertically in single column) -->
     <div class="agent-column" id="agentColumn1"></div>
 
-    <!-- Middle Column: Agents 4-6 -->
-    <div class="agent-column" id="agentColumn2"></div>
-
-    <!-- Right Column: Event log, Q&A, pipeline, result -->
+    <!-- Right Column: Scribe, Event log, Q&A -->
     <div class="event-column" id="eventColumn">
+      <!-- Scribe Section (top of sidebar) -->
+      <div class="scribe-card" id="scribeCard">
+        <div class="card-header">
+          <span>📝 Scribe</span>
+          <span id="scribeStateBadge" class="state-badge state-waiting">⏳ Waiting</span>
+        </div>
+        <div class="agent-output" id="agent-output-scribe" data-agent="scribe" style="display:none;">
+          <pre class="agent-output-text"></pre>
+        </div>
+      </div>
+
       <!-- Result View (shown when complete) -->
       <div id="resultView" class="result-view card hidden" style="margin:0;padding:16px;">
         <h2 style="font-size:18px;">✅ Research Complete!</h2>
@@ -214,32 +247,6 @@
         </div>
         <div id="qaPanel" class="qa-panel" style="display:none;">
           <div id="qaLog"><div class="empty-state"><p>No Q&A yet</p></div></div>
-        </div>
-      </div>
-
-      <!-- Research Pipeline -->
-      <div class="card">
-        <div class="card-header">
-          <span>📋 Research Pipeline</span>
-        </div>
-        <div class="phase-indicator" id="phaseIndicator">
-          <span class="phase-step" data-phase="IDLE">⏸ Idle</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="CONFIGURING">⚙ Config</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="ROUND1">🔍 Round 1</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="COLLABORATING">🤝 Collaborate</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="FOLLOWUP">❓ Follow-up</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="ROUND2">🔎 Round 2</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="COMPILING">📝 Compile</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="OUTPUT">📄 Output</span>
-          <span class="phase-arrow">→</span>
-          <span class="phase-step" data-phase="COMPLETE">✅ Done</span>
         </div>
       </div>
     </div>

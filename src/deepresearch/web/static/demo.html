@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepeResearch — Demo Dashboard</title>
+<style>
+/* ── DeepeResearch Dashboard Styles ─────────────────── */
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #21262d;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --yellow: #d29922;
+  --red: #f85149;
+  --purple: #bc8cff;
+  --orange: #f0883e;
+  --cyan: #39d2c0;
+  --pink: #f778ba;
+  --input-bg: #0d1117;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); min-height: 100vh; }
+a { color: var(--accent); text-decoration: none; }
+
+/* ── Header ────────────────────────────────────────── */
+.header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.header h1 { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.header .spacer { margin-left: auto; }
+.conn-status {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; padding: 3px 8px; border-radius: 4px;
+  background: var(--surface-2);
+}
+.conn-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+.conn-dot.connected { background: var(--green); }
+
+/* ── Buttons ───────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 20px; border-radius: 6px;
+  font-size: 14px; font-weight: 600;
+  border: none; cursor: pointer;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-danger { background: var(--red); color: #fff; }
+.btn-success { background: var(--green); color: #fff; }
+.btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+.header-actions { display: flex; gap: 8px; align-items: center; }
+
+/* ── Status Bar ─────────────────────────────────────── */
+.status-bar {
+  display: flex; gap: 24px;
+  padding: 12px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  font-size: 14px;
+  align-items: center;
+}
+.status-item { display: flex; align-items: center; gap: 6px; }
+.status-label { color: var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 10px; border-radius: 12px;
+  font-size: 12px; font-weight: 600;
+}
+.badge-collaborating { background: #2a1c3a; color: var(--purple); }
+.elapsed { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.text-muted { color: var(--text-muted); }
+
+/* ── Layout ────────────────────────────────────────── */
+.container {
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 16px 32px;
+}
+.progress-grid { display: grid; grid-template-columns: 1fr 360px; gap: 12px; align-items: start; }
+.agent-column { min-width: 0; }
+.event-column { min-width: 0; }
+
+/* ── Card ──────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: visible;
+}
+.card-header {
+  padding: 6px 12px;
+  font-size: 12px; font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.mb-8 { margin-bottom: 8px; }
+
+/* ── Phase indicator ───────────────────────────────── */
+.phase-indicator {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px; flex-wrap: wrap;
+}
+.phase-step {
+  display: flex; align-items: center; gap: 3px;
+  font-size: 11px; color: var(--text-muted);
+  padding: 3px 8px; border-radius: 4px; white-space: nowrap;
+}
+.phase-step.done { color: var(--green); }
+.phase-step.current { color: #fff; background: var(--accent); box-shadow: 0 0 10px rgba(88,166,255,0.5); }
+.phase-arrow { color: var(--border); font-size: 10px; }
+.pipeline-bar {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+/* ── Agent Cards ────────────────────────────────────── */
+.agent-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+.agent-card-header {
+  padding: 6px 12px;
+  font-size: 12px; font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.agent-row {
+  display: flex; align-items: center;
+  padding: 4px 8px; gap: 8px;
+  border-radius: 4px;
+}
+.agent-emoji { font-size: 16px; width: 22px; text-align: center; flex-shrink: 0; }
+.agent-name { font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.agent-bar-wrap { flex: 2; min-width: 80px; }
+.agent-bar-bg { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
+.agent-bar-fill { height: 100%; width: 0%; border-radius: 3px; transition: width 0.5s ease, background 0.5s ease; }
+.agent-bar-fill.done { background: var(--green); }
+.agent-bar-fill.running { background: var(--accent); }
+.agent-bar-fill.waiting { background: var(--text-muted); }
+.agent-pct { font-size: 12px; width: 36px; text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.agent-status-icon { font-size: 14px; width: 20px; text-align: center; flex-shrink: 0; }
+
+/* ── State Badges ──────────────────────────── */
+.state-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 500; white-space: nowrap; display: inline-block; }
+.state-waiting { background: var(--surface-2); color: var(--text-muted); }
+.state-researching { background: #a78bfa40; color: #a78bfa; }
+.state-searching { background: #60a5fa40; color: #60a5fa; }
+.state-writing { background: #34d39940; color: #34d399; }
+.state-questioning { background: #fbbf2440; color: #fbbf24; }
+.state-answering { background: #f472b640; color: #f472b6; }
+.state-refining { background: #fb923c40; color: #fb923c; }
+.state-done { background: #22c55e40; color: #22c55e; }
+.state-failed { background: #ef444440; color: #ef4444; }
+
+/* ── Agent Output (live stream panel) ──────────────── */
+.agent-output {
+  margin: 0 8px 8px 48px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  border-left: 3px solid var(--text-muted);
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", "JetBrains Mono", monospace;
+}
+.agent-output[data-agent="agent-1"] { border-left-color: #58a6ff; }
+.agent-output[data-agent="agent-2"] { border-left-color: #3fb950; }
+.agent-output[data-agent="agent-3"] { border-left-color: #bc8cff; }
+.agent-output[data-agent="agent-4"] { border-left-color: #39d2c0; }
+.agent-output[data-agent="agent-5"] { border-left-color: #f0883e; }
+.agent-output[data-agent="agent-6"] { border-left-color: #f778ba; }
+.agent-output[data-agent="scribe"] { border-left-color: #f778ba; }
+.agent-output::-webkit-scrollbar { width: 5px; }
+.agent-output::-webkit-scrollbar-track { background: transparent; }
+.agent-output::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.agent-output-text { margin: 0; padding: 8px; font-size: 12px; font-family: inherit; white-space: pre-wrap; word-break: break-word; color: var(--text); line-height: 1.4; }
+
+/* ── Event Log ─────────────────────────────────────── */
+.event-log { height: 300px; overflow-y: auto; padding: 8px; }
+.event-log::-webkit-scrollbar { width: 6px; }
+.event-log::-webkit-scrollbar-track { background: transparent; }
+.event-log::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 3px; }
+.event-entry {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 4px 8px; font-size: 13px; border-radius: 4px; line-height: 1.5;
+}
+.event-entry:hover { background: var(--surface-2); }
+.event-time { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; margin-top: 2px; }
+.event-icon { flex-shrink: 0; }
+.event-msg { flex: 1; word-break: break-word; }
+
+/* ── Q&A Panel ─────────────────────────────────────── */
+.qa-panel { margin-top: 8px; padding: 0 4px; }
+.qa-entry { display: flex; align-items: center; gap: 6px; padding: 4px 8px; font-size: 12px; border-bottom: 1px solid var(--border); }
+.qa-entry:last-child { border-bottom: none; }
+.qa-time { color: var(--text-muted); font-size: 10px; white-space: nowrap; }
+.qa-from { color: var(--accent); font-weight: 500; }
+.qa-arrow { color: var(--text-muted); }
+.qa-to { color: var(--text); font-weight: 500; }
+.qa-question { color: var(--text-muted); font-style: italic; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Scribe Card ───────────────────────────────────── */
+.scribe-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  border-top: 3px solid var(--pink);
+  margin-bottom: 12px;
+}
+
+/* ── Agent Section (interleaved header + output) ──────── */
+.agent-section { margin-bottom: 2px; }
+.agent-toggle {
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; font-size: 12px; padding: 2px 4px;
+  border-radius: 3px; transition: color 0.2s;
+}
+.agent-toggle:hover { color: var(--text); background: var(--surface-2); }
+.agent-output.collapsed { display: none !important; }
+
+/* ── Misc ──────────────────────────────────────────── */
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════
+     Header
+     ══════════════════════════════════════════════════════ -->
+<div class="header">
+  <h1>🚀 DeepeResearch</h1>
+  <span class="conn-status">
+    <span class="conn-dot connected"></span>
+    <span>Connected</span>
+  </span>
+  <span class="spacer"></span>
+  <span style="font-size:11px;margin-right:8px;font-family:monospace;color:var(--text-muted);">v0.4.0</span>
+  <div class="header-actions">
+    <button class="btn btn-secondary btn-sm" title="View system log">📋 System Log</button>
+    <button class="btn btn-secondary btn-sm">⚙️ Settings</button>
+    <button class="btn btn-primary btn-sm">+ New Research</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     Status Bar
+     ══════════════════════════════════════════════════════ -->
+<div class="status-bar">
+  <div class="status-item">
+    <span class="status-label">State</span>
+    <span class="badge badge-collaborating"><span class="conn-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--purple);"></span> COLLABORATING</span>
+  </div>
+  <div class="status-item">
+    <span class="status-label">Topic</span>
+    <span style="font-size:14px;">The impact of AI on modern software development</span>
+  </div>
+  <div class="status-item">
+    <span class="status-label">Elapsed</span>
+    <span class="elapsed">03:42</span>
+  </div>
+  <div class="status-item">
+    <span class="status-label">Phase</span>
+    <span class="text-muted">Round 1 collaboration — agents sharing findings</span>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     Research Pipeline
+     ══════════════════════════════════════════════════════ -->
+<div class="container">
+  <div class="pipeline-bar">
+    <div class="phase-indicator">
+      <span class="phase-step done">⏸ Idle</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step done">⚙ Config</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step done">🔍 Round 1</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step current">🤝 Collaborate</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step">❓ Follow-up</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step">🔄 Refining</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step">🔎 Round 2</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step">📝 Compile</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step">📄 Output</span>
+      <span class="phase-arrow">→</span>
+      <span class="phase-step">✅ Done</span>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════
+       Progress Grid
+       ══════════════════════════════════════════════════════ -->
+  <div class="progress-grid">
+    <!-- Left Column: Agents -->
+    <div class="agent-column">
+
+      <!-- Agent 1: AI/ML Architect — DONE -->
+      <div class="agent-section">
+        <div class="agent-card">
+          <div class="agent-card-header">
+            <span>🤖 Agent 1 — AI/ML Architect</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="state-badge state-done">✅ Done</span>
+              <button class="agent-toggle" onclick="this.closest('.agent-section').querySelector('.agent-output').classList.toggle('collapsed')" title="Toggle output">▾</button>
+            </div>
+          </div>
+          <div class="agent-row">
+            <span class="agent-emoji">🔍</span>
+            <span class="agent-name">Searching</span>
+            <div class="agent-bar-wrap">
+              <div class="agent-bar-bg"><div class="agent-bar-fill done" style="width:100%"></div></div>
+            </div>
+            <span class="agent-pct">100%</span>
+            <span class="agent-status-icon">✅</span>
+          </div>
+        </div>
+        <div class="agent-output" data-agent="agent-1">
+          <pre class="agent-output-text">Researching: The impact of AI on modern software development
+
+## Key Findings
+
+Artificial intelligence is fundamentally transforming the software development lifecycle across multiple dimensions. The most significant changes are observed in code generation, testing, and deployment workflows.
+
+### Code Generation & Assistance
+Large language models (LLMs) have become integral to modern development workflows. GitHub Copilot, Cursor, and similar tools demonstrate that AI-assisted coding can increase developer productivity by 30-55% according to recent studies. These tools excel at boilerplate generation, API integration patterns, and translating natural language requirements into functional code.
+
+### Architectural Impact
+AI is driving a shift toward more modular, composable architectures. The rise of microservices and API-first design is partly motivated by the need to make systems more amenable to AI-driven automation. Event-driven architectures are gaining traction as they provide clearer boundaries for AI-assisted development.
+
+### Quality Assurance
+Automated testing has evolved from simple unit test generation to comprehensive test suites that include edge cases, security vulnerabilities, and performance benchmarks. AI-powered tools can now analyze code changes and predict potential regression issues before they manifest.</pre>
+        </div>
+      </div>
+
+      <!-- Agent 2: DevOps Engineer — DONE -->
+      <div class="agent-section">
+        <div class="agent-card">
+          <div class="agent-card-header">
+            <span>⚙️ Agent 2 — DevOps Engineer</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="state-badge state-done">✅ Done</span>
+              <button class="agent-toggle" onclick="this.closest('.agent-section').querySelector('.agent-output').classList.toggle('collapsed')" title="Toggle output">▾</button>
+            </div>
+          </div>
+          <div class="agent-row">
+            <span class="agent-emoji">🔍</span>
+            <span class="agent-name">Searching</span>
+            <div class="agent-bar-wrap">
+              <div class="agent-bar-bg"><div class="agent-bar-fill done" style="width:100%"></div></div>
+            </div>
+            <span class="agent-pct">100%</span>
+            <span class="agent-status-icon">✅</span>
+          </div>
+        </div>
+        <div class="agent-output" data-agent="agent-2">
+          <pre class="agent-output-text">Researching: AI impact on DevOps and CI/CD pipelines
+
+## Key Findings
+
+The DevOps landscape is experiencing rapid transformation through AI integration, with particularly strong effects on continuous integration, deployment automation, and infrastructure management.
+
+### Intelligent CI/CD Pipelines
+Modern CI/CD systems are incorporating ML models to optimize build times, predict test failures, and intelligently allocate resources. Tools like GitHub Actions and GitLab CI now offer AI-powered insights that can reduce build times by 40% through intelligent test selection and parallelization strategies.
+
+### Infrastructure as Code (IaC)
+AI is revolutionizing infrastructure management through predictive scaling, automated incident response, and self-healing systems. Platforms like Kubernetes are being enhanced with AI operators that can predict pod failures, optimize resource allocation, and automatically remediate common issues without human intervention.
+
+### Security & Compliance
+AI-driven security scanning tools can now identify vulnerabilities in real-time during the development process, shifting security left in the pipeline. These systems learn from historical vulnerability patterns and can predict which code changes are most likely to introduce security risks.</pre>
+        </div>
+      </div>
+
+      <!-- Agent 3: Product Strategist — RESEARCHING -->
+      <div class="agent-section">
+        <div class="agent-card">
+          <div class="agent-card-header">
+            <span>💡 Agent 3 — Product Strategist</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="state-badge state-researching">🔬 Researching</span>
+              <button class="agent-toggle" onclick="this.closest('.agent-section').querySelector('.agent-output').classList.toggle('collapsed')" title="Toggle output">▾</button>
+            </div>
+          </div>
+          <div class="agent-row">
+            <span class="agent-emoji">🔍</span>
+            <span class="agent-name">Searching</span>
+            <div class="agent-bar-wrap">
+              <div class="agent-bar-bg"><div class="agent-bar-fill running" style="width:72%"></div></div>
+            </div>
+            <span class="agent-pct">72%</span>
+            <span class="agent-status-icon">🔄</span>
+          </div>
+        </div>
+        <div class="agent-output" data-agent="agent-3">
+          <pre class="agent-output-text">Researching: Business and product implications of AI in software
+
+## Key Findings (In Progress)
+
+The business implications of AI in software development are multifaceted, affecting product strategy, team structures, and go-to-market approaches.
+
+### Product Strategy Shifts
+Companies are increasingly building "AI-native" products where machine learning capabilities are core features rather than add-ons. This shift requires product managers to understand AI capabilities and limitations, fundamentally changing how product roadmaps are designed.
+
+### Team Composition Changes
+The traditional developer-to-product ratio is evolving. Teams now require AI specialists, prompt engineers, and ML operations roles alongside traditional software engineers. This is creating new career paths and changing hiring practices across the industry.
+
+### Cost & ROI Analysis
+AI tools represent significant upfront investment but demonstrate clear ROI through faster development cycles, reduced bug rates, and improved developer retention. Organizations report 25-40% reduction in time-to-market for new features when leveraging AI-assisted development workflows.</pre>
+        </div>
+      </div>
+
+      <!-- Agent 4: Security Analyst — DONE -->
+      <div class="agent-section">
+        <div class="agent-card">
+          <div class="agent-card-header">
+            <span>🛡️ Agent 4 — Security Analyst</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="state-badge state-done">✅ Done</span>
+              <button class="agent-toggle" onclick="this.closest('.agent-section').querySelector('.agent-output').classList.toggle('collapsed')" title="Toggle output">▾</button>
+            </div>
+          </div>
+          <div class="agent-row">
+            <span class="agent-emoji">🔍</span>
+            <span class="agent-name">Searching</span>
+            <div class="agent-bar-wrap">
+              <div class="agent-bar-bg"><div class="agent-bar-fill done" style="width:100%"></div></div>
+            </div>
+            <span class="agent-pct">100%</span>
+            <span class="agent-status-icon">✅</span>
+          </div>
+        </div>
+        <div class="agent-output" data-agent="agent-4">
+          <pre class="agent-output-text">Researching: Security implications of AI in software development
+
+## Key Findings
+
+AI introduces both enhanced security capabilities and new attack surfaces that organizations must carefully navigate.
+
+### AI-Powered Security Tools
+Modern application security testing (AST) tools leverage AI to identify complex vulnerability patterns that traditional static analysis misses. These systems can understand code context, data flow, and business logic to detect vulnerabilities like business logic flaws, privilege escalation paths, and cryptographic weaknesses.
+
+### Supply Chain Risks
+AI-generated code introduces new supply chain concerns. Models trained on open-source code may inadvertently reproduce licensed code or introduce known vulnerability patterns. Organizations need new policies for vetting AI-generated code and ensuring license compliance.
+
+### Adversarial AI Threats
+As AI becomes more prevalent in development tools, adversarial attacks targeting these systems emerge. Prompt injection, model manipulation, and data poisoning represent new threat vectors that security teams must address.</pre>
+        </div>
+      </div>
+
+      <!-- Agent 5: UX Researcher — WAITING -->
+      <div class="agent-section">
+        <div class="agent-card">
+          <div class="agent-card-header">
+            <span>🎨 Agent 5 — UX Researcher</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="state-badge state-waiting">⏳ Waiting</span>
+              <button class="agent-toggle" onclick="this.closest('.agent-section').querySelector('.agent-output').classList.toggle('collapsed')" title="Toggle output">▾</button>
+            </div>
+          </div>
+          <div class="agent-row">
+            <span class="agent-emoji">⏳</span>
+            <span class="agent-name">Queued</span>
+            <div class="agent-bar-wrap">
+              <div class="agent-bar-bg"><div class="agent-bar-fill waiting" style="width:0%"></div></div>
+            </div>
+            <span class="agent-pct">0%</span>
+            <span class="agent-status-icon">⏸</span>
+          </div>
+        </div>
+        <div class="agent-output collapsed" data-agent="agent-5">
+          <pre class="agent-output-text"></pre>
+        </div>
+      </div>
+
+      <!-- Agent 6: Data Scientist — DONE -->
+      <div class="agent-section">
+        <div class="agent-card">
+          <div class="agent-card-header">
+            <span>📊 Agent 6 — Data Scientist</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="state-badge state-done">✅ Done</span>
+              <button class="agent-toggle" onclick="this.closest('.agent-section').querySelector('.agent-output').classList.toggle('collapsed')" title="Toggle output">▾</button>
+            </div>
+          </div>
+          <div class="agent-row">
+            <span class="agent-emoji">🔍</span>
+            <span class="agent-name">Searching</span>
+            <div class="agent-bar-wrap">
+              <div class="agent-bar-bg"><div class="agent-bar-fill done" style="width:100%"></div></div>
+            </div>
+            <span class="agent-pct">100%</span>
+            <span class="agent-status-icon">✅</span>
+          </div>
+        </div>
+        <div class="agent-output" data-agent="agent-6">
+          <pre class="agent-output-text">Researching: Data-driven aspects of AI in software development
+
+## Key Findings
+
+The intersection of data science and software development practices reveals significant trends in how organizations leverage data to improve development outcomes.
+
+### Developer Productivity Metrics
+AI tools generate rich telemetry data about development workflows. Organizations can now measure metrics like code complexity trends, refactoring frequency, and developer flow states with unprecedented granularity. This data enables evidence-based decisions about tool adoption and process improvements.
+
+### Model-Driven Development
+The rise of foundation models is enabling a new paradigm where software behavior is partially defined by model weights rather than explicit code. This creates new challenges for version control, testing, and reproducibility that the industry is still learning to address.
+
+### Data Pipeline Automation
+AI is automating data engineering tasks that previously required significant manual effort. From schema evolution detection to data quality monitoring, ML-powered tools are reducing the maintenance burden on data teams and enabling faster iteration on analytics products.</pre>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Scribe, Event Log, Q&A -->
+    <div class="event-column">
+
+      <!-- Scribe Card -->
+      <div class="agent-section">
+        <div class="scribe-card">
+          <div class="card-header">
+            <span>📝 Scribe</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="state-badge state-writing">✍️ Writing</span>
+              <button class="agent-toggle" onclick="this.closest('.agent-section').querySelector('.agent-output').classList.toggle('collapsed')" title="Toggle output">▾</button>
+            </div>
+          </div>
+        </div>
+        <div class="agent-output" data-agent="scribe">
+          <pre class="agent-output-text">Compiling research findings from 4 agents...
+
+## Draft: The Impact of AI on Modern Software Development
+
+### Executive Summary
+Artificial intelligence is fundamentally reshaping how software is designed, built, tested, and deployed. This research synthesizes findings across architectural, operational, business, security, and data-driven perspectives to provide a comprehensive view of AI's impact on modern software development practices.
+
+### 1. Code Generation & Developer Productivity
+AI-powered coding assistants have demonstrated measurable improvements in developer productivity, with studies showing 30-55% gains in code completion speed. Tools like GitHub Copilot and Cursor are becoming standard in developer toolchains, enabling faster prototyping and reducing boilerplate code writing.
+
+[Compiling remaining sections...]</pre>
+        </div>
+      </div>
+
+      <!-- Event Log -->
+      <div class="card mb-8">
+        <div class="card-header">
+          <span>📜 Event Log</span>
+          <span class="text-muted">14 events</span>
+        </div>
+        <div class="event-log">
+          <div class="event-entry">
+            <span class="event-time">03:42:15</span>
+            <span class="event-icon">📝</span>
+            <span class="event-msg">Scribe is writing the research paper — compiling findings from 4 agents</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:41:58</span>
+            <span class="event-icon">🤝</span>
+            <span class="event-msg">Entering collaboration phase — agents sharing findings</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:41:50</span>
+            <span class="event-icon">✅</span>
+            <span class="event-msg">Agent 6 (Data Scientist) completed research — 3 key findings</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:40:32</span>
+            <span class="event-icon">✅</span>
+            <span class="event-msg">Agent 4 (Security Analyst) completed research — 3 key findings</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:39:18</span>
+            <span class="event-icon">✅</span>
+            <span class="event-msg">Agent 1 (AI/ML Architect) completed research — 3 key findings</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:38:45</span>
+            <span class="event-icon">💬</span>
+            <span class="event-msg">Agent 3 asked Agent 1: "How does your architectural analysis align with the DevOps findings?"</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:37:22</span>
+            <span class="event-icon">✅</span>
+            <span class="event-msg">Agent 2 (DevOps Engineer) completed research — 3 key findings</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:36:10</span>
+            <span class="event-icon">🔍</span>
+            <span class="event-msg">Agent 5 (UX Researcher) queued — waiting for collaboration phase</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:35:02</span>
+            <span class="event-icon">🔍</span>
+            <span class="event-msg">Agent 3 (Product Strategist) started research — querying web sources</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:34:55</span>
+            <span class="event-icon">🔍</span>
+            <span class="event-msg">Agent 6 (Data Scientist) started research — querying web sources</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:34:48</span>
+            <span class="event-icon">🔍</span>
+            <span class="event-msg">Agent 4 (Security Analyst) started research — querying web sources</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:34:40</span>
+            <span class="event-icon">🔍</span>
+            <span class="event-msg">Agent 1 (AI/ML Architect) started research — querying web sources</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:34:35</span>
+            <span class="event-icon">🔍</span>
+            <span class="event-msg">Agent 2 (DevOps Engineer) started research — querying web sources</span>
+          </div>
+          <div class="event-entry">
+            <span class="event-time">03:34:30</span>
+            <span class="event-icon">🚀</span>
+            <span class="event-msg">Session started — topic: "The impact of AI on modern software development"</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Q&A Panel -->
+      <div class="card mb-8">
+        <div class="card-header">
+          <span>💬 Questions & Answers</span>
+        </div>
+        <div class="qa-panel">
+          <div class="qa-entry">
+            <span class="qa-time">03:38:45</span>
+            <span class="qa-from">Agent 3</span>
+            <span class="qa-arrow">→</span>
+            <span class="qa-to">Agent 1</span>
+            <span class="qa-question">How does your architectural analysis align with the DevOps findings on CI/CD automation?</span>
+          </div>
+          <div class="qa-entry">
+            <span class="qa-time">03:39:02</span>
+            <span class="qa-from">Agent 1</span>
+            <span class="qa-arrow">→</span>
+            <span class="qa-to">Agent 3</span>
+            <span class="qa-question">The shift toward modular architectures directly enables the AI-driven CI/CD optimizations Agent 2 described.</span>
+          </div>
+          <div class="qa-entry">
+            <span class="qa-time">03:40:15</span>
+            <span class="qa-from">Agent 4</span>
+            <span class="qa-arrow">→</span>
+            <span class="qa-to">All</span>
+            <span class="qa-question">What security considerations should guide the adoption of AI-generated code in production systems?</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

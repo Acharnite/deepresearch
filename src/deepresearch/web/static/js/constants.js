@@ -17,20 +17,21 @@ export const EVENT_ICONS = {
   session_error: '💥',
   agent_output: '💬',
   followup_start: '❓', followup_complete: '✅', round2_skip: '⏭', reports_collected: '📋', pipeline_summary: '📊',
+  refinement_start: '🔄', refinement_complete: '✅',
 };
 
 export const STATE_BADGE_CLASSES = {
   IDLE: 'badge-idle', CONFIGURING: 'badge-configuring',
   ROUND1: 'badge-round1', COLLABORATING: 'badge-collaborating',
-  FOLLOWUP: 'badge-followup', ROUND2: 'badge-round2',
-  COMPILING: 'badge-compiling', OUTPUT: 'badge-output',
-  COMPLETE: 'badge-complete'
+  FOLLOWUP: 'badge-followup', REFINING: 'badge-refining',
+  ROUND2: 'badge-round2', COMPILING: 'badge-compiling',
+  OUTPUT: 'badge-output', COMPLETE: 'badge-complete'
 };
 
 export const STATE_COLORS = {
   IDLE: '#8b949e', CONFIGURING: '#3fb950', ROUND1: '#58a6ff',
   COLLABORATING: '#bc8cff', FOLLOWUP: '#d29922',
-  ROUND2: '#39d2c0', COMPILING: '#f778ba',
+  REFINING: '#fb923c', ROUND2: '#39d2c0', COMPILING: '#f778ba',
   OUTPUT: '#3fb950', COMPLETE: '#3fb950'
 };
 

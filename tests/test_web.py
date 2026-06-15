@@ -230,11 +230,14 @@ def test_dashboard_contains_required_sections(client: TestClient) -> None:
     assert 'id="settingsView"' in html
     assert 'id="topicInput"' in html
     assert 'id="agentColumn1"' in html
-    assert 'id="agentColumn2"' in html
     assert 'id="eventColumn"' in html
     assert 'id="eventLog"' in html
     assert 'id="resultView"' in html
     assert 'id="errorView"' in html
+    assert 'id="scribeCard"' in html
+    assert 'id="agent-output-scribe"' in html
+    assert 'id="phaseIndicator"' in html
+    assert 'data-phase="REFINING"' in html
     assert 'startResearch' in html
     assert 'showSessions' in html
     assert 'showSettings' in html

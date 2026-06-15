@@ -37,6 +37,8 @@ export function addEvent(eventType, data) {
   else if (eventType === 'round2_skip') msg = 'Round 2 skipped (' + (data.budget || '?') + ' mode)';
   else if (eventType === 'reports_collected') msg = 'Reports collected from ' + (data.count || '?') + ' agents';
   else if (eventType === 'pipeline_summary') msg = '📊 Pipeline complete: ' + (data.total_agents || '?') + ' agents, ' + (data.failed_agents ? data.failed_agents.length + ' failed' : '0 failed') + ', ' + data.elapsed + 's';
+  else if (eventType === 'refinement_start') msg = 'Refinement phase started — agents refining findings';
+  else if (eventType === 'refinement_complete') msg = 'Refinement complete (' + (data.refined_agents || '0') + ' agents refined)';
 
   const empty = document.getElementById('emptyLog');
   if (empty) empty.remove();

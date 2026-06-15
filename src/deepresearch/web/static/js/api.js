@@ -79,6 +79,12 @@ export async function fetchSessionDetailAPI(sessionId) {
   return await resp.json();
 }
 
+export async function fetchSessionStateAPI(sessionId) {
+  const resp = await fetch('/api/sessions/' + sessionId + '/state');
+  if (!resp.ok) return null;
+  return await resp.json();
+}
+
 export async function fetchProfiles() {
   const resp = await fetch('/api/profiles');
   if (!resp.ok) return [];

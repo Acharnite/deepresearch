@@ -11,6 +11,8 @@ import re
 from collections.abc import Awaitable
 from typing import Any, Callable
 
+import litellm
+
 logger = logging.getLogger(__name__)
 
 
@@ -312,6 +314,14 @@ class LLMClient:
                 )
                 logger.warning(str(last_exception))
 
+            except (litellm.BudgetExceededError,
+                    litellm.ContextWindowExceededError,
+                    litellm.RateLimitError) as e:
+                # Token/rate errors are NOT retryable — fail immediately
+                raise LLMError(
+                    f"LLM resource exhausted (model={self.model}): {e}"
+                ) from e
+
             except Exception as e:
                 last_exception = e
                 logger.warning(
@@ -517,6 +527,13 @@ class LLMClient:
                             if tc.function and tc.function.arguments:
                                 targs += tc.function.arguments
                             tool_calls[idx] = (tid, tname, targs)
+
+            except (litellm.BudgetExceededError,
+                    litellm.ContextWindowExceededError,
+                    litellm.RateLimitError) as e:
+                raise LLMError(
+                    f"LLM resource exhausted (model={self.model}): {e}"
+                ) from e
 
             except Exception as e:
                 logger.warning(

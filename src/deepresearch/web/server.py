@@ -254,6 +254,81 @@ async def get_session(session_id: str) -> JSONResponse:
     })
 
 
+@app.get("/api/sessions/{session_id}/state")
+async def get_session_state(session_id: str) -> JSONResponse:
+    """Get the current runtime state of a running session.
+
+    Returns agent states, scribe info, event count, and other live
+    data that the dashboard needs to restore its view after navigation.
+    """
+    info = multi_session_manager.get_session(session_id)
+    if info is None:
+        return JSONResponse({"error": "Session not found"}, status_code=404)
+
+    # Extract agent states from event history
+    agent_states: dict[str, dict[str, str]] = {}
+    scribe_info: dict[str, str] = {"status": "waiting", "state": "waiting"}
+    current_state = "IDLE"
+
+    for event in info.event_history:
+        event_type = event.get("event_type", "")
+
+        if event_type == "session_start":
+            current_state = "CONFIGURING"
+        elif event_type == "models_assigned":
+            current_state = "ROUND1"
+            for agent_id in (event.get("assignments") or {}):
+                if agent_id not in agent_states:
+                    agent_states[agent_id] = {"status": "waiting", "state": "waiting"}
+        elif event_type == "round_start":
+            round_num = event.get("round", 1)
+            current_state = "ROUND1" if round_num == 1 else "ROUND2"
+            for aid in agent_states:
+                agent_states[aid] = {"status": "waiting", "state": "waiting"}
+        elif event_type == "agent_start":
+            aid = event.get("agent_id", "")
+            if aid:
+                agent_states[aid] = {"status": "running", "state": event.get("agent_state", "researching")}
+        elif event_type == "agent_complete":
+            aid = event.get("agent_id", "")
+            if aid and aid in agent_states:
+                agent_states[aid]["status"] = "done"
+        elif event_type == "agent_failed":
+            aid = event.get("agent_id", "")
+            if aid:
+                agent_states[aid] = {"status": "failed", "state": "failed"}
+        elif event_type == "collaboration_phase":
+            current_state = "COLLABORATING"
+            for aid in agent_states:
+                if agent_states[aid].get("status") != "failed":
+                    agent_states[aid] = {"status": "done", "state": "done"}
+        elif event_type == "followup_start":
+            current_state = "FOLLOWUP"
+        elif event_type == "refinement_start":
+            current_state = "REFINING"
+        elif event_type == "scribe_start":
+            current_state = "COMPILING"
+            scribe_info = {"status": "running", "state": "writing"}
+        elif event_type == "scribe_end":
+            scribe_info = {"status": "done", "state": "done"}
+        elif event_type == "pdf_generated":
+            current_state = "OUTPUT"
+        elif event_type == "session_end":
+            current_state = "COMPLETE"
+        elif event_type == "session_error":
+            current_state = "ERROR"
+
+    return JSONResponse({
+        "session_id": info.session_id,
+        "topic": info.topic,
+        "status": info.status,
+        "current_state": current_state,
+        "agent_states": agent_states,
+        "scribe_info": scribe_info,
+        "event_count": len(info.event_history),
+    })
+
+
 @app.get("/api/sessions/{session_id}/events")
 async def session_event_stream(session_id: str, request: Request) -> EventSourceResponse:
     """SSE endpoint: stream events for a specific session."""
