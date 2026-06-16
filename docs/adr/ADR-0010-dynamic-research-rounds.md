@@ -204,6 +204,11 @@ async def _should_continue(
     if _diminishing_returns(round_history):
         return False
 
+    # 6. Confidence convergence
+    if _converged_by_confidence(round_history):
+        logger.info("Mean confidence >= 0.7 for 2 rounds, stopping")
+        return False
+
     return True
 ```
 
@@ -212,10 +217,11 @@ async def _should_continue(
 | **Cancel event** | `cancel_event.is_set()` | User-initiated cancellation |
 | **Time budget exceeded** | `elapsed_time > total_budget * 0.9` | Reserve 10% for compilation; stop adding rounds |
 | **Max rounds** | `max_rounds` (default 5, configurable) | Hard safety cap prevents unbounded execution |
-| **Gap convergence** | `total_gaps < 2 AND confidence >= 0.5` for 2 consecutive rounds | No significant disagreements or unknown areas remain |
+| **Trend convergence** | `_compute_gap_delta >= 0` for 2 consecutive rounds (gaps no longer decreasing) | Gap delta is zero or positive — knowledge is stable |
+| **Absolute threshold** | `total_gaps < 2 AND mean_confidence >= 0.7` — may be used alone to skip rounds earlier | No significant disagreements or unknown areas remain |
 | **Diminishing returns** | `Δgaps[last_round] - Δgaps[current_round] >= 0` | Gaps are not decreasing — additional rounds won't help |
 
-**Order of evaluation:** Cancel → Time → Max Rounds → Convergence → Diminishing Returns. This ensures safety conditions are evaluated first, preventing runaway sessions even if convergence detection has a bug.
+**Order of evaluation:** Cancel → Time → Max Rounds → Convergence → Confidence Convergence → Diminishing Returns. This ensures safety conditions are evaluated first, preventing runaway sessions even if convergence detection has a bug.
 
 **Default max_rounds:** 5. Rationale: 3–4 rounds typically sufficient for convergence on complex topics; 5 provides headroom. Configurable via `SessionConfig.max_rounds` and the `--rounds` CLI flag.
 
@@ -240,8 +246,8 @@ def _compute_gap_delta(
     round_history: list[SharedKnowledge],
 ) -> float:
     """Compute the change in total gaps between the last two rounds.
-    Negative value means gaps are decreasing (progress).
-    Positive or zero means stagnation — should stop.
+    Positive value means gaps are decreasing (progress).
+    Negative or zero means stagnation — should stop.
 
     Requires 2 consecutive rounds of non-decreasing gaps to trigger.
     """
@@ -252,6 +258,11 @@ def _compute_gap_delta(
     d2 = _total_gaps(round_history[-3]) - _total_gaps(round_history[-2])
     return d1 if d1 <= 0 and d2 <= 0 else -1.0  # Only stop if 2 consecutive non-decreasing
 ```
+
+**NOTE:** Convergence detection requires at least 3 rounds of gap history to activate.
+For `max_rounds <= 4` (quick/medium budgets), the hard round cap is the dominant
+stopping mechanism. Trend-based convergence (`_compute_gap_delta`) only becomes
+the primary stop condition for deep budgets (`max_rounds >= 5`).
 
 **Diminishing returns stop:** If both `d1 <= 0` and `d2 <= 0` (two consecutive rounds where gaps did not decrease), stop. This catches:
 - Agents repeating themselves across rounds
@@ -472,17 +483,19 @@ def _get_round_timeout(
     - Collaboration + follow-up + refinement (1 slot)
     - Compilation + output (1 slot)
     """
-    return max(30, total_budget // (max_rounds + 2))
+    return max(60, total_budget // (max_rounds + 2))
 ```
+
+The 60-second floor is used in the actual implementation, based on observed real-world agent execution times.
 
 | Config | Max Rounds | Total Budget | Per-Round Timeout |
 |--------|-----------|-------------|-------------------|
 | quick | 3 | 300s | 60s |
-| medium | 4 | 300s | 50s |
+| medium | 4 | 300s | 60s |
 | deep | 5 | 480s | ~68s |
 | custom (10 min) | 5 | 600s | ~85s |
 
-The `max(30, ...)` floor prevents unrealistically short timeouts. If the computed timeout drops below 30s, `max_rounds` must be reduced or the total budget must be increased.
+The `max(60, ...)` floor prevents unrealistically short timeouts. If the computed timeout drops below 60s, `max_rounds` must be reduced or the total budget must be increased.
 
 **Session-level timeout** remains `budget_seconds * 4 + 300` (from ADR-0001), capped at 1800s (30 minutes). This generous multiplier accounts for the overhead of multiple rounds.
 
