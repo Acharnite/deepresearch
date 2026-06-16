@@ -122,9 +122,18 @@ export function showDetail(sessionId) {
   renderQA();
   stopElapsedTimer();
 
+  // Set replay flag BEFORE SSE connects — prevents destructive side effects during event replay
+  state._replaying = true;
+
   // First fetch current state, then connect SSE (SSE replays event_history)
   fetchSessionDetail(sessionId).then(() => {
     connectSessionSSE(sessionId);
+    // After SSE connects and replays events, clear the replay flag.
+    // Events arriving after this are live and should process normally.
+    setTimeout(() => {
+      const s = getState();
+      s._replaying = false;
+    }, 500);
   });
 }
 
@@ -274,6 +283,9 @@ export function processEvent(data) {
   if (topic) state.currentTopic = topic;
   updateState(stateName);
 
+  // During SSE replay on reconnect, skip events that would wipe restored state
+  const isReplaying = state._replaying === true;
+
   const topicDisplay = document.getElementById('topicDisplay');
   if (topicDisplay && state.currentTopic) {
     const t = state.currentTopic;
@@ -286,6 +298,7 @@ export function processEvent(data) {
   }
 
   if (eventType === 'session_start') {
+    if (isReplaying) return;  // SKIP during replay — state already restored
     const cancelBtn = document.getElementById('cancelBtn');
     if (cancelBtn) cancelBtn.classList.remove('hidden');
     state.agents = {};
@@ -293,6 +306,7 @@ export function processEvent(data) {
   }
 
   if (eventType === 'session_end') {
+    if (isReplaying) return;  // Already handled by showDetail
     const cancelBtn = document.getElementById('cancelBtn');
     if (cancelBtn) cancelBtn.classList.add('hidden');
     stopElapsedTimer();
@@ -317,10 +331,12 @@ export function processEvent(data) {
   }
 
   if (eventType === 'round_start') {
-    Object.keys(state.agents).forEach(id => {
-      state.agents[id] = { status: 'waiting', state: 'waiting' };
-    });
-    renderAgents();
+    if (!isReplaying) {  // ONLY run on live events
+      Object.keys(state.agents).forEach(id => {
+        state.agents[id] = { status: 'waiting', state: 'waiting' };
+      });
+      renderAgents();
+    }
   }
 
   if (eventType === 'agent_start') {
@@ -359,6 +375,7 @@ export function processEvent(data) {
   }
 
   if (eventType === 'followup_start') {
+    if (isReplaying) return;  // SKIP during replay — Q&A already restored
     state.qaLog = [];
     window._qaInteractions = [];
     renderQA();
@@ -412,12 +429,14 @@ export function processEvent(data) {
   }
 
   if (eventType === 'collaboration_phase') {
-    // FIX 2: Agents finished research, now waiting for scribe — not done yet
-    Object.keys(state.agents).forEach(id => {
-      state.agents[id].status = 'waiting';
-      state.agents[id].state = 'waiting';
-    });
-    renderAgents();
+    if (!isReplaying) {  // ONLY reset on live events
+      // Agents finished research, now waiting for scribe — not done yet
+      Object.keys(state.agents).forEach(id => {
+        state.agents[id].status = 'waiting';
+        state.agents[id].state = 'waiting';
+      });
+      renderAgents();
+    }
   }
 
   if (eventType === 'scribe_start') {
