@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 from fastapi.staticfiles import StaticFiles
 
+from deepresearch import __version__ as _deepresearch_version
 from deepresearch.config import load_agent_profiles, load_model_config
 from deepresearch.web.event_bus import event_bus as global_event_bus
 from deepresearch.web.sessions import multi_session_manager
@@ -89,7 +90,7 @@ if _settings_env_path.exists():
     if _loaded:
         logger.info("Loaded %d API key(s) from .env into environment", _loaded)
 
-VERSION = "v0.7.1"  # Bump this when making changes to verify deployment
+VERSION = f"v{_deepresearch_version}"
 app = FastAPI(title="DeepeResearch Dashboard")
 
 # ── Serve static files (CSS, JS modules) ────────────────────────────────

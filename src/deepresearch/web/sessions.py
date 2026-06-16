@@ -492,7 +492,7 @@ class MultiSessionManager:
             return False
         if info.status in ("running", "queued"):
             return False  # Don't remove active sessions
-        self._remove_session(session_id)
+        self._remove_session(session_id, delete_files=True)
         return True
 
     # ── Cleanup ───────────────────────────────────────────────────────
@@ -509,25 +509,31 @@ class MultiSessionManager:
         oldest = min(completed, key=lambda x: x.created_at)
         self._remove_session(oldest.session_id)
 
-    def _remove_session(self, session_id: str) -> None:
-        """Remove a session from internal state."""
+    def _remove_session(self, session_id: str, delete_files: bool = False) -> None:
+        """Remove a session from internal state.
+
+        Args:
+            session_id: The session to remove.
+            delete_files: If True, also delete output files (default: False).
+        """
         self._sessions.pop(session_id, None)
         self._tasks.pop(session_id, None)
         self._cancel_events.pop(session_id, None)
-        # Clean up output files (use absolute path based on SESSION_DB_PATH).
-        output_dir = SESSION_DB_PATH.parent / session_id
-        if output_dir.exists():
-            shutil.rmtree(output_dir)
+        # Only delete files if explicitly requested
+        if delete_files:
+            output_dir = SESSION_DB_PATH.parent / session_id
+            if output_dir.exists():
+                shutil.rmtree(output_dir)
 
     def clear_completed(self) -> int:
-        """Remove all completed/error/cancelled sessions. Returns count removed."""
+        """Remove all completed/error/cancelled sessions from DB only. Returns count removed."""
         to_remove = [
             sid
             for sid, s in self._sessions.items()
             if s.status in ("complete", "error", "cancelled")
         ]
         for sid in to_remove:
-            self._remove_session(sid)
+            self._remove_session(sid, delete_files=False)  # Keep files!
         return len(to_remove)
 
 

@@ -229,6 +229,8 @@ class ScribeAgent(BaseAgent):
         # Hard cap total rounds to prevent runaway clarification loops.
         max_total_rounds = min(_MAX_CLARIFICATION_ROUNDS * len(reports), 5)
         _asked_claims: set[str] = set()
+        # Track per-agent clarification count to prevent same-agent repetition
+        _asked_agents: dict[str, int] = {}
         _consecutive_empties = 0
 
         # Time budget: stop clarification after 3 minutes.
@@ -290,6 +292,14 @@ class ScribeAgent(BaseAgent):
                 )
                 continue
 
+            # Skip if agent already answered > 2 clarifications.
+            if agent_id in _asked_agents and _asked_agents[agent_id] >= 2:
+                logger.info(
+                    "Agent '%s' already answered 2 clarifications, skipping",
+                    agent_id,
+                )
+                continue
+
             # Fire clarification as a concurrent task (don't await).
             if status_callback:
                 await status_callback(f"asking_agent:{agent_id}")
@@ -323,6 +333,9 @@ class ScribeAgent(BaseAgent):
                 continue
 
             _consecutive_empties = 0  # Reset on successful response.
+
+            # Track per-agent clarification count to prevent same-agent repetition.
+            _asked_agents[agent_id] = _asked_agents.get(agent_id, 0) + 1
 
             clarifications_per_agent[agent_id] = (
                 clarifications_per_agent.get(agent_id, 0) + 1

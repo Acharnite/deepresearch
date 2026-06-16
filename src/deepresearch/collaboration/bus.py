@@ -180,6 +180,14 @@ class CollaborationBus:
                 "Further research needed for comprehensive understanding"
             ]
 
+            # Fallback: if no agreements found, generate a default.
+            if not areas_of_agreement:
+                topic_str = self.topic.question if self.topic else "the topic"
+                areas_of_agreement = [
+                    f"All {len(self.round_1_findings)} agents explored the topic of "
+                    f"'{topic_str}'"
+                ]
+
             shared = SharedKnowledge(
                 round_number=1,
                 all_summaries=all_summaries,
