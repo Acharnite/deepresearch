@@ -122,6 +122,7 @@ class Orchestrator:
         self.events: list[dict[str, Any]] = []
         self._session_start_time: datetime | None = None
         self._cancel_event: asyncio.Event | None = None
+        self._pdf_underweight: bool = False
 
     # ------------------------------------------------------------------
     # Prompt helpers (overridable for testing / non-interactive mode)
@@ -1040,6 +1041,24 @@ class Orchestrator:
             pdf_path = generator.generate_pdf(paper, output_path)
             self._log_event("pdf_generated", path=str(pdf_path))
             console.print(f"\n[bold green]✓ PDF generated: {pdf_path}[/bold green]")
+            # Verify PDF size — mark as underweight if < 12KB
+            PDF_MIN_HEALTHY_BYTES = 12_000
+            try:
+                pdf_size = output_path.stat().st_size
+                if pdf_size < PDF_MIN_HEALTHY_BYTES:
+                    logger.warning(
+                        "PDF too small (%d bytes) — marking as underweight", pdf_size
+                    )
+                    self._pdf_underweight = True
+                    self._log_event(
+                        "pdf_underweight",
+                        size=pdf_size,
+                        threshold=PDF_MIN_HEALTHY_BYTES,
+                    )
+                else:
+                    self._pdf_underweight = False
+            except OSError:
+                self._pdf_underweight = True
         except Exception as exc:
             logger.error("PDF generation failed: %s", exc)
             # Fallback: write HTML only.

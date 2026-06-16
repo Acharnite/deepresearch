@@ -303,40 +303,55 @@ class MultiSessionManager:
                 if html_candidate.exists():
                     html_path = str(html_candidate)
 
-            # Check if all agents failed — mark as error instead of complete
-            total_agents = len(orchestrator.failed_agents) + len(
-                [
-                    a
-                    for a in (
-                        orchestrator.session_config.agent_profiles
-                        if orchestrator.session_config
-                        else []
-                    )
-                ]
+            # Check underweight PDF — mark as error instead of complete
+            pdf_size = pdf_file.stat().st_size if pdf_file.exists() else 0
+            is_underweight = getattr(orchestrator, '_pdf_underweight', False) or (
+                pdf_file.exists() and pdf_size < 12_000
             )
-            all_failed = (
-                len(orchestrator.failed_agents) >= total_agents and total_agents > 0
-            )
-
-            if all_failed:
+            if is_underweight:
                 info.result = {
                     "status": "error",
-                    "error": f"All agents failed ({len(orchestrator.failed_agents)}/{total_agents})",
+                    "error": f"PDF too small ({pdf_size} bytes) — research likely incomplete",
                     "pdf_path": str(pdf_path),
                     "pdf_filename": pdf_file.name,
                 }
                 info.status = "error"
-                info.error = (
-                    f"All agents failed: {', '.join(orchestrator.failed_agents.keys())}"
-                )
+                info.error = f"PDF too small ({pdf_size} bytes)"
             else:
-                info.result = {
-                    "status": "complete",
-                    "pdf_path": str(pdf_path),
-                    "pdf_filename": pdf_file.name,
-                    "html_path": html_path,
-                }
-                info.status = "complete"
+                # Check if all agents failed — mark as error instead of complete
+                total_agents = len(orchestrator.failed_agents) + len(
+                    [
+                        a
+                        for a in (
+                            orchestrator.session_config.agent_profiles
+                            if orchestrator.session_config
+                            else []
+                        )
+                    ]
+                )
+                all_failed = (
+                    len(orchestrator.failed_agents) >= total_agents and total_agents > 0
+                )
+
+                if all_failed:
+                    info.result = {
+                        "status": "error",
+                        "error": f"All agents failed ({len(orchestrator.failed_agents)}/{total_agents})",
+                        "pdf_path": str(pdf_path),
+                        "pdf_filename": pdf_file.name,
+                    }
+                    info.status = "error"
+                    info.error = (
+                        f"All agents failed: {', '.join(orchestrator.failed_agents.keys())}"
+                    )
+                else:
+                    info.result = {
+                        "status": "complete",
+                        "pdf_path": str(pdf_path),
+                        "pdf_filename": pdf_file.name,
+                        "html_path": html_path,
+                    }
+                    info.status = "complete"
             info.completed_at = datetime.now().isoformat()
             # Persist to disk so it survives restarts
             db = _load_session_db()

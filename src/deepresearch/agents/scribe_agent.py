@@ -180,6 +180,11 @@ class ScribeAgent(BaseAgent):
                 "Scribe LLM call failed, returning minimal paper. Error: %s", exc
             )
             return self._fallback_paper(reports)
+        except Exception as e:
+            logger.error(
+                "Scribe compilation failed: %s", str(e)[:500], exc_info=True
+            )
+            return self._fallback_paper(reports)
 
         data = self._try_parse_json(response, "compile")
 
@@ -193,6 +198,43 @@ class ScribeAgent(BaseAgent):
             conclusion=data.get("conclusion", ""),
             appendices=self._parse_sections(data.get("appendices", [])),
         )
+
+        # ── Retry if compilation returned empty ─────────────────────
+        if paper is None or not paper.sections:
+            logger.warning("Scribe compilation returned empty, retrying once...")
+            try:
+                response = await self.llm.generate_stream(
+                    system_prompt=self._system_prompt,
+                    user_prompt=user_prompt,
+                    temperature=0.3,
+                )
+                data = self._try_parse_json(response, "compile_retry")
+                paper = ResearchPaper(
+                    title=data.get("title", "Research Paper"),
+                    abstract=data.get("abstract", ""),
+                    methodology_note=data.get("methodology_note", ""),
+                    sections=self._parse_sections(data.get("sections", [])),
+                    synthesis=data.get("synthesis", ""),
+                    key_takeaways=data.get("key_takeaways", []),
+                    conclusion=data.get("conclusion", ""),
+                    appendices=self._parse_sections(data.get("appendices", [])),
+                )
+            except Exception as e:
+                logger.error(
+                    "Scribe compilation failed on retry: %s", str(e)[:500], exc_info=True
+                )
+
+            if paper is None or not paper.sections:
+                logger.warning("Scribe compilation failed after retry, using fallback")
+                return ResearchPaper(
+                    title="Research Paper",
+                    abstract="Compilation failed — partial results available.",
+                    methodology_note="",
+                    sections=[],
+                    synthesis="",
+                    key_takeaways=[],
+                    conclusion="",
+                )
 
         # ── Clarification Protocol ──────────────────────────────────
         if clarification_fn is not None:
@@ -327,8 +369,8 @@ class ScribeAgent(BaseAgent):
                     agent_id,
                     _consecutive_empties,
                 )
-                if _consecutive_empties >= 2:
-                    logger.info("2 consecutive empty clarifications, stopping protocol")
+                if _consecutive_empties >= 3:
+                    logger.info("3 consecutive empty clarifications, stopping protocol")
                     break
                 continue
 
@@ -353,6 +395,18 @@ class ScribeAgent(BaseAgent):
                     "Recompilation with clarification failed, stopping: %s", _exc
                 )
                 break
+
+        # Log why the clarification protocol stopped.
+        elapsed = time.monotonic() - start_time
+        logger.info(
+            "Clarification protocol stopped: total_rounds=%d/%d, time_budget=%.0fs, "
+            "consecutive_empties=%d, asked_claims=%d",
+            total_rounds,
+            max_total_rounds,
+            elapsed,
+            _consecutive_empties,
+            len(_asked_claims),
+        )
 
         return paper
 

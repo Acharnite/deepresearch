@@ -439,6 +439,7 @@ class LLMClient:
 
         messages = self._build_messages(system_prompt, user_prompt)
         full_text = ""
+        _stream_buffer: list[str] = []
 
         try:
             from litellm import acompletion
@@ -455,9 +456,21 @@ class LLMClient:
                 full_text += delta
 
                 if self.event_callback and delta:
-                    await self.event_callback({"type": "stream", "text": delta})
+                    # Buffer tokens and flush in chunks (5 tokens or sentence boundary).
+                    _stream_buffer.append(delta)
+                    if len(_stream_buffer) >= 5 or delta in (". ", "\n", ".\n"):
+                        chunk_text = "".join(_stream_buffer)
+                        _stream_buffer.clear()
+                        await self.event_callback(
+                            {"type": "stream", "text": chunk_text}
+                        )
 
         except Exception as e:
+            # Flush remaining buffer before falling back.
+            if _stream_buffer and self.event_callback:
+                chunk_text = "".join(_stream_buffer)
+                _stream_buffer.clear()
+                await self.event_callback({"type": "stream", "text": chunk_text})
             logger.warning("Streaming failed, falling back to non-streaming: %s", e)
             result = await self.generate(
                 system_prompt,
@@ -469,6 +482,12 @@ class LLMClient:
             if self.event_callback and result:
                 await self.event_callback({"type": "stream", "text": result})
             return result
+
+        # Flush remaining buffered tokens.
+        if _stream_buffer and self.event_callback:
+            chunk_text = "".join(_stream_buffer)
+            _stream_buffer.clear()
+            await self.event_callback({"type": "stream", "text": chunk_text})
 
         return full_text
 
