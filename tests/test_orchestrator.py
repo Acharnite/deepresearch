@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from deepresearch.agents.registry import Phase
+from deepresearch.web.event_bus import EventBus
 from deepresearch.models import (
     AgentProfile,
     Findings,
@@ -638,27 +639,40 @@ class TestCompile:
 class TestHandleAgentFailure:
     """Error handling — graceful degradation."""
 
-    def test_failure_logged(self):
+    @pytest.mark.asyncio
+    async def test_failure_logged(self):
         """Failed agents should be recorded in failed_agents dict."""
         orch = Orchestrator()
-        orch.handle_agent_failure("agent-x", "connection error")
+        await orch.handle_agent_failure("agent-x", "connection error")
         assert "agent-x" in orch.failed_agents
         assert orch.failed_agents["agent-x"] == "connection error"
 
-    def test_multiple_failures(self):
+    @pytest.mark.asyncio
+    async def test_multiple_failures(self):
         """Multiple agents can fail independently."""
         orch = Orchestrator()
-        orch.handle_agent_failure("a", "err1")
-        orch.handle_agent_failure("b", "err2")
+        await orch.handle_agent_failure("a", "err1")
+        await orch.handle_agent_failure("b", "err2")
         assert len(orch.failed_agents) == 2
 
-    def test_event_logged(self):
-        """Failure should produce an agent_failed event."""
-        orch = Orchestrator()
-        orch.handle_agent_failure("agent-y", "timeout")
-        events = [e for e in orch.events if e["event_type"] == "agent_failed"]
-        assert len(events) == 1
-        assert events[0]["agent_id"] == "agent-y"
+    @pytest.mark.asyncio
+    async def test_event_logged(self):
+        """Failure should produce an agent_failed event on the bus."""
+        bus = EventBus()
+        queue = await bus.subscribe()
+        orch = Orchestrator(event_bus=bus)
+        await orch.handle_agent_failure("agent-y", "timeout")
+
+        collected: list[dict] = []
+        while not queue.empty():
+            try:
+                collected.append(queue.get_nowait())
+            except Exception:
+                break
+        failed_events = [e for e in collected if e.get("event_type") == "agent_failed"]
+        assert len(failed_events) == 1
+        assert failed_events[0]["agent_id"] == "agent-y"
+        await bus.unsubscribe(queue)
 
 
 class TestFullLifecycle:
@@ -775,12 +789,15 @@ class TestFullLifecycle:
     async def test_event_logging(
         self, profiles, model_configs, mock_agent_factory, mock_scribe_factory
     ):
-        """Session events should be recorded throughout the lifecycle."""
+        """Session events should be published to the event bus throughout the lifecycle."""
+        bus = EventBus()
+        queue = await bus.subscribe()
         orch = Orchestrator(
             profiles=profiles,
             model_configs=model_configs,
             agent_factory=mock_agent_factory,
             scribe_factory=mock_scribe_factory,
+            event_bus=bus,
         )
 
         await orch.run(
@@ -790,7 +807,13 @@ class TestFullLifecycle:
             output_dir="/tmp/deepresearch_test_output",
         )
 
-        event_types = [e["event_type"] for e in orch.events]
+        collected: list[dict] = []
+        while not queue.empty():
+            try:
+                collected.append(queue.get_nowait())
+            except Exception:
+                break
+        event_types = [e["event_type"] for e in collected]
         assert "session_start" in event_types
         assert "config_validated" in event_types
         assert "models_assigned" in event_types
@@ -802,6 +825,7 @@ class TestFullLifecycle:
         assert "scribe_end" in event_types
         assert "pdf_generated" in event_types
         assert "session_end" in event_types
+        await bus.unsubscribe(queue)
 
 
 class TestDryRun:

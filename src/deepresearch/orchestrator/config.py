@@ -39,7 +39,8 @@ async def configure(
     prompts so it can also be used as a pure CLI flow.
     """
     orchestrator.state = "CONFIGURING"
-    orchestrator._log_event("config_validated", topic=topic_str)
+    if orchestrator._event_bus:
+        await orchestrator._event_bus.publish({"event_type": "config_validated", "topic": topic_str})
 
     # --- load configs (from override or from file) ---
     try:
@@ -116,7 +117,8 @@ async def configure(
         output_language=output_language,
     )
     orchestrator.session_config = config
-    orchestrator._log_event("models_assigned", assignments=agent_models)
+    if orchestrator._event_bus:
+        await orchestrator._event_bus.publish({"event_type": "models_assigned", "assignments": agent_models})
     return config
 
 

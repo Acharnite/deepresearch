@@ -213,6 +213,9 @@ class MultiSessionManager:
                     "error": info.error,
                 }
             )
+            info.event_history.append(
+                {"event_type": "session_error", "session_id": session_id, "error": info.error}
+            )
             return info
 
         # Start background task with optional concurrency semaphore.
@@ -252,6 +255,14 @@ class MultiSessionManager:
                     "max_rounds": info.max_rounds,
                 }
             )
+            info.event_history.append(
+                {
+                    "event_type": "session_start",
+                    "session_id": session_id,
+                    "topic": info.topic,
+                    "max_rounds": info.max_rounds,
+                }
+            )
 
             llm = LLMClient(max_tokens=settings_manager.get_max_tokens())
             registry = AgentRegistry(llm)
@@ -271,19 +282,6 @@ class MultiSessionManager:
                 ),
                 event_bus=info.event_bus,
             )
-
-            # Patch the event bus publish to also record events in session history
-            # so late-connecting SSE clients can replay them.
-            _original_publish = info.event_bus.publish
-
-            async def _publish_with_history(event: dict[str, Any]) -> None:
-                info.event_history.append(event)
-                # Trim to last 500 events to avoid memory issues.
-                if len(info.event_history) > 500:
-                    info.event_history[:] = info.event_history[-500:]
-                await _original_publish(event)
-
-            info.event_bus.publish = _publish_with_history
 
             topic_slug = _slugify(info.topic) or "research"
             # Use absolute path based on output directory location (SESSION_DB_PATH.parent)
@@ -393,6 +391,9 @@ class MultiSessionManager:
                     "status": "complete",
                 }
             )
+            info.event_history.append(
+                {"event_type": "session_end", "session_id": session_id, "status": "complete"}
+            )
 
         except asyncio.CancelledError:
             info.status = "cancelled"
@@ -404,6 +405,9 @@ class MultiSessionManager:
                     "session_id": session_id,
                     "status": "cancelled",
                 }
+            )
+            info.event_history.append(
+                {"event_type": "session_end", "session_id": session_id, "status": "cancelled"}
             )
 
         except Exception as exc:
@@ -417,6 +421,9 @@ class MultiSessionManager:
                     "session_id": session_id,
                     "error": str(exc),
                 }
+            )
+            info.event_history.append(
+                {"event_type": "session_error", "session_id": session_id, "error": str(exc)}
             )
 
         finally:

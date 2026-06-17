@@ -19,7 +19,7 @@ class EventBus:
 
         from deepresearch.web.event_bus import event_bus
 
-        # Publish (called by orchestrator._log_event)
+        # Publish (called by orchestrator._event_bus.publish)
         await event_bus.publish({"event_type": "session_start", ...})
 
         # Subscribe (called by SSE endpoint)

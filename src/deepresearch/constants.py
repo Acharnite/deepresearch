@@ -18,3 +18,6 @@ MAX_ROUNDS_BY_BUDGET: dict[str, int] = {
 }
 
 PDF_MIN_HEALTHY_BYTES: int = 20_000
+
+# Maximum session wall-clock time in seconds (30 minutes).
+MAX_SESSION_DURATION: int = 1800

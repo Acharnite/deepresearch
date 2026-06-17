@@ -135,7 +135,7 @@ class SessionManager:
                 "pdf_path": str(pdf_path),
                 "pdf_filename": pdf_file.name,
                 "html_path": html_path,
-                "state_history": orchestrator.events,
+                "state_history": [],
             }
             self._status = "complete"
 

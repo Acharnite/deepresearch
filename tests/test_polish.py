@@ -477,19 +477,21 @@ class TestValidateAll:
 class TestErrorHandling:
     """Comprehensive error handling patterns."""
 
-    def test_orchestrator_failed_agents_logged(self):
+    @pytest.mark.asyncio
+    async def test_orchestrator_failed_agents_logged(self):
         """Failed agents should be recorded with ID and reason."""
         orch = Orchestrator()
-        orch.handle_agent_failure("agent-x", "API key not configured")
+        await orch.handle_agent_failure("agent-x", "API key not configured")
         assert "agent-x" in orch.failed_agents
         assert orch.failed_agents["agent-x"] == "API key not configured"
 
-    def test_orchestrator_handles_multiple_failures(self):
+    @pytest.mark.asyncio
+    async def test_orchestrator_handles_multiple_failures(self):
         """Multiple failures should all be recorded."""
         orch = Orchestrator()
-        orch.handle_agent_failure("a", "timeout")
-        orch.handle_agent_failure("b", "connection error")
-        orch.handle_agent_failure("c", "rate limited")
+        await orch.handle_agent_failure("a", "timeout")
+        await orch.handle_agent_failure("b", "connection error")
+        await orch.handle_agent_failure("c", "rate limited")
         assert len(orch.failed_agents) == 3
 
     def test_session_timeout_handling(self):
