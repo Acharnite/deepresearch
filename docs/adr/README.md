@@ -15,3 +15,6 @@
 | [ADR-0011](ADR-0011-concurrency-limits-and-web-search-throttling.md) | Concurrency Limits and Web Search Throttling | Proposed | 2026-06-16 |
 | [ADR-0012](ADR-0012-replace-ddgs-with-searxng.md) | Replace DuckDuckGo with SearXNG for Web Search | Proposed | 2026-06-16 |
 | [ADR-0013](ADR-0013-searxng-optimization.md) | SearXNG Engine Optimization — Remove Problematic Backends, Tune Timeouts | Proposed | 2026-06-17 |
+| [ADR-0014](ADR-0014-enforce-time-budget-and-correct-labels.md) | Enforce Time Budget and Correct UI Labels | Proposed | 2026-06-17 |
+| [ADR-0015](ADR-0015-fix-json-parsing-and-topic-drift.md) | Fix JSON Parsing and Topic Drift | Proposed | 2026-06-17 |
+| [ADR-0016](ADR-0016-epic-tracker-code-review-2026-06-17.md) | Epic Tracker — Code Review Handlingsplan (2026-06-17) | Accepted | 2026-06-17 |

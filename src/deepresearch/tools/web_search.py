@@ -67,16 +67,6 @@ def _load_search_config() -> None:
 # ── Global semaphore to limit concurrent searches ─────────────────────
 _search_semaphore = asyncio.Semaphore(3)
 
-# ── Global rate limiter ───────────────────────────────────────────────
-_last_search_time: float = 0.0
-_rate_lock = asyncio.Lock()
-MIN_SEARCH_INTERVAL = 5.0  # seconds
-
-# ── Search cache ──────────────────────────────────────────────────────
-_search_cache: dict[str, list[dict[str, str]]] = {}
-_MAX_CACHE_SIZE = 200  # evict oldest when full
-_cache_order: list[str] = []  # LRU tracking
-
 
 # ── Tool definition for LiteLLM function calling ──────────────────────
 
@@ -282,18 +272,6 @@ def get_search_semaphore_info() -> dict[str, int]:
     }
 
 
-def get_search_cache_info() -> dict:
-    """Return search cache stats for monitoring.
-
-    Caching is disabled — agents each perform fresh searches
-    to avoid producing identical content.
-    """
-    return {
-        "cached_queries": 0,
-        "cache_enabled": False,
-    }
-
-
 def get_search_health_info() -> dict[str, Any]:
     """Return full search engine status for the /api/system/search endpoint."""
     return {
@@ -305,5 +283,4 @@ def get_search_health_info() -> dict[str, Any]:
         "searxng_timeout": _searxng_timeout,
         "status": _search_health,
         "last_search_latency_ms": _last_search_latency_ms,
-        **get_search_cache_info(),
     }
