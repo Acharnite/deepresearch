@@ -22,6 +22,7 @@
 - [x] ADR-0011: Session concurrency limit (max 3) + web search throttling
 - [x] ADR-0012: SearXNG migration — replaced ddgs with self-hosted SearXNG
 - [x] ADR-0013: SearXNG optimization — removed DDG/Wikidata/Brave, added academic engines
+- [ ] ADR-0015: Fix JSON parsing (strip tool output) + topic drift (topic in Scribe prompts)
 - [x] Global web search rate limiter (1 search per 5 seconds)
 - [x] Search result cache (200 entries, LRU eviction)
 - [x] --rounds CLI flag for session round count
@@ -32,7 +33,7 @@
 
 ### Priority 1: Verify latest fixes
 - [ ] **Scribe model prefix** — scribe should use full model ID (e.g., `opencode/go/deepseek-v4-flash`)
-- [ ] **Agent JSON parsing** — agents should return valid JSON after web search
+- [ ] **Agent JSON parsing** — agents should return valid JSON after web search (see ADR-0015: _strip_tool_output)
 - [ ] **Web search in dashboard** — 🔍 search results visible in agent output panels
 - [ ] **Scribe row in dashboard** — 📝 scribe row with live output under agents
 - [ ] **Dynamic rounds** — verify it loops when gaps exist, stops when resolved
