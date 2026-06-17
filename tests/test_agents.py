@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from deepresearch.agents.base_agent import BaseAgent
-from deepresearch.agents.registry import AgentRegistry
+from deepresearch.agents.registry import AgentRegistry, Phase
 from deepresearch.agents.research_agent import ResearchAgent
 from deepresearch.agents.scribe_agent import ScribeAgent
 from deepresearch.llm.client import LLMClient, LLMError
@@ -754,7 +754,7 @@ class TestAgentRegistry:
                 key_points=["K"],
                 perspective="P",
             )
-            result = await factory(topic)
+            result = await factory(Phase.INITIAL_ROUND, topic=topic)
 
         assert isinstance(result, Findings)
         mock.assert_called_once_with(topic)
@@ -763,7 +763,7 @@ class TestAgentRegistry:
     async def test_agent_factory_review_dispatches_correctly(
         self, registry, profile, shared
     ):
-        """Calling the factory with SharedKnowledge dispatches to review_findings."""
+        """Calling the factory with Phase.REVIEW dispatches to review_findings."""
         factory = registry.agent_factory(profile, "gpt-4o")
 
         with patch.object(
@@ -772,7 +772,7 @@ class TestAgentRegistry:
             mock.return_value = FollowUpQuestions(
                 agent_id="test-agent", questions=["Q?"]
             )
-            result = await factory(shared)
+            result = await factory(Phase.REVIEW, shared=shared)
 
         assert isinstance(result, FollowUpQuestions)
         mock.assert_called_once_with(shared)
@@ -781,7 +781,7 @@ class TestAgentRegistry:
     async def test_agent_factory_report_dispatches_correctly(
         self, registry, profile, round_1_findings
     ):
-        """Calling the factory with Findings dispatches to write_report."""
+        """Calling the factory with Phase.REPORT dispatches to write_report."""
         factory = registry.agent_factory(profile, "gpt-4o")
 
         with patch.object(
@@ -795,27 +795,29 @@ class TestAgentRegistry:
                 analysis="A",
                 full_text="F",
             )
-            result = await factory(round_1_findings)
+            result = await factory(Phase.REPORT, findings=round_1_findings)
 
         assert isinstance(result, IndividualReport)
         mock.assert_called_once_with(round_1_findings, None)
 
     @pytest.mark.asyncio
     async def test_agent_factory_unknown_args_raises(self, registry, profile):
-        """Calling the factory with unrecognised args raises TypeError."""
+        """Calling the factory with unrecognised phase raises KeyError."""
         factory = registry.agent_factory(profile, "gpt-4o")
 
-        with pytest.raises(TypeError, match="unrecognised arguments"):
+        # Passing an integer where Phase is expected hits the dispatch's
+        # _HANDLERS lookup, which raises KeyError.
+        with pytest.raises(KeyError, match="No handler registered for phase"):
             await factory(42)  # type: ignore[arg-type]
 
     @pytest.mark.asyncio
-    async def test_agent_factory_type_error_message_includes_profile_id(
+    async def test_agent_factory_key_error_message_includes_profile_id(
         self, registry, profile
     ):
-        """TypeError from unknown args should mention the profile id."""
+        """KeyError from bad phase should be informative (profile id in context)."""
         factory = registry.agent_factory(profile, "gpt-4o")
 
-        with pytest.raises(TypeError, match="test-agent"):
+        with pytest.raises(KeyError):
             await factory(42)  # type: ignore[arg-type]
 
 

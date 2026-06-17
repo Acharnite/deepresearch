@@ -7,22 +7,16 @@ calls.
 Dispatch pattern
 ----------------
 The orchestator's ``_build_agents`` expects ``agent_factory(profile, model_name)``
-to return a *single callable* that accepts different argument signatures per
-lifecycle phase:
-
-- ``(ResearchTopic,)``                          → Round 1 → ``Findings``
-- ``(SharedKnowledge,)``                        → Review   → ``FollowUpQuestions``
-- ``(ResearchTopic, SharedKnowledge)``           → Round 2 → ``IndividualReport``
-- ``(Findings,)``                                → Report   → ``IndividualReport``
-
-The dispatcher wraps a ``ResearchAgent``, keeping internal state (round 1
-findings, follow-up questions) so it can correctly sequence calls to the
-agent's abstract methods.
+to return a *single callable* that accepts a ``Phase`` enum plus keyword
+arguments.  Instead of the fragile ``isinstance``-based dispatch, the
+registry maintains a handler map (``_HANDLERS``) that routes each phase to
+the correct agent method.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable
+from enum import Enum
 from typing import Any, Callable
 
 from deepresearch.agents.research_agent import ResearchAgent
@@ -34,10 +28,29 @@ from deepresearch.models import (
     ClarificationResponse,
     Findings,
     FollowUpQuestions,
+    IndividualReport,
     ResearchTopic,
     SharedKnowledge,
 )
 from deepresearch.web.settings_manager import settings_manager
+
+
+class Phase(Enum):
+    """Lifecycle phases for agent dispatch.
+
+    Each phase maps to a specific agent method call in ``_HANDLERS``.
+    """
+
+    INITIAL_ROUND = "initial_round"
+    REVIEW = "review"
+    REFINEMENT = "refinement"
+    REPORT = "report"
+    CLARIFY = "clarify"
+    ROUND_2 = "round_2"
+    ROUND_N = "round_n"
+    CROSS_CHECK = "cross_check"
+    RED_TEAM = "red_team"
+    SCRIBE_COMPILE = "scribe_compile"
 
 
 class AgentRegistry:
@@ -52,6 +65,18 @@ class AgentRegistry:
             scribe_factory=lambda: registry.create_scribe_agent(),
         )
     """
+
+    _HANDLERS: dict[Phase, Callable] = {}
+
+    def dispatch(self, phase: Phase, **kwargs: Any) -> Any:
+        """Look up the handler for *phase* and call it with *kwargs*."""
+        handler = self._HANDLERS.get(phase)
+        if handler is None:
+            raise KeyError(
+                f"No handler registered for phase {phase!r}. "
+                f"Available: {list(self._HANDLERS)}"
+            )
+        return handler(self, **kwargs)
 
     def __init__(self, llm_client: LLMClient) -> None:
         self.llm = llm_client
@@ -158,87 +183,190 @@ class AgentRegistry:
                 except Exception:
                     pass  # Fire-and-forget.
 
-        async def dispatch(*args: Any, **kwargs: Any) -> Any:
+        # ── Phase → state string map ──────────────────────────────────────
+        _PHASE_STATE_MAP: dict[Phase, str] = {
+            Phase.INITIAL_ROUND: "researching",
+            Phase.REVIEW: "questioning",
+            Phase.REFINEMENT: "refining",
+            Phase.REPORT: "writing",
+            Phase.CLARIFY: "answering",
+            Phase.ROUND_2: "researching",
+            Phase.ROUND_N: "researching",
+        }
+
+        async def agent_func(phase: Phase, **kwargs: Any) -> Any:
+            """Phase-based dispatch — replaces the old isinstance chain.
+
+            The ``Orchestrator`` calls this function with a ``Phase`` enum
+            and keyword arguments.  Phase-specific state (round-1 findings,
+            follow-up questions) is managed through the closure and passed
+            along to the dispatch handlers.
+            """
             nonlocal _round_1, _questions
 
-            if len(args) == 1:
-                first = args[0]
-                if isinstance(first, ResearchTopic):
-                    # Round 1 — independent research.
-                    await _dispatch_state("researching")
-                    _round_1 = await agent.research_round_1(first)
-                    return _round_1
+            # 1. Emit state transition if applicable.
+            state = _PHASE_STATE_MAP.get(phase)
+            if state:
+                await _dispatch_state(state)
 
-                if isinstance(first, SharedKnowledge):
-                    # Follow-up questions.
-                    agent_ids = kwargs.get("agent_ids")
-                    await _dispatch_state("questioning")
-                    if agent_ids is not None:
-                        _questions = await agent.review_findings(
-                            first, agent_ids=agent_ids
-                        )
-                    else:
-                        _questions = await agent.review_findings(first)
-                    return _questions
-
-                if isinstance(first, FollowUpQuestions):
-                    # Refinement phase — refine findings from follow-up questions.
-                    await _dispatch_state("refining")
-                    if _round_1 is not None:
-                        _round_1 = await agent.refine_findings(first, _round_1)
-                    return _round_1 or Findings(
-                        agent_id=profile.id,
-                        round=1,
-                        summary="",
-                        key_points=[],
-                        perspective="",
-                    )
-
-                if isinstance(first, Findings):
-                    # Report writing (no Round 2).
-                    await _dispatch_state("writing")
-                    return await agent.write_report(first, None)
-
-                # Handle ClarificationQuery for the scribe's clarification protocol
-                if isinstance(first, ClarificationQuery):
-                    if hasattr(agent, "clarify"):
-                        await _dispatch_state("answering")
-                        return await agent.clarify(first)
-                    # Fallback: agent doesn't support clarify
-                    return ClarificationResponse(
-                        agent_id=first.agent_id,
-                        response="I cannot clarify this further with the available information.",
-                    )
-
-            if (
-                len(args) == 2
-                and isinstance(args[0], ResearchTopic)
-                and isinstance(args[1], SharedKnowledge)
-            ):
-                # Round 2 — the orchestrator expects an IndividualReport here.
-                questions = _questions or FollowUpQuestions(
-                    agent_id=profile.id, questions=[]
+            # 2. Inject closure-managed state for phases that need it.
+            if phase == Phase.REFINEMENT:
+                kwargs.setdefault("prior_findings", _round_1)
+            elif phase == Phase.ROUND_2:
+                kwargs.setdefault(
+                    "questions",
+                    _questions
+                    or FollowUpQuestions(agent_id=profile.id, questions=[]),
                 )
-                r2 = await agent.research_round_2(args[0], args[1], questions)
-                return await agent.write_report(_round_1, r2)
+                kwargs.setdefault("round_1_findings", _round_1)
 
-            if (
-                len(args) == 4
-                and isinstance(args[0], ResearchTopic)
-                and isinstance(args[1], SharedKnowledge)
-                and isinstance(args[2], int)
-                and isinstance(args[3], Findings)
-            ):
-                # Round N (3+) — deep iterative research.
-                await _dispatch_state("researching")
-                r_n = await agent.research_round_n(
-                    args[0], args[1], args[2], args[3]
-                )
-                return await agent.write_report(args[3], r_n)
-
-            raise TypeError(
-                f"Agent dispatcher received unrecognised arguments for "
-                f"profile '{profile.id}': {args}"
+            # 3. Dispatch via the handler map.
+            result = await self.dispatch(
+                phase,
+                agent=agent,
+                profile=profile,
+                **kwargs,
             )
 
-        return dispatch
+            # 4. Track lifecycle state for subsequent phases.
+            if phase in (Phase.INITIAL_ROUND, Phase.REFINEMENT):
+                _round_1 = result
+            elif phase == Phase.REVIEW:
+                _questions = result
+
+            return result
+
+        return agent_func
+
+
+# ── Phase Handler Registration ───────────────────────────────────────────
+# Each handler receives ``(self, **kwargs)`` from ``AgentRegistry.dispatch``.
+# The ``agent`` kwarg is the ``ResearchAgent`` instance; phase-specific
+# kwargs (``topic``, ``shared``, ``followup``, etc.) are forwarded from the
+# orchestrator via the ``agent_func`` closure.
+
+
+async def _handle_initial_round(
+    registry: AgentRegistry, *, agent: ResearchAgent, topic: ResearchTopic, **kwargs: Any
+) -> Findings:
+    """Phase.INITIAL_ROUND — call ``agent.research_round_1``."""
+    return await agent.research_round_1(topic)
+
+
+async def _handle_review(
+    registry: AgentRegistry,
+    *,
+    agent: ResearchAgent,
+    shared: SharedKnowledge,
+    **kwargs: Any,
+) -> FollowUpQuestions:
+    """Phase.REVIEW — call ``agent.review_findings``.
+
+    The orchestrator passes ``agent_ids`` via kwargs so agents know which
+    peers they can direct questions at.
+    """
+    agent_ids = kwargs.get("agent_ids")
+    if agent_ids is not None:
+        return await agent.review_findings(shared, agent_ids=agent_ids)
+    return await agent.review_findings(shared)
+
+
+async def _handle_refinement(
+    registry: AgentRegistry,
+    *,
+    agent: ResearchAgent,
+    followup: FollowUpQuestions,
+    **kwargs: Any,
+) -> Findings:
+    """Phase.REFINEMENT — call ``agent.refine_findings``.
+
+    ``prior_findings`` is injected by the ``agent_func`` closure from its
+    internal state (``_round_1``).
+    """
+    prior_findings: Findings | None = kwargs.get("prior_findings")
+    if prior_findings is not None:
+        return await agent.refine_findings(followup, prior_findings)
+    return Findings(
+        agent_id=agent.profile.id,
+        round=1,
+        summary="",
+        key_points=[],
+        perspective="",
+    )
+
+
+async def _handle_report(
+    registry: AgentRegistry,
+    *,
+    agent: ResearchAgent,
+    findings: Findings,
+    **kwargs: Any,
+) -> IndividualReport:
+    """Phase.REPORT — call ``agent.write_report`` (no Round 2)."""
+    return await agent.write_report(findings, None)
+
+
+async def _handle_clarify(
+    registry: AgentRegistry,
+    *,
+    agent: ResearchAgent,
+    query: ClarificationQuery,
+    **kwargs: Any,
+) -> ClarificationResponse:
+    """Phase.CLARIFY — call ``agent.clarify``."""
+    if hasattr(agent, "clarify"):
+        return await agent.clarify(query)
+    # Fallback: agent doesn't support clarify
+    return ClarificationResponse(
+        agent_id=query.agent_id,
+        response="I cannot clarify this further with the available information.",
+    )
+
+
+async def _handle_round_2(
+    registry: AgentRegistry,
+    *,
+    agent: ResearchAgent,
+    topic: ResearchTopic,
+    shared: SharedKnowledge,
+    **kwargs: Any,
+) -> IndividualReport:
+    """Phase.ROUND_2 — research round 2 then write report.
+
+    ``questions`` and ``round_1_findings`` are injected by the ``agent_func``
+    closure from its internal state.
+    """
+    questions: FollowUpQuestions = kwargs.get(
+        "questions",
+        FollowUpQuestions(agent_id=agent.profile.id, questions=[]),
+    )
+    round_1_findings: Findings | None = kwargs.get("round_1_findings")
+    r2 = await agent.research_round_2(topic, shared, questions)
+    return await agent.write_report(round_1_findings, r2)
+
+
+async def _handle_round_n(
+    registry: AgentRegistry,
+    *,
+    agent: ResearchAgent,
+    topic: ResearchTopic,
+    shared: SharedKnowledge,
+    round_num: int,
+    prev_findings: Findings,
+    **kwargs: Any,
+) -> IndividualReport:
+    """Phase.ROUND_N — deep iterative research (R3+)."""
+    r_n = await agent.research_round_n(topic, shared, round_num, prev_findings)
+    return await agent.write_report(prev_findings, r_n)
+
+
+# Build the handler map.
+AgentRegistry._HANDLERS = {
+    Phase.INITIAL_ROUND: _handle_initial_round,
+    Phase.REVIEW: _handle_review,
+    Phase.REFINEMENT: _handle_refinement,
+    Phase.REPORT: _handle_report,
+    Phase.CLARIFY: _handle_clarify,
+    Phase.ROUND_2: _handle_round_2,
+    Phase.ROUND_N: _handle_round_n,
+}

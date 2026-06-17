@@ -669,9 +669,9 @@ async def research_round_1(self, topic):
 | [#64](https://github.com/Acharnite/deepresearch/issues/64) | Token tracking fragmented | P1 | 3 | open | — | — |
 | [#65](https://github.com/Acharnite/deepresearch/issues/65) | Semaphore info label inverted | P1 | 3 | open | — | — |
 | [#66](https://github.com/Acharnite/deepresearch/issues/66) | Search rate limit + cache dead | P1 | 3 | closed 2026-06-17 | — | — |
-| [#67](https://github.com/Acharnite/deepresearch/issues/67) | Type-based dispatch fragile | P1 | 2 | open | — | — |
+| [#67](https://github.com/Acharnite/deepresearch/issues/67) | Type-based dispatch fragile | P1 | 2 | closed 2026-06-17 | — | — |
 | [#68](https://github.com/Acharnite/deepresearch/issues/68) | `orchestrator.py` 1771-line god class | P1 | 2 | open | — | — |
-| [#69](https://github.com/Acharnite/deepresearch/issues/69) | `_get_timeout` rename incomplete | P1 | 2 | open | — | — |
+| [#69](https://github.com/Acharnite/deepresearch/issues/69) | `_get_timeout` rename incomplete | P1 | 2 | closed 2026-06-17 | — | — |
 | [#70](https://github.com/Acharnite/deepresearch/issues/70) | ADR index lists 3 of 15 | P1 | 4 | open | — | — |
 | [#71](https://github.com/Acharnite/deepresearch/issues/71) | Anthropic cost key wrong | P2 | 3 | open | — | — |
 | [#72](https://github.com/Acharnite/deepresearch/issues/72) | Hardcoded `estimated_duration_seconds` | P2 | 3 | open | — | — |
@@ -684,7 +684,7 @@ async def research_round_1(self, topic):
 | [#79](https://github.com/Acharnite/deepresearch/issues/79) | Design doc §4.1 still 2-round FSM | P3 | 4 | open | — | — |
 | [#80](https://github.com/Acharnite/deepresearch/issues/80) | ADRs missing Documentation section | P3 | 4 | open | — | — |
 | [#81](https://github.com/Acharnite/deepresearch/issues/81) | Replace 3 event systems with EventStore | P1 | 2 | open | — | — |
-| [#82](https://github.com/Acharnite/deepresearch/issues/82) | Centralize `SessionConfig` dataclass | P1 | 2 | open | — | — |
+| [#82](https://github.com/Acharnite/deepresearch/issues/82) | Centralize `SessionConfig` dataclass | P1 | 2 | closed 2026-06-17 | — | — |
 | [#83](https://github.com/Acharnite/deepresearch/issues/83) | Move prompt templates to YAML | P2 | 4 | open | — | — |
 | [#84](https://github.com/Acharnite/deepresearch/issues/84) | Connection pool + circuit breaker | P2 | 3 | open | — | — |
 | [#85](https://github.com/Acharnite/deepresearch/issues/85) | OpenTelemetry tracing | P2 | 4 | open | — | — |
@@ -694,10 +694,10 @@ async def research_round_1(self, topic):
 | Phase | Issues | Closed | % |
 |-------|--------|--------|---|
 | Phase 1 (P0) | 9 | 9/9 | 100% |
-| Phase 2 (Arch) | 5 | 0/5 | 0% |
+| Phase 2 (Arch) | 5 | 3/5 | 60% |
 | Phase 3 (Stab/Perf) | 13 | 1/13 | 8% |
 | Phase 4 (Docs/Obs) | 8 | 0/8 | 0% |
-| **Total** | **33** | **10/33** | **30%** |
+| **Total** | **33** | **13/33** | **39%** |
 
 ## Update Protocol
 

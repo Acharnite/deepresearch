@@ -24,6 +24,7 @@ from deepresearch.config import (
     validate_profiles,
 )
 from deepresearch.llm.client import LLMClient, _lookup_cost
+from deepresearch.agents.registry import Phase
 from deepresearch.models import (
     AgentProfile,
     Findings,
@@ -502,7 +503,7 @@ class TestErrorHandling:
         orch = Orchestrator()
         topic = ResearchTopic(question="Test", time_budget="quick", model_mode="same")
 
-        async def failing_agent(topic):
+        async def failing_agent(phase, **kwargs):
             raise RuntimeError("Simulated crash")
 
         agents = {

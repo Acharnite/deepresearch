@@ -24,8 +24,10 @@ from typing import Any, Callable
 from rich.console import Console
 from rich.prompt import Prompt
 
+from deepresearch.agents.registry import Phase
 from deepresearch.collaboration import CollaborationBus
 from deepresearch.config import ConfigError
+from deepresearch.config.session import ModelAssignment, SessionConfig, TimeBudget
 from deepresearch.constants import MAX_ROUNDS_BY_BUDGET, PDF_MIN_HEALTHY_BYTES, TIME_BUDGET_SECONDS
 from deepresearch.models import (
     AgentProfile,
@@ -245,7 +247,7 @@ class Orchestrator:
             ``{agent_id: result}`` — only successful results are included.
             Failed agents are recorded via :meth:`handle_agent_failure`.
         """
-        timeout = self._get_timeout()
+        timeout = self._get_round_timeout()
         tasks: dict[str, asyncio.Task[Any]] = {}
 
         for agent_id, agent_fn in agents.items():
@@ -278,7 +280,11 @@ class Orchestrator:
                 agent_state="researching",
             )
 
-            coro = agent_fn(topic, shared) if shared is not None else agent_fn(topic)
+            coro = (
+                agent_fn(Phase.ROUND_2, topic=topic, shared=shared)
+                if shared is not None
+                else agent_fn(Phase.INITIAL_ROUND, topic=topic)
+            )
             tasks[agent_id] = asyncio.create_task(
                 asyncio.wait_for(coro, timeout=timeout),
             )
@@ -354,11 +360,12 @@ class Orchestrator:
 
             # ── Budget check after each agent ────────────────────────────
             if start_time is not None:
-                b = (
-                    self.session_config.time_budget_seconds
-                    if self.session_config
-                    else MAX_SESSION_DURATION
-                )
+                b = MAX_SESSION_DURATION
+                if self.session_config:
+                    if hasattr(self.session_config, 'budget'):
+                        b = self.session_config.budget.seconds
+                    else:
+                        b = self.session_config.time_budget_seconds
                 if time.monotonic() - start_time > min(MAX_SESSION_DURATION, b):
                     logger.warning(
                         "Time budget exceeded during round %d — cancelling remaining agents",
@@ -397,9 +404,9 @@ class Orchestrator:
 
             try:
                 coro = (
-                    agent_fn(topic, shared)
+                    agent_fn(Phase.ROUND_2, topic=topic, shared=shared)
                     if shared is not None
-                    else agent_fn(topic)
+                    else agent_fn(Phase.INITIAL_ROUND, topic=topic)
                 )
                 result = await asyncio.wait_for(coro, timeout=timeout)
                 result_size = len(str(result)) if result else 0
@@ -433,15 +440,20 @@ class Orchestrator:
 
         return results
 
-    def _get_timeout(self) -> int:
+    def _get_round_timeout(self) -> int:
         """Per-agent timeout based on session budget, rounds, and scribe reservation.
 
         Scribe gets 25% of budget (min 60s). Agents split the remaining 75%.
         """
         if self.session_config is None:
             return 120
-        b = self.session_config.time_budget_seconds
-        m = self.session_config.max_rounds
+        # Support both new (budget dataclass) and old (Pydantic) SessionConfig.
+        if hasattr(self.session_config, 'budget'):
+            b = self.session_config.budget.seconds
+            m = self.session_config.budget.max_rounds
+        else:
+            b = self.session_config.time_budget_seconds
+            m = self.session_config.max_rounds
         scribe_budget = max(60, int(b * 0.25))
         agent_budget = b - scribe_budget
         per_round = max(90, int(agent_budget / m))
@@ -537,9 +549,14 @@ class Orchestrator:
 
         # 3. Max rounds — hard safety cap
         if self.session_config is not None:
-            if round_num >= self.session_config.max_rounds:
+            max_r = (
+                self.session_config.budget.max_rounds
+                if hasattr(self.session_config, 'budget')
+                else self.session_config.max_rounds
+            )
+            if round_num >= max_r:
                 logger.info(
-                    "Max rounds reached (%d) — stopping", self.session_config.max_rounds
+                    "Max rounds reached (%d) — stopping", max_r
                 )
                 return False
 
@@ -575,7 +592,7 @@ class Orchestrator:
         Agent IDs are passed so each agent knows which other agents are
         available for targeted questions.
         """
-        timeout = max(30, self._get_timeout() // 2)
+        timeout = max(30, self._get_round_timeout() // 2)
         agent_ids = list(agents.keys())
         tasks: dict[str, asyncio.Task[Any]] = {}
 
@@ -583,10 +600,12 @@ class Orchestrator:
             if agent_id in self.failed_agents:
                 continue
 
-            # The dispatch wrapper accepts SharedKnowledge; we inject
-            # agent_ids via kwargs so the agent can direct questions.
+            # Phase.REVIEW dispatch with agent_ids so the agent knows
+            # which peers it can direct questions at.
             async def _call_with_ids(_fn=agent_fn, _ids=agent_ids):
-                return await _fn(shared, agent_ids=_ids)
+                return await _fn(
+                    Phase.REVIEW, shared=shared, agent_ids=_ids
+                )
 
             tasks[agent_id] = asyncio.create_task(
                 asyncio.wait_for(_call_with_ids(), timeout=timeout),
@@ -710,8 +729,8 @@ class Orchestrator:
             if hasattr(agent, "clarify"):
                 return await agent.clarify(query)
 
-            # The agent might be a dispatch wrapper — try calling directly.
-            return await agent(query)
+            # The agent might be a dispatch wrapper — call with Phase.CLARIFY.
+            return await agent(Phase.CLARIFY, query=query)
 
         except Exception as exc:
             logger.warning(
@@ -875,7 +894,18 @@ class Orchestrator:
         round_history: list[SharedKnowledge] = []
         latest_shared: SharedKnowledge | None = None
 
-        while round_num <= (config.max_rounds if config.max_rounds else 4):
+        max_r = (
+            config.budget.max_rounds
+            if hasattr(config, 'budget')
+            else getattr(config, 'max_rounds', 4)
+        )
+        budget_secs = (
+            config.budget.seconds
+            if hasattr(config, 'budget')
+            else getattr(config, 'time_budget_seconds', 300)
+        )
+
+        while round_num <= (max_r if max_r else 4):
             # ── Cancel check ──────────────────────────────────────────
             if self._cancel_event and self._cancel_event.is_set():
                 logger.info("Cancel event set — aborting round loop")
@@ -883,7 +913,7 @@ class Orchestrator:
 
             # ── Time budget check ────────────────────────────────────
             if time.monotonic() - start_time > min(
-                MAX_SESSION_DURATION, config.time_budget_seconds
+                MAX_SESSION_DURATION, budget_secs
             ):
                 logger.info("Time budget exceeded — stopping")
                 if self._cancel_event:
@@ -1077,7 +1107,7 @@ class Orchestrator:
         Dispatches with (topic, shared, round_num, prev_findings) so the
         registry routes to research_round_n.
         """
-        timeout = self._get_timeout()
+        timeout = self._get_round_timeout()
         tasks: dict[str, asyncio.Task[Any]] = {}
         for agent_id, agent_fn in agents.items():
             if agent_id in self.failed_agents:
@@ -1113,7 +1143,13 @@ class Orchestrator:
                 agent_state="researching",
             )
 
-            coro = agent_fn(topic, shared, round_num, prev_findings)
+            coro = agent_fn(
+                Phase.ROUND_N,
+                topic=topic,
+                shared=shared,
+                round_num=round_num,
+                prev_findings=prev_findings,
+            )
             tasks[agent_id] = asyncio.create_task(
                 asyncio.wait_for(coro, timeout=timeout),
             )
@@ -1177,11 +1213,12 @@ class Orchestrator:
 
             # ── Budget check after each agent ────────────────────────────
             if start_time is not None:
-                b = (
-                    self.session_config.time_budget_seconds
-                    if self.session_config
-                    else MAX_SESSION_DURATION
-                )
+                b = MAX_SESSION_DURATION
+                if self.session_config:
+                    if hasattr(self.session_config, 'budget'):
+                        b = self.session_config.budget.seconds
+                    else:
+                        b = self.session_config.time_budget_seconds
                 if time.monotonic() - start_time > min(MAX_SESSION_DURATION, b):
                     logger.warning(
                         "Time budget exceeded during round %d — cancelling remaining agents",
@@ -1230,7 +1267,13 @@ class Orchestrator:
             )
 
             try:
-                coro = agent_fn(topic, shared, round_num, prev_findings)
+                coro = agent_fn(
+                    Phase.ROUND_N,
+                    topic=topic,
+                    shared=shared,
+                    round_num=round_num,
+                    prev_findings=prev_findings,
+                )
                 result = await asyncio.wait_for(coro, timeout=timeout)
                 result_size = len(str(result)) if result else 0
 
@@ -1291,8 +1334,10 @@ class Orchestrator:
             )
             try:
                 refined_result = await asyncio.wait_for(
-                    agents[agent_id](targeted_followup),
-                    timeout=max(30, self._get_timeout() // 2),
+                    agents[agent_id](
+                        Phase.REFINEMENT, followup=targeted_followup
+                    ),
+                    timeout=max(30, self._get_round_timeout() // 2),
                 )
                 if (
                     refined_result
@@ -1309,11 +1354,12 @@ class Orchestrator:
 
         # ── Budget check after refinement ────────────────────────────────
         if start_time is not None:
-            b = (
-                self.session_config.time_budget_seconds
-                if self.session_config
-                else MAX_SESSION_DURATION
-            )
+            b = MAX_SESSION_DURATION
+            if self.session_config:
+                if hasattr(self.session_config, 'budget'):
+                    b = self.session_config.budget.seconds
+                else:
+                    b = self.session_config.time_budget_seconds
             if time.monotonic() - start_time > min(MAX_SESSION_DURATION, b):
                 logger.warning("Time budget exceeded during refinement phase")
                 self._log_event("budget_exceeded_during_round", round=0, phase="refinement")

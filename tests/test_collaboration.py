@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from deepresearch.agents.registry import Phase
 from deepresearch.collaboration import CollaborationBus
 from deepresearch.models import (
     AgentProfile,
@@ -550,31 +551,9 @@ def build_bus_aware_mock_agent_factory():
 
     def factory(profile: AgentProfile, model_name: str, **kwargs):
         async def agent_fn(*args, **kwargs):
-            first = args[0] if args else None
+            phase = args[0] if args else None
 
-            if isinstance(first, ResearchTopic):
-                if len(args) > 1 and isinstance(args[1], SharedKnowledge):
-                    # Round 2 or R3+ dispatch
-                    if len(args) == 4 and isinstance(args[2], int) and isinstance(args[3], Findings):
-                        # R3+ dispatch — return IndividualReport
-                        return IndividualReport(
-                            agent_id=profile.id,
-                            title=f"Report by {profile.name}",
-                            perspective_summary=f"{profile.name}'s perspective",
-                            key_insights=["Deep insight"],
-                            analysis=f"Analysis by {profile.name}",
-                            full_text=f"Full report by {profile.name}.",
-                        )
-                    return IndividualReport(
-                        agent_id=profile.id,
-                        title=f"Refined Report by {profile.name}",
-                        perspective_summary=f"{profile.name}'s refined perspective",
-                        key_insights=["Cross-perspective analysis insight"],
-                        analysis=f"Analysis by {profile.name}",
-                        metaphors_or_analogies=[],
-                        open_questions=["What remains unexplored?"],
-                        full_text=f"Full report by {profile.name}.",
-                    )
+            if phase == Phase.INITIAL_ROUND:
                 return Findings(
                     agent_id=profile.id,
                     round=1,
@@ -587,7 +566,7 @@ def build_bus_aware_mock_agent_factory():
                     confidence=0.7,
                 )
 
-            if isinstance(first, FollowUpQuestions):
+            if phase == Phase.REFINEMENT:
                 # Refinement phase — return updated Findings
                 return Findings(
                     agent_id=profile.id,
@@ -598,7 +577,20 @@ def build_bus_aware_mock_agent_factory():
                     confidence=0.8,
                 )
 
-            if isinstance(first, SharedKnowledge):
+            if phase in (Phase.ROUND_2, Phase.ROUND_N):
+                # Round 2 or R3+ — return IndividualReport
+                return IndividualReport(
+                    agent_id=profile.id,
+                    title=f"Refined Report by {profile.name}",
+                    perspective_summary=f"{profile.name}'s refined perspective",
+                    key_insights=["Cross-perspective analysis insight"],
+                    analysis=f"Analysis by {profile.name}",
+                    metaphors_or_analogies=[],
+                    open_questions=["What remains unexplored?"],
+                    full_text=f"Full report by {profile.name}.",
+                )
+
+            if phase == Phase.REVIEW:
                 return FollowUpQuestions(
                     agent_id=profile.id,
                     questions=[
@@ -786,8 +778,8 @@ class TestOrchestratorBusIntegration:
             async def agent_fn(*args, **kwargs):
                 if profile.id == "agent-alpha":
                     raise RuntimeError("Agent Alpha failure")
-                first = args[0] if args else None
-                if isinstance(first, ResearchTopic):
+                phase = args[0] if args else None
+                if phase == Phase.INITIAL_ROUND:
                     return Findings(
                         agent_id=profile.id,
                         round=1,
@@ -796,7 +788,7 @@ class TestOrchestratorBusIntegration:
                         perspective="P",
                         confidence=0.5,
                     )
-                if isinstance(first, SharedKnowledge):
+                if phase == Phase.REVIEW:
                     return FollowUpQuestions(
                         agent_id=profile.id,
                         questions=["Follow-up Q?"],

@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from deepresearch.agents.registry import Phase
 from deepresearch.models import (
     AgentProfile,
     Findings,
@@ -150,67 +151,52 @@ def mock_agent_factory(mock_findings, mock_followup, mock_report) -> MagicMock:
 
     def factory(profile: AgentProfile, model_name: str, **extra):
         async def agent_fn(*args, **kwargs):
-            # Inspect first arg type to determine behavior.
-            if args:
-                first = args[0]
-                if isinstance(first, ResearchTopic) and (
-                    len(args) == 1 or args[1] is None
-                ):
-                    return Findings(
-                        agent_id=profile.id,
-                        round=1,
-                        summary=f"Findings by {profile.name}",
-                        key_points=["Key point"],
-                        perspective="Perspective",
-                        confidence=0.7,
-                    )
-                elif isinstance(first, FollowUpQuestions):
-                    # Refinement phase — return updated Findings.
-                    return Findings(
-                        agent_id=profile.id,
-                        round=1,
-                        summary=f"Refined findings by {profile.name}",
-                        key_points=["Refined point"],
-                        perspective="Refined perspective",
-                        confidence=0.75,
-                    )
-                elif (
-                    isinstance(first, ResearchTopic)
-                    and len(args) > 1
-                    and isinstance(args[1], SharedKnowledge)
-                ):
-                    # Round 2 or R3+ — check if 4 args (R3+)
-                    if len(args) == 4 and isinstance(args[2], int) and isinstance(args[3], Findings):
-                        return IndividualReport(
-                            agent_id=profile.id,
-                            title=f"Report by {profile.name}",
-                            perspective_summary="Summary",
-                            key_insights=["Insight"],
-                            analysis="Analysis",
-                            full_text="Full text",
-                        )
-                    return IndividualReport(
-                        agent_id=profile.id,
-                        title=f"Report by {profile.name}",
-                        perspective_summary="Summary",
-                        key_insights=["Insight"],
-                        analysis="Analysis",
-                        full_text="Full text",
-                    )
-                elif isinstance(first, SharedKnowledge):
-                    return FollowUpQuestions(
-                        agent_id=profile.id,
-                        questions=["What else can we explore?"],
-                    )
-                elif isinstance(first, Findings):
-                    return IndividualReport(
-                        agent_id=profile.id,
-                        title=f"Report by {profile.name}",
-                        perspective_summary="Summary",
-                        key_insights=["Insight"],
-                        analysis="Analysis",
-                        full_text="Full text",
-                    )
+            # Dispatch based on Phase enum (first positional arg).
+            phase = args[0] if args else None
+
+            if phase == Phase.INITIAL_ROUND:
+                return Findings(
+                    agent_id=profile.id,
+                    round=1,
+                    summary=f"Findings by {profile.name}",
+                    key_points=["Key point"],
+                    perspective="Perspective",
+                    confidence=0.7,
+                )
+            elif phase == Phase.REFINEMENT:
+                # Refinement phase — return updated Findings.
+                return Findings(
+                    agent_id=profile.id,
+                    round=1,
+                    summary=f"Refined findings by {profile.name}",
+                    key_points=["Refined point"],
+                    perspective="Refined perspective",
+                    confidence=0.75,
+                )
+            elif phase in (Phase.ROUND_2, Phase.ROUND_N):
+                # Round 2 or R3+ — return IndividualReport.
+                return IndividualReport(
+                    agent_id=profile.id,
+                    title=f"Report by {profile.name}",
+                    perspective_summary="Summary",
+                    key_insights=["Insight"],
+                    analysis="Analysis",
+                    full_text="Full text",
+                )
+            elif phase == Phase.REVIEW:
+                return FollowUpQuestions(
+                    agent_id=profile.id,
+                    questions=["What else can we explore?"],
+                )
+            elif phase == Phase.REPORT:
+                return IndividualReport(
+                    agent_id=profile.id,
+                    title=f"Report by {profile.name}",
+                    perspective_summary="Summary",
+                    key_insights=["Insight"],
+                    analysis="Analysis",
+                    full_text="Full text",
+                )
             return mock_findings
 
         agent_fn.__name__ = f"agent_{profile.id}"
@@ -454,7 +440,7 @@ class TestRunRound:
         orch = Orchestrator(profiles=profiles, model_configs=model_configs)
         topic = ResearchTopic(question="Test", time_budget="quick", model_mode="same")
 
-        async def failing_agent(topic):
+        async def failing_agent(phase, **kwargs):
             raise RuntimeError("Agent crashed")
 
         successful = Findings(
@@ -481,11 +467,11 @@ class TestRunRound:
         marked as failed with "timeout (retry failed)".
         """
         orch = Orchestrator(profiles=profiles, model_configs=model_configs)
-        # Override _get_timeout to return a very short timeout (0.1s).
-        orch._get_timeout = lambda: 0.1  # type: ignore[method-assign]
+        # Override _get_round_timeout to return a very short timeout (0.1s).
+        orch._get_round_timeout = lambda: 0.1  # type: ignore[method-assign]
         topic = ResearchTopic(question="Test", time_budget="quick", model_mode="same")
 
-        async def slow_agent(topic):
+        async def slow_agent(phase, **kwargs):
             await asyncio.sleep(10)  # much longer than timeout
             return Findings(
                 agent_id="slow", round=1, summary="S", key_points=["K"], perspective="P"
@@ -732,7 +718,8 @@ class TestFullLifecycle:
                 if profile.id == "agent-a":
                     raise RuntimeError("Agent A failure")
                 # Agent B succeeds.
-                if args and isinstance(args[0], ResearchTopic):
+                phase = args[0] if args else None
+                if phase == Phase.INITIAL_ROUND:
                     return Findings(
                         agent_id=profile.id,
                         round=1,
@@ -900,7 +887,8 @@ async def test_refinement_survives_agent_failure(profiles, model_configs):
         async def agent_fn(*args, **kwargs):
             if profile.id == "agent-a":
                 raise RuntimeError("Agent A crashed during refinement")
-            if args and isinstance(args[0], ResearchTopic):
+            phase = args[0] if args else None
+            if phase == Phase.INITIAL_ROUND:
                 return Findings(
                     agent_id=profile.id,
                     round=1,
@@ -908,7 +896,7 @@ async def test_refinement_survives_agent_failure(profiles, model_configs):
                     key_points=["K"],
                     perspective="P",
                 )
-            if args and isinstance(args[0], SharedKnowledge):
+            if phase == Phase.REVIEW:
                 return FollowUpQuestions(
                     agent_id=profile.id,
                     questions=["Q?"],

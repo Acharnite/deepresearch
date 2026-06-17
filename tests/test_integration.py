@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from deepresearch.agents.registry import Phase
 from deepresearch.models import (
     AgentProfile,
     ClarificationQuery,
@@ -108,26 +109,27 @@ def build_mock_agent_factory():
 
     def factory(profile: AgentProfile, model_name: str, **extra):
         async def agent_fn(*args, **kwargs):
-            first = args[0] if args else None
+            phase = args[0] if args else None
 
-            if isinstance(first, ResearchTopic):
-                if len(args) > 1 and isinstance(args[1], SharedKnowledge):
-                    # Round 2: refined research.
-                    shared = args[1]
-                    return IndividualReport(
-                        agent_id=profile.id,
-                        title=f"Refined Report by {profile.name}",
-                        perspective_summary=f"{profile.name}'s refined perspective "
-                        f"in light of {len(shared.all_summaries)} other perspectives.",
-                        key_insights=[
-                            f"{profile.name}'s unique insight on the topic",
-                            "Cross-perspective analysis reveals new dimensions",
-                        ],
-                        analysis=f"Detailed analysis by {profile.name} using {profile.methodology}",
-                        metaphors_or_analogies=[],
-                        open_questions=["What remains unexplored?"],
-                        full_text=f"Full refined report by {profile.name}.",
-                    )
+            if phase == Phase.ROUND_2:
+                # Round 2: refined research.
+                shared = kwargs.get("shared")
+                return IndividualReport(
+                    agent_id=profile.id,
+                    title=f"Refined Report by {profile.name}",
+                    perspective_summary=f"{profile.name}'s refined perspective "
+                    f"in light of {len(shared.all_summaries) if shared else 0} other perspectives.",
+                    key_insights=[
+                        f"{profile.name}'s unique insight on the topic",
+                        "Cross-perspective analysis reveals new dimensions",
+                    ],
+                    analysis=f"Detailed analysis by {profile.name} using {profile.methodology}",
+                    metaphors_or_analogies=[],
+                    open_questions=["What remains unexplored?"],
+                    full_text=f"Full refined report by {profile.name}.",
+                )
+
+            if phase == Phase.INITIAL_ROUND:
                 # Round 1: independent research.
                 return Findings(
                     agent_id=profile.id,
@@ -141,7 +143,7 @@ def build_mock_agent_factory():
                     confidence=0.7,
                 )
 
-            if isinstance(first, SharedKnowledge):
+            if phase == Phase.REVIEW:
                 # Follow-up questions phase.
                 return FollowUpQuestions(
                     agent_id=profile.id,
@@ -151,7 +153,7 @@ def build_mock_agent_factory():
                     ],
                 )
 
-            # Report writing (arg is typically Findings from Round 1).
+            # Default: report writing (Phase.REPORT or others).
             return IndividualReport(
                 agent_id=profile.id,
                 title=f"Final Report by {profile.name}",
@@ -522,17 +524,17 @@ class TestCollaborationBusIntegration:
                 if profile.id == "agent-alpha":
                     raise RuntimeError("Alpha failure")
                 # Agent Beta (and Gamma if present) succeed.
-                first = args[0] if args else None
-                if isinstance(first, ResearchTopic):
-                    if len(args) > 1 and isinstance(args[1], SharedKnowledge):
-                        return IndividualReport(
-                            agent_id=profile.id,
-                            title=f"R by {profile.name}",
-                            perspective_summary="S",
-                            key_insights=["I"],
-                            analysis="A",
-                            full_text="F",
-                        )
+                phase = args[0] if args else None
+                if phase == Phase.ROUND_2:
+                    return IndividualReport(
+                        agent_id=profile.id,
+                        title=f"R by {profile.name}",
+                        perspective_summary="S",
+                        key_insights=["I"],
+                        analysis="A",
+                        full_text="F",
+                    )
+                if phase == Phase.INITIAL_ROUND:
                     return Findings(
                         agent_id=profile.id,
                         round=1,
@@ -541,7 +543,7 @@ class TestCollaborationBusIntegration:
                         perspective="P",
                         confidence=0.5,
                     )
-                if isinstance(first, SharedKnowledge):
+                if phase == Phase.REVIEW:
                     return FollowUpQuestions(
                         agent_id=profile.id,
                         questions=["Q?"],

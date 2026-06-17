@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import json as _json
+from deepresearch.config.session import SessionConfig, TimeBudget
 from deepresearch.constants import MAX_ROUNDS_BY_BUDGET, PDF_MIN_HEALTHY_BYTES, TIME_BUDGET_SECONDS
 from deepresearch.web.event_bus import EventBus
 from deepresearch.web.settings_manager import settings_manager
@@ -143,16 +144,16 @@ class MultiSessionManager:
         session_id = str(uuid.uuid4())[:8]
         bus = EventBus()
 
-        # Calculate seconds from named budget or direct value.
+        # Calculate seconds and rounds from TimeBudget (single source of truth).
         if time_budget_seconds is not None:
-            secs = time_budget_seconds
+            budget = TimeBudget(keyword="custom", seconds=time_budget_seconds, max_rounds=4)
         else:
-            secs = TIME_BUDGET_SECONDS.get(time_budget, 300)
+            budget = TimeBudget.from_keyword(time_budget)
+        secs = budget.seconds
 
         # Derive max_rounds from budget if not explicitly provided.
-        max_rounds_by_budget = MAX_ROUNDS_BY_BUDGET.copy()
         if max_rounds is None:
-            max_rounds = max_rounds_by_budget.get(time_budget, 4)
+            max_rounds = budget.max_rounds
         # Clamp to valid range.
         max_rounds = max(1, min(max_rounds, 10))
 
