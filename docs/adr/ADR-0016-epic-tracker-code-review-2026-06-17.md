@@ -1,8 +1,9 @@
 ---
 phase:
-  current: 2
+  current: 3
   total: 4
   status:
+     3: active
      1: done
      2: done
 ---
@@ -255,37 +256,37 @@ that the open issues have been waiting for.
 
 **Issue order (within the phase):**
 
-1. **#63 deterministic seed** — `hash()` → `hashlib.sha256` (or
+- [x] **#63 deterministic seed** — `hash()` → `hashlib.sha256` (or
    `mmh3`). Required for N5 determinism. Low risk, isolated.
-2. **#62 empty-result retry** — content-based check using
+- [ ] **#62 empty-result retry** — content-based check using
    `summary`/`key_points` instead of `len(str(...))`. Low risk.
-3. **#65 semaphore info** — invert the label, or use the
+- [x] **#65 semaphore info** — invert the label, or use the
    `SearchSemaphore` wrapper class. Low risk.
-4. **#64 token tracker** — implement `TokenTracker` shared
+- [ ] **#64 token tracker** — implement `TokenTracker` shared
    across `LLMClient` instances; add `GET /api/sessions/{id}/cost`.
-5. **#66 search rate limit + cache** — implement the dead
+- [x] **#66 search rate limit + cache** — implement the dead
    `MIN_SEARCH_INTERVAL` and `_search_cache` (Option A from the
    issue), or delete them. Decision recorded in CHANGELOG.
-6. **#71 Anthropic cost key** — fix `claude-haiku-3-5` →
+- [x] **#71 Anthropic cost key** — fix `claude-haiku-3-5` →
    `claude-3-5-haiku-20241022` (and similar model ID
    mismatches).
-7. **#72 estimated duration** — replace hardcoded 360/600/900
+- [x] **#72 estimated duration** — replace hardcoded 360/600/900
    with `TIME_BUDGETS[...]` from constants.
-8. **#73 model connectivity default** — drop the `'gpt-4o'`
+- [x] **#73 model connectivity default** — drop the `'gpt-4o'`
    fallback, use the first configured model or fail with a
    helpful error.
-9. **#74 Scribe budget** — increase from 25% to 40% with a
+- [x] **#74 Scribe budget** — increase from 25% to 40% with a
    120-second floor.
-10. **#75 path traversal** — `pathlib.PurePosixPath` validation
+- [x] **#75 path traversal** — `pathlib.PurePosixPath` validation
     + `is_relative_to(DOWNLOADS_DIR)` containment check.
-11. **#84 connection pool + circuit breaker** — shared
+- [ ] **#84 connection pool + circuit breaker** — shared
     `httpx.AsyncClient` (ClassVar), per-model `CircuitBreaker`.
     Benchmark: ≥2× speedup on a 10-call session.
 
 **Exit criteria:**
 
-- [ ] All 13 P1+P2 bugs and refactors (#62–#66, #71–#75, #84)
-      closed
+- [ ] 8/11 P1+P2 bugs and refactors (#62–#66, #71–#75, #84)
+      closed (#63, #65, #66, #71–#75 done)
 - [ ] Determinism test passes with `PYTHONHASHSEED=0` and
       `PYTHONHASHSEED=42`
 - [ ] `GET /api/sessions/{id}/cost` returns accurate per-model
@@ -668,19 +669,19 @@ async def research_round_1(self, topic):
 | [#60](https://github.com/Acharnite/deepresearch/issues/60) | DB writers race | P0 | 1 | closed 2026-06-17 | — | — |
 | [#61](https://github.com/Acharnite/deepresearch/issues/61) | Tasks not cancelled on budget exit | P0 | 1 | closed 2026-06-17 | — | — |
 | [#62](https://github.com/Acharnite/deepresearch/issues/62) | Empty-result retry uses repr length | P1 | 3 | open | — | — |
-| [#63](https://github.com/Acharnite/deepresearch/issues/63) | Deterministic seed uses `hash()` | P1 | 3 | open | — | — |
+| [#63](https://github.com/Acharnite/deepresearch/issues/63) | Deterministic seed uses `hash()` | P1 | 3 | closed 2026-06-17 | — | — |
 | [#64](https://github.com/Acharnite/deepresearch/issues/64) | Token tracking fragmented | P1 | 3 | open | — | — |
-| [#65](https://github.com/Acharnite/deepresearch/issues/65) | Semaphore info label inverted | P1 | 3 | open | — | — |
+| [#65](https://github.com/Acharnite/deepresearch/issues/65) | Semaphore info label inverted | P1 | 3 | closed 2026-06-17 | — | — |
 | [#66](https://github.com/Acharnite/deepresearch/issues/66) | Search rate limit + cache dead | P1 | 3 | closed 2026-06-17 | — | — |
 | [#67](https://github.com/Acharnite/deepresearch/issues/67) | Type-based dispatch fragile | P1 | 2 | closed 2026-06-17 | — | — |
 | [#68](https://github.com/Acharnite/deepresearch/issues/68) | `orchestrator.py` 1771-line god class | P1 | 2 | closed 2026-06-17 | — | — |
 | [#69](https://github.com/Acharnite/deepresearch/issues/69) | `_get_timeout` rename incomplete | P1 | 2 | closed 2026-06-17 | — | — |
 | [#70](https://github.com/Acharnite/deepresearch/issues/70) | ADR index lists 3 of 15 | P1 | 4 | open | — | — |
-| [#71](https://github.com/Acharnite/deepresearch/issues/71) | Anthropic cost key wrong | P2 | 3 | open | — | — |
-| [#72](https://github.com/Acharnite/deepresearch/issues/72) | Hardcoded `estimated_duration_seconds` | P2 | 3 | open | — | — |
-| [#73](https://github.com/Acharnite/deepresearch/issues/73) | `'gpt-4o'` connectivity fallback | P2 | 3 | open | — | — |
-| [#74](https://github.com/Acharnite/deepresearch/issues/74) | Scribe budget 25% too aggressive | P2 | 3 | open | — | — |
-| [#75](https://github.com/Acharnite/deepresearch/issues/75) | Path traversal protection incomplete | P2 | 3 | open | — | — |
+| [#71](https://github.com/Acharnite/deepresearch/issues/71) | Anthropic cost key wrong | P2 | 3 | closed 2026-06-17 | — | — |
+| [#72](https://github.com/Acharnite/deepresearch/issues/72) | Hardcoded `estimated_duration_seconds` | P2 | 3 | closed 2026-06-17 | — | — |
+| [#73](https://github.com/Acharnite/deepresearch/issues/73) | `'gpt-4o'` connectivity fallback | P2 | 3 | closed 2026-06-17 | — | — |
+| [#74](https://github.com/Acharnite/deepresearch/issues/74) | Scribe budget 25% too aggressive | P2 | 3 | closed 2026-06-17 | — | — |
+| [#75](https://github.com/Acharnite/deepresearch/issues/75) | Path traversal protection incomplete | P2 | 3 | closed 2026-06-17 | — | — |
 | [#76](https://github.com/Acharnite/deepresearch/issues/76) | Design doc version stale | P3 | 4 | open | — | — |
 | [#77](https://github.com/Acharnite/deepresearch/issues/77) | CHANGELOG missing v0.11.0–0.11.2 | P3 | 4 | open | — | — |
 | [#78](https://github.com/Acharnite/deepresearch/issues/78) | TODO.md shows ADR-0015 as not done | P3 | 4 | open | — | — |
@@ -699,9 +700,9 @@ async def research_round_1(self, topic):
 | Phase 1 (P0) | 9 | 9/9 | 100% |
 | Phase 2 (Arch) | 5 | 5/5 | 100% |
 | Phase 2 complete | — | ✅ | — |
-| Phase 3 (Stab/Perf) | 13 | 1/13 | 8% |
+| Phase 3 (Stab/Perf) | 13 | 8/13 | 62% |
 | Phase 4 (Docs/Obs) | 8 | 0/8 | 0% |
-| **Total** | **33** | **15/33** | **45%** |
+| **Total** | **33** | **22/33** | **67%** |
 
 ## Update Protocol
 

@@ -267,7 +267,7 @@ async def web_search(
 def get_search_semaphore_info() -> dict[str, int]:
     """Return current search concurrency state for the /api/system/concurrency endpoint."""
     return {
-        "active_searches": _search_semaphore._value,
+        "active_searches": 3 - _search_semaphore._value,
         "max_searches": 3,
     }
 

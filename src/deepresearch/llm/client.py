@@ -22,7 +22,7 @@ MODEL_COST_PER_1K_INPUT: dict[str, float] = {
     "gpt-4o": 0.0025,
     "gpt-4o-mini": 0.00015,
     "claude-sonnet-4-20250514": 0.003,
-    "claude-haiku-3-5": 0.0008,
+    "claude-3-5-haiku-20241022": 0.0008,
     "openrouter/opencode/go": 0.0,  # OpenRouter — free tier
     "openrouter/opencode/zen": 0.0,  # OpenRouter — free tier
     "ollama/llama3.1": 0.0,  # Local (Ollama)
@@ -33,7 +33,7 @@ MODEL_COST_PER_1K_OUTPUT: dict[str, float] = {
     "gpt-4o": 0.01,
     "gpt-4o-mini": 0.0006,
     "claude-sonnet-4-20250514": 0.015,
-    "claude-haiku-3-5": 0.004,
+    "claude-3-5-haiku-20241022": 0.004,
     "openrouter/opencode/go": 0.0,  # OpenRouter — free tier
     "openrouter/opencode/zen": 0.0,  # OpenRouter — free tier
     "ollama/llama3.1": 0.0,  # Local (Ollama)

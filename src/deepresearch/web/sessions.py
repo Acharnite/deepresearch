@@ -174,7 +174,22 @@ class MultiSessionManager:
         self._sessions[session_id] = info
 
         # ── Model connectivity check ───────────────────────────────────
-        test_model = selected_model or "gpt-4o"
+        test_model = selected_model
+        if not test_model:
+            # Fall back to the first configured default model.
+            try:
+                from deepresearch.config import load_model_config
+                model_configs = load_model_config()
+                default_model = next(
+                    (m for m in model_configs if m.get("default")), model_configs[0] if model_configs else None
+                )
+                test_model = default_model["id"] if default_model else None
+            except Exception:
+                test_model = None
+        if not test_model:
+            raise ValueError(
+                "No model configured. Set 'model' in request body or configure a default."
+            )
         try:
             from deepresearch.llm.client import LLMClient
 

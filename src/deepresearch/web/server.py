@@ -13,7 +13,7 @@ import logging.handlers
 import os
 import time
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, AsyncGenerator
 
 import httpx
@@ -26,7 +26,7 @@ from fastapi.staticfiles import StaticFiles
 
 from deepresearch import __version__ as _deepresearch_version
 from deepresearch.config import load_agent_profiles, load_model_config
-from deepresearch.constants import TIME_BUDGET_SECONDS
+from deepresearch.constants import TIME_BUDGETS, TIME_BUDGET_SECONDS
 from deepresearch.web.event_bus import event_bus as global_event_bus
 from deepresearch.web.sessions import multi_session_manager
 from deepresearch.web.settings_manager import PROVIDERS, settings_manager, context_window_manager
@@ -348,7 +348,10 @@ async def get_session(session_id: str) -> JSONResponse:
             "status": info.status,
             "time_budget": info.time_budget,
             "time_budget_seconds": info.time_budget_seconds,
-            "estimated_duration_seconds": TIME_BUDGET_SECONDS.get(info.time_budget, 600),
+            "estimated_duration_seconds": {
+                kw: v["seconds"]
+                for kw, v in TIME_BUDGETS.items()
+            },
             "model_mode": info.model_mode,
             "created_at": info.created_at,
             "completed_at": info.completed_at,
@@ -602,14 +605,20 @@ async def download_file(session_id: str, filename: str) -> Any:
     """Download a generated file (PDF, HTML, or fallback text) for a session."""
     from fastapi.responses import FileResponse
 
-    # Prevent path traversal
+    # PurePosixPath validation — rejects absolute paths and ".." lexically
+    requested_path = PurePosixPath(filename)
+    if not requested_path.is_relative_to(PurePosixPath(".")):
+        return JSONResponse({"error": "Invalid path"}, status_code=403)
+
+    # Prevent path traversal (legacy string-level check)
     if ".." in filename or "/" in filename or "\\" in filename:
         return JSONResponse({"error": "Invalid filename"}, status_code=400)
 
     # Only allow files from the session's output directory (absolute path)
     from deepresearch.web.sessions import SESSION_DB_PATH
 
-    base_dir = SESSION_DB_PATH.parent / session_id
+    DOWNLOADS_DIR = SESSION_DB_PATH.parent
+    base_dir = DOWNLOADS_DIR / session_id
     safe_path = (base_dir / filename).resolve()
     if not str(safe_path).startswith(str(base_dir.resolve())):
         return JSONResponse({"error": "Access denied"}, status_code=403)

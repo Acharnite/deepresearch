@@ -10,6 +10,12 @@ TIME_BUDGET_SECONDS: dict[str, int] = {
     "deep": 660,
 }
 
+TIME_BUDGETS: dict[str, dict[str, int]] = {
+    "quick": {"seconds": 240},
+    "medium": {"seconds": 420},
+    "deep": {"seconds": 660},
+}
+
 MAX_ROUNDS_BY_BUDGET: dict[str, int] = {
     "quick": 2,
     "medium": 3,

@@ -6,6 +6,7 @@ that handle session configuration validation and LLM model assignment.
 
 from __future__ import annotations
 
+import hashlib
 import random
 from typing import Any
 
@@ -162,7 +163,9 @@ async def assign_models(
 
     if mode == "random":
         seed_str = orchestrator._topic_seed
-        random.seed(hash(seed_str))
+        random.seed(
+            int(hashlib.sha256(seed_str.encode()).hexdigest()[:8], 16)
+        )
         selected = random.choices(available, k=len(profiles))
         return {p.id: m["id"] for p, m in zip(profiles, selected)}
 
