@@ -19,6 +19,14 @@
 - [x] Model connectivity check in background
 - [x] --model flag for CLI
 - [x] Dynamic rounds: continue until gaps < 2 and confidence >= 0.5
+- [x] ADR-0011: Session concurrency limit (max 3) + web search throttling
+- [x] ADR-0012: SearXNG migration — replaced ddgs with self-hosted SearXNG
+- [x] ADR-0013: SearXNG optimization — removed DDG/Wikidata/Brave, added academic engines
+- [x] Global web search rate limiter (1 search per 5 seconds)
+- [x] Search result cache (200 entries, LRU eviction)
+- [x] --rounds CLI flag for session round count
+- [x] Academic search engines: arXiv, PubMed, Semantic Scholar, Wikipedia
+- [x] PDF minimum healthy threshold: 12KB → 20KB
 
 ## Next Testing Session
 

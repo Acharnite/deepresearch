@@ -22,6 +22,7 @@ from typing import Any
 
 import json as _json
 from deepresearch.web.event_bus import EventBus
+from deepresearch.web.settings_manager import settings_manager
 
 logger = logging.getLogger(__name__)
 SESSION_DB_PATH = (
@@ -91,6 +92,7 @@ class SessionInfo:
     selected_model: str | None = None
     agent_models: dict[str, str] | None = None
     event_history: list[dict[str, Any]] = field(default_factory=list)
+    max_rounds: int = 4  # Default matches SessionConfig
 
 
 class MultiSessionManager:
@@ -134,6 +136,8 @@ class MultiSessionManager:
         selected_model: str | None = None,
         agent_models: dict[str, str] | None = None,
         scribe_model: str | None = None,
+        max_rounds: int | None = None,
+        semaphore: asyncio.Semaphore | None = None,
     ) -> SessionInfo:
         """Create and start a new research session. Returns immediately."""
         # Enforce max sessions — clean up oldest completed/errored first.
@@ -149,6 +153,13 @@ class MultiSessionManager:
         else:
             secs = {"quick": 300, "medium": 300, "deep": 480}.get(time_budget, 300)
 
+        # Derive max_rounds from budget if not explicitly provided.
+        max_rounds_by_budget = {"quick": 3, "medium": 4, "deep": 5, "custom": 4}
+        if max_rounds is None:
+            max_rounds = max_rounds_by_budget.get(time_budget, 4)
+        # Clamp to valid range.
+        max_rounds = max(1, min(max_rounds, 10))
+
         info = SessionInfo(
             session_id=session_id,
             topic=topic,
@@ -160,6 +171,7 @@ class MultiSessionManager:
             status="queued",
             created_at=datetime.now().isoformat(),
             event_bus=bus,
+            max_rounds=max_rounds,
         )
         self._sessions[session_id] = info
 
@@ -205,19 +217,23 @@ class MultiSessionManager:
             )
             return info
 
-        # Start background task.
+        # Start background task with optional concurrency semaphore.
         self._tasks[session_id] = asyncio.create_task(
-            self._run_session(session_id, scribe_model=scribe_model),
+            self._run_session(session_id, scribe_model=scribe_model, semaphore=semaphore),
         )
 
         return info
 
     async def _run_session(
-        self, session_id: str, scribe_model: str | None = None
+        self, session_id: str, scribe_model: str | None = None, semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         """Run the full orchestration lifecycle with a per-session event bus."""
         info = self._sessions[session_id]
         info.status = "running"
+
+        # Acquire concurrency semaphore if provided (limits parallel sessions).
+        if semaphore is not None:
+            await semaphore.acquire()
 
         # Create a cancel event for this session so cancellation is
         # immediate even when an agent is inside a long LLM call.
@@ -236,10 +252,11 @@ class MultiSessionManager:
                     "event_type": "session_start",
                     "session_id": session_id,
                     "topic": info.topic,
+                    "max_rounds": info.max_rounds,
                 }
             )
 
-            llm = LLMClient()
+            llm = LLMClient(max_tokens=settings_manager.get_max_tokens())
             registry = AgentRegistry(llm)
 
             # Pick the scribe model: passed scribe_model > selected_model > first agent_models > None
@@ -406,6 +423,9 @@ class MultiSessionManager:
 
         finally:
             self._cancel_events.pop(session_id, None)
+            # Release concurrency semaphore if held.
+            if semaphore is not None:
+                semaphore.release()
 
     # ── Query methods ─────────────────────────────────────────────────
 
@@ -413,27 +433,62 @@ class MultiSessionManager:
         """Get a session by ID."""
         return self._sessions.get(session_id)
 
-    def list_sessions(self) -> list[dict]:
-        """Return all sessions sorted by creation time (newest first)."""
-        return [
-            {
-                "session_id": s.session_id,
-                "topic": s.topic,
-                "status": s.status,
-                "time_budget": s.time_budget,
-                "time_budget_seconds": s.time_budget_seconds,
-                "model_mode": s.model_mode,
-                "created_at": s.created_at,
-                "completed_at": s.completed_at,
-                "has_result": s.result is not None,
-                "error": s.error,
-            }
-            for s in sorted(
-                self._sessions.values(),
-                key=lambda x: x.created_at,
-                reverse=True,
-            )
-        ]
+    def list_sessions(
+        self,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+        status_filter: str | None = None,
+        search: str | None = None,
+    ) -> dict[str, Any]:
+        """Return sessions sorted by creation time (newest first).
+
+        Returns:
+            dict with keys: sessions, total (count after filtering),
+            offset, limit (echoed back).
+        """
+        sessions = sorted(
+            self._sessions.values(),
+            key=lambda x: x.created_at or "",
+            reverse=True,
+        )
+
+        # Filter by status
+        if status_filter and status_filter != "all":
+            sessions = [s for s in sessions if s.status == status_filter]
+
+        # Search by topic (case-insensitive substring)
+        if search:
+            q = search.lower()
+            sessions = [s for s in sessions if q in (s.topic or "").lower()]
+
+        total = len(sessions)
+
+        # Apply pagination
+        if limit is not None:
+            sessions = sessions[offset : offset + limit]
+
+        return {
+            "sessions": [
+                {
+                    "session_id": s.session_id,
+                    "topic": s.topic,
+                    "status": s.status,
+                    "time_budget": s.time_budget,
+                    "time_budget_seconds": s.time_budget_seconds,
+                    "model_mode": s.model_mode,
+                    "created_at": s.created_at,
+                    "completed_at": s.completed_at,
+                    "has_result": s.result is not None,
+                    "result": s.result,
+                    "error": s.error,
+                }
+                for s in sessions
+            ],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
 
     # ── Cancel ────────────────────────────────────────────────────────
 

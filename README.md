@@ -107,7 +107,12 @@ DeepeResearch supports local inference via Ollama (auto-discovered on localhost:
 
 ## Tool Calling (Web Search)
 
-Research agents search the web in real-time using DuckDuckGo via LiteLLM function calling. Agents can make up to 5 search queries per generation, refining based on initial results. Falls back gracefully if DuckDuckGo is unavailable.
+Research agents search the web in real-time using **SearXNG** (self-hosted meta-search engine) with academic engines including arXiv, PubMed, Semantic Scholar, and Wikipedia. Agents can make up to 5 search queries per generation, refining based on initial results.
+
+- **Rate limiter**: 1 search per 5 seconds (global)
+- **Result cache**: 200 entries with LRU eviction
+- **Health tracking**: `/api/system/search` endpoint
+- **Fallback**: DuckDuckGo via ddgs (optional extra, deprecated)
 
 ---
 
@@ -185,7 +190,7 @@ workspaces/deepresearch/
 │   ├── collaboration/bus.py       # In-memory shared knowledge bus
 │   ├── llm/client.py              # LiteLLM async wrapper with retry + streaming
 │   ├── output/pdf_generator.py    # WeasyPrint PDF rendering
-│   ├── tools/web_search.py        # DuckDuckGo function calling
+│   ├── tools/web_search.py        # SearXNG web search (with ddgs fallback)
 │   ├── prompts/                   # Research, scribe, collaboration prompts
 │   └── web/
 │       ├── server.py              # FastAPI server (REST + SSE)
@@ -194,7 +199,7 @@ workspaces/deepresearch/
 │       └── settings_manager.py    # API key & local endpoint management
 ├── src/profiles/default.yaml      # 6 agent personality profiles
 ├── src/config/models.yaml         # LLM model definitions
-└── tests/                         # 292 tests
+└── tests/                         # 311 tests
 ```
 
 ---
@@ -217,6 +222,14 @@ pytest tests/ -v --cov=deepresearch # With coverage
 - **[ADR-0003](docs/adr/ADR-0003-web-frontend-and-multi-session.md)**: Web Frontend and Multi-Session
 - **[ADR-0004](docs/adr/ADR-0004-test-findings-and-architecture-fixes.md)**: Test Findings and Architecture Fixes
 - **[ADR-0005](docs/adr/ADR-0005-auto-install-and-discover-local-llm-backends.md)**: Auto-Install and Auto-Discover Local LLM Backends
+- **[ADR-0006](docs/adr/ADR-0006-web-search-and-tool-calling.md)**: Web Search and Tool Calling
+- **[ADR-0007](docs/adr/ADR-0007-clarification-protocol-and-refinement.md)**: Clarification Protocol and Refinement
+- **[ADR-0008](docs/adr/ADR-0008-dashboard-enhancements.md)**: Dashboard Enhancements
+- **[ADR-0009](docs/adr/ADR-0009-cicd-pipeline-and-distribution.md)**: CI/CD Pipeline and Distribution
+- **[ADR-0010](docs/adr/ADR-0010-dynamic-research-rounds.md)**: Dynamic Research Rounds
+- **[ADR-0011](docs/adr/ADR-0011-concurrency-limits-and-web-search-throttling.md)**: Session Concurrency Limits and Web Search Throttling
+- **[ADR-0012](docs/adr/ADR-0012-replace-ddgs-with-searxng.md)**: SearXNG Migration (Replace ddgs)
+- **[ADR-0013](docs/adr/ADR-0013-searxng-optimization.md)**: SearXNG Optimization and Academic Engines
 
 ---
 

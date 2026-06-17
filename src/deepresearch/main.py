@@ -84,6 +84,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Deep mode — most thorough investigation",
     )
     run_parser.add_argument(
+        "--rounds",
+        type=int,
+        default=None,
+        choices=range(1, 11),
+        metavar="[1-10]",
+        help="Maximum research rounds (1-10, default: budget-based)",
+    )
+    run_parser.add_argument(
         "--random-models",
         action="store_true",
         help="Assign models to agents randomly",
@@ -134,6 +142,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=8080,
         help="Port to bind the web dashboard (default: 8080)",
     )
+    run_parser.add_argument(
+        "--web-max-concurrent",
+        type=int,
+        default=3,
+        choices=range(1, 11),
+        metavar="[1-10]",
+        help="Max concurrent sessions for web dashboard (1-10, default: 3)",
+    )
 
     # --- serve subcommand ---
     serve_parser = subparsers.add_parser("serve", help="Start the web dashboard server")
@@ -148,6 +164,14 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=8080,
         help="Port to bind the web server (default: 8080)",
+    )
+    serve_parser.add_argument(
+        "--max-concurrent",
+        type=int,
+        default=3,
+        choices=range(1, 11),
+        metavar="[1-10]",
+        help="Max concurrent research sessions (1-10, default: 3)",
     )
 
     # --- profiles subcommand ---
@@ -289,6 +313,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 model_mode=model_mode,
                 dry_run=True,
                 output_path=output_path,
+                max_rounds=args.rounds,
             )
             if args.model:
                 run_kwargs["selected_model"] = args.model
@@ -314,7 +339,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         console.print(f"[dim]Starting web dashboard on {url}...[/dim]")
         server_thread = threading.Thread(
             target=run_server,
-            kwargs={"host": args.web_host, "port": args.web_port},
+            kwargs={
+                "host": args.web_host,
+                "port": args.web_port,
+                "max_concurrent": args.web_max_concurrent,
+            },
             daemon=True,
         )
         server_thread.start()
@@ -333,6 +362,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 time_budget=time_budget,
                 model_mode=model_mode,
                 output_path=output_path,
+                max_rounds=args.rounds,
             )
             if args.model:
                 run_kwargs["selected_model"] = args.model
@@ -441,9 +471,10 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     console.print("[bold green]DeepeResearch Dashboard[/bold green]")
     console.print(f"Starting web server at http://{args.host}:{args.port}")
+    console.print(f"Max concurrent sessions: {args.max_concurrent}")
     console.print("Press Ctrl+C to stop the server")
     try:
-        run_server(host=args.host, port=args.port)
+        run_server(host=args.host, port=args.port, max_concurrent=args.max_concurrent)
         return 0
     except KeyboardInterrupt:
         console.print("\n[yellow]Server stopped[/yellow]")

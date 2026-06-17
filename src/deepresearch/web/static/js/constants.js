@@ -4,9 +4,10 @@ export const STATE_ORDER = ['IDLE','CONFIGURING','ROUND1','COLLABORATING','FOLLO
 
 export const STATE_LABELS = {
   IDLE: 'Idle', CONFIGURING: 'Configuring', ROUND1: 'Round 1',
-  COLLABORATING: 'Collaborating', FOLLOWUP: 'Follow-up',
+  COLLABORATING: 'Collaborating', FOLLOWUP: 'Follow-Up',
   ROUND2: 'Round 2', REFINING: 'Refining', COMPILING: 'Compiling',
-  OUTPUT: 'Output', COMPLETE: 'Complete'
+  OUTPUT: 'Output', COMPLETE: 'Complete',
+  ROUND3: 'Round 3', ROUND4: 'Round 4', ROUND5: 'Round 5'
 };
 
 export const EVENT_ICONS = {
@@ -25,14 +26,16 @@ export const STATE_BADGE_CLASSES = {
   ROUND1: 'badge-round1', COLLABORATING: 'badge-collaborating',
   FOLLOWUP: 'badge-followup', REFINING: 'badge-refining',
   ROUND2: 'badge-round2', COMPILING: 'badge-compiling',
-  OUTPUT: 'badge-output', COMPLETE: 'badge-complete'
+  OUTPUT: 'badge-output', COMPLETE: 'badge-complete',
+  ROUND3: 'badge-round3', ROUND4: 'badge-round4', ROUND5: 'badge-round5'
 };
 
 export const STATE_COLORS = {
   IDLE: '#8b949e', CONFIGURING: '#3fb950', ROUND1: '#58a6ff',
   COLLABORATING: '#bc8cff', FOLLOWUP: '#d29922',
   REFINING: '#fb923c', ROUND2: '#39d2c0', COMPILING: '#f778ba',
-  OUTPUT: '#3fb950', COMPLETE: '#3fb950'
+  OUTPUT: '#3fb950', COMPLETE: '#3fb950',
+  ROUND3: '#f0883e', ROUND4: '#bc8cff', ROUND5: '#f778ba'
 };
 
 export const stateLabels = {

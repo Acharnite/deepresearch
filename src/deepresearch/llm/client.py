@@ -173,6 +173,7 @@ class LLMClient:
         provider: str | None = None,
         api_base: str | None = None,
         event_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        max_tokens: int | None = None,
     ) -> None:
         """Initialize the LLM client.
 
@@ -187,6 +188,9 @@ class LLMClient:
             event_callback: Async callable invoked with each streamed chunk
                 ``{"type": "stream", "text": "..."}`` during
                 ``generate_stream``.  ``None`` disables streaming callbacks.
+            max_tokens: Default max output tokens per LLM call. Used as
+                fallback when ``generate()``, ``generate_stream()``, or
+                ``generate_with_tools()`` are called with ``max_tokens=None``.
         """
         self.model = model
         self.timeout = timeout
@@ -220,6 +224,7 @@ class LLMClient:
             self.api_base = api_base or self._resolve_api_base(self.provider)
 
         self.api_key = self._resolve_api_key(self.provider) if self.provider else None
+        self.max_tokens: int | None = max_tokens
         self.total_input_tokens: int = 0
         self.total_output_tokens: int = 0
         self.total_cost: float = 0.0
@@ -299,6 +304,8 @@ class LLMClient:
             LLMError: If all retries fail or the request times out.
         """
         _cancel = cancel_event or self.cancel_event
+        # Fall back to client-level max_tokens when not specified per call.
+        effective_max_tokens = max_tokens if max_tokens is not None else self.max_tokens
         messages = self._build_messages(system_prompt, user_prompt)
 
         last_exception: Exception | None = None
@@ -310,7 +317,7 @@ class LLMClient:
 
             try:
                 response = await asyncio.wait_for(
-                    self._acompletion(messages, temperature, max_tokens),
+                    self._acompletion(messages, temperature, effective_max_tokens),
                     timeout=self.timeout,
                 )
                 self.call_count += 1
@@ -437,6 +444,8 @@ class LLMClient:
         if _cancel and _cancel.is_set():
             raise LLMError("Session cancelled")
 
+        # Fall back to client-level max_tokens when not specified per call.
+        effective_max_tokens = max_tokens if max_tokens is not None else self.max_tokens
         messages = self._build_messages(system_prompt, user_prompt)
         full_text = ""
         _stream_buffer: list[str] = []
@@ -444,7 +453,7 @@ class LLMClient:
         try:
             from litellm import acompletion
 
-            kwargs = self._build_acompletion_kwargs(messages, temperature, max_tokens)
+            kwargs = self._build_acompletion_kwargs(messages, temperature, effective_max_tokens)
             kwargs["stream"] = True
 
             response = await acompletion(**kwargs)
@@ -476,7 +485,7 @@ class LLMClient:
                 system_prompt,
                 user_prompt,
                 temperature,
-                max_tokens,
+                effective_max_tokens,
                 cancel_event=_cancel,
             )
             if self.event_callback and result:
@@ -521,12 +530,14 @@ class LLMClient:
             Final response text.
         """
         _cancel = cancel_event or self.cancel_event
+        # Fall back to client-level max_tokens when not specified per call.
+        effective_max_tokens = max_tokens if max_tokens is not None else self.max_tokens
         if not tools:
             return await self.generate_stream(
                 system_prompt,
                 user_prompt,
                 temperature,
-                max_tokens,
+                effective_max_tokens,
                 cancel_event=_cancel,
             )
 
@@ -539,7 +550,7 @@ class LLMClient:
             if _cancel and _cancel.is_set():
                 raise LLMError("Session cancelled")
 
-            kwargs = self._build_acompletion_kwargs(messages, temperature, max_tokens)
+            kwargs = self._build_acompletion_kwargs(messages, temperature, effective_max_tokens)
             kwargs["tools"] = tools
 
             from litellm import acompletion

@@ -2,6 +2,31 @@
 
 All notable changes to DeepeResearch will be documented in this file.
 
+## [0.10.0] - 2026-06-17
+
+### Added
+- ADR-0011: Session concurrency limit (max 3) + web search throttling
+- ADR-0012: SearXNG migration — replaced ddgs with self-hosted SearXNG
+- ADR-0013: SearXNG optimization — removed DDG/Wikidata/Brave, added academic engines
+- Global web search rate limiter (1 search per 5 seconds)
+- Search result cache (200 entries, LRU eviction)
+- SearXNG health tracking + /api/system/search endpoint
+- `--rounds` CLI flag for session round count
+- Dynamic pipeline rendering (ROUND3-5 support in dashboard)
+- Academic search engines: arXiv, PubMed, Semantic Scholar, Wikipedia
+
+### Changed
+- PDF minimum healthy threshold: 12KB → 20KB
+- Web search backend: ddgs → SearXNG (with ddgs as optional fallback)
+- pyproject.toml: ddgs moved to optional extra
+- Tests: 305 → 311 tests (SearXNG-mocked, feature flag, health info)
+
+### Fixed
+- Rate limiting issues (101 HTTP 429 errors from Google/Brave eliminated)
+- PDF underweight sessions (10-12KB → 20-29KB)
+- DuckDuckGo captcha blocks (658 errors removed by engine removal)
+- Quick/medium session PDF sizes (all now above 20KB threshold)
+
 ## [0.7.0] - 2026-06-15
 
 ### Added

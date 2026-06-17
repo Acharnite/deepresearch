@@ -164,11 +164,31 @@ def mock_agent_factory(mock_findings, mock_followup, mock_report) -> MagicMock:
                         perspective="Perspective",
                         confidence=0.7,
                     )
+                elif isinstance(first, FollowUpQuestions):
+                    # Refinement phase — return updated Findings.
+                    return Findings(
+                        agent_id=profile.id,
+                        round=1,
+                        summary=f"Refined findings by {profile.name}",
+                        key_points=["Refined point"],
+                        perspective="Refined perspective",
+                        confidence=0.75,
+                    )
                 elif (
                     isinstance(first, ResearchTopic)
                     and len(args) > 1
                     and isinstance(args[1], SharedKnowledge)
                 ):
+                    # Round 2 or R3+ — check if 4 args (R3+)
+                    if len(args) == 4 and isinstance(args[2], int) and isinstance(args[3], Findings):
+                        return IndividualReport(
+                            agent_id=profile.id,
+                            title=f"Report by {profile.name}",
+                            perspective_summary="Summary",
+                            key_insights=["Insight"],
+                            analysis="Analysis",
+                            full_text="Full text",
+                        )
                     return IndividualReport(
                         agent_id=profile.id,
                         title=f"Report by {profile.name}",

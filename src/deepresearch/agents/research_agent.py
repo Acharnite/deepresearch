@@ -28,6 +28,7 @@ from deepresearch.utils.prompts import (
     build_review_prompt,
     build_round_1_prompt,
     build_round_2_prompt,
+    build_round_n_prompt,
 )
 
 logger = logging.getLogger(__name__)
@@ -132,7 +133,7 @@ class ResearchAgent(BaseAgent):
                 user_prompt=user_prompt,
                 tools=[WEB_SEARCH_TOOL],
                 temperature=self.profile.temperature,
-                max_tokens=4096,  # Increased for search + JSON output
+                max_tokens=getattr(self.llm, 'max_tokens', None) or 4096,  # Configurable max tokens
             )
         except LLMError:
             logger.warning(
@@ -230,7 +231,7 @@ class ResearchAgent(BaseAgent):
                 user_prompt=user_prompt,
                 tools=[WEB_SEARCH_TOOL],
                 temperature=self.profile.temperature,
-                max_tokens=4096,
+                max_tokens=getattr(self.llm, 'max_tokens', None) or 4096,
             )
         except LLMError:
             logger.warning(
@@ -296,6 +297,65 @@ class ResearchAgent(BaseAgent):
             raw_response=response,
         )
 
+    async def research_round_n(
+        self,
+        topic: ResearchTopic,
+        shared: SharedKnowledge,
+        round_num: int,
+        prev_findings: Findings,
+    ) -> Findings:
+        """Research round for N >= 3 with anti-repetition prompting."""
+        await self._log_agent_state("researching")
+        max_rounds = getattr(topic, "max_rounds", 4)
+        user_prompt = build_round_n_prompt(
+            topic.question, shared, round_num, max_rounds, prev_findings
+        )
+        user_prompt += _ROUND_2_FORMAT
+
+        from deepresearch.tools.web_search import WEB_SEARCH_TOOL
+
+        try:
+            response = await self.llm.generate_with_tools(
+                system_prompt=self._system_prompt,
+                user_prompt=user_prompt,
+                tools=[WEB_SEARCH_TOOL],
+                temperature=self.profile.temperature,
+                max_tokens=getattr(self.llm, 'max_tokens', None) or 4096,
+            )
+        except LLMError:
+            logger.warning(
+                "LLM call with tools failed for agent '%s' round %d, retrying without tools",
+                self.profile.id,
+                round_num,
+            )
+            response = await self._generate_with_retry(user_prompt)
+
+        data = self._try_parse_json(response, f"research_round_{round_num}")
+        if not data.get("summary") and not data.get("key_points"):
+            logger.warning(
+                "Empty response from agent '%s' in round %d, keeping previous findings",
+                self.profile.id,
+                round_num,
+            )
+            return Findings(
+                agent_id=self.profile.id,
+                round=round_num,
+                summary=prev_findings.summary,
+                key_points=prev_findings.key_points,
+                perspective=prev_findings.perspective,
+                confidence=prev_findings.confidence,
+                raw_response=prev_findings.raw_response,
+            )
+        return Findings(
+            agent_id=self.profile.id,
+            round=round_num,
+            summary=data.get("summary", prev_findings.summary),
+            key_points=data.get("key_points", prev_findings.key_points),
+            perspective=data.get("perspective", prev_findings.perspective),
+            confidence=float(data.get("confidence", prev_findings.confidence)),
+            raw_response=response,
+        )
+
     async def write_report(
         self, round_1: Findings, round_2: Findings | None
     ) -> IndividualReport:
@@ -348,7 +408,7 @@ class ResearchAgent(BaseAgent):
                 user_prompt=user_prompt,
                 tools=[WEB_SEARCH_TOOL],
                 temperature=self.profile.temperature,
-                max_tokens=2048,
+                max_tokens=getattr(self.llm, 'max_tokens', None) or 2048,
             )
         except LLMError:
             logger.warning(
@@ -380,6 +440,7 @@ class ResearchAgent(BaseAgent):
                 system_prompt=self._system_prompt,
                 user_prompt=user_prompt,
                 temperature=self.profile.temperature,
+                max_tokens=getattr(self.llm, 'max_tokens', None),
             )
         except LLMError:
             logger.warning(
@@ -393,4 +454,5 @@ class ResearchAgent(BaseAgent):
                 "no explanation, no code fences.",
                 user_prompt=user_prompt,
                 temperature=self.profile.temperature,
+                max_tokens=getattr(self.llm, 'max_tokens', None),
             )

@@ -54,7 +54,7 @@ def dry_run(
         )
 
     time_budget_label = orchestrator.TIME_BUDGET_OPTIONS.get(time_budget, time_budget)
-    rounds = 1 if time_budget == "quick" else 2
+    rounds = cfg.max_rounds
 
     agent_assignments: list[dict[str, Any]] = []
     for profile in cfg.agent_profiles:
@@ -110,6 +110,7 @@ def dry_run(
         "estimated_cost": estimated_cost,
         "estimated_tokens": estimated_tokens,
         "rounds": rounds,
+        "max_rounds": rounds,
         "agents_count": total_agents,
     }
 
@@ -143,11 +144,13 @@ def _show_dry_run_table(
         )
 
     # Summary panel.
+    round_timeline = "→".join([f"R{i}" for i in range(1, rounds + 1)])
     summary_lines = [
         f"[bold]Topic:[/bold] {topic_str}",
         f"[bold]Budget:[/bold] {time_budget_label} ({time_budget_seconds}s)",
         f"[bold]Model Mode:[/bold] {model_mode}",
-        f"[bold]Rounds:[/bold] {rounds}",
+        f"[bold]Max Rounds:[/bold] {rounds}",
+        f"[bold]Projected:[/bold] Will run {rounds} rounds: {round_timeline}",
         f"[bold]Agents:[/bold] {len(agent_assignments)}",
         "",
         f"[bold]Est. Cost:[/bold] ${estimated_cost:.4f}",

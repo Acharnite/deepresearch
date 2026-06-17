@@ -12,3 +12,6 @@
 | [ADR-0008](ADR-0008-dashboard-enhancements.md) | Dashboard Enhancements | Proposed | 2026-06-15 |
 | [ADR-0009](ADR-0009-cicd-pipeline-and-distribution.md) | CI/CD Pipeline, npm Wrapper, and Docker Distribution | Proposed | 2026-06-15 |
 | [ADR-0010](ADR-0010-dynamic-research-rounds.md) | Dynamic Research Rounds | Proposed | 2026-06-16 |
+| [ADR-0011](ADR-0011-concurrency-limits-and-web-search-throttling.md) | Concurrency Limits and Web Search Throttling | Proposed | 2026-06-16 |
+| [ADR-0012](ADR-0012-replace-ddgs-with-searxng.md) | Replace DuckDuckGo with SearXNG for Web Search | Proposed | 2026-06-16 |
+| [ADR-0013](ADR-0013-searxng-optimization.md) | SearXNG Engine Optimization — Remove Problematic Backends, Tune Timeouts | Proposed | 2026-06-17 |

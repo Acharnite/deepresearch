@@ -99,11 +99,17 @@ async def configure(
     else:
         budget_seconds = orchestrator.TIME_BUDGET_SECONDS.get(time_budget, 300)
 
+    # Derive max_rounds from budget keyword.
+    max_rounds = overrides.get("max_rounds") or orchestrator._MAX_ROUNDS_BY_BUDGET.get(
+        time_budget, 4
+    )
+
     config = SessionConfig(
         topic=topic,
         agent_profiles=profiles,
         agent_models=agent_models,
         time_budget_seconds=budget_seconds,
+        max_rounds=max_rounds,
     )
     orchestrator.session_config = config
     orchestrator._log_event("models_assigned", assignments=agent_models)

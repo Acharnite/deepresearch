@@ -28,10 +28,16 @@ from deepresearch import __version__ as _deepresearch_version
 from deepresearch.config import load_agent_profiles, load_model_config
 from deepresearch.web.event_bus import event_bus as global_event_bus
 from deepresearch.web.sessions import multi_session_manager
-from deepresearch.web.settings_manager import PROVIDERS, settings_manager
+from deepresearch.web.settings_manager import PROVIDERS, settings_manager, context_window_manager
 from deepresearch.web import state as _ws
 
 logger = logging.getLogger(__name__)
+
+# ── Session concurrency limit ─────────────────────────────────────────────
+# Maximum number of sessions that can run concurrently across the server.
+# Configurable via --max-concurrent CLI argument (default 3, range 1-10).
+MAX_CONCURRENT_SESSIONS = 3
+_session_semaphore = asyncio.Semaphore(MAX_CONCURRENT_SESSIONS)
 
 # ── Persistent file logging ─────────────────────────────────────────────
 _log_dir = Path(__file__).resolve().parent.parent.parent.parent / "logs"
@@ -128,6 +134,7 @@ class RunRequest(BaseModel):
     agent_models: dict[str, str] | None = (
         None  # NEW: for "manual" mode — per-agent model mapping
     )
+    max_rounds: int | None = None  # Override max rounds (1-10)
 
 
 class RunResponse(BaseModel):
@@ -233,7 +240,22 @@ async def start_research(req: RunRequest) -> JSONResponse:
     Returns immediately with a ``session_id``. The session runs
     independently and its progress can be tracked via the per-session
     SSE endpoint or the session listing.
+
+    Respects the global session concurrency limit. If the limit is
+    reached, returns HTTP 429 with active session count.
     """
+    # Check concurrency limit — non-blocking check.
+    if _session_semaphore.locked():
+        active = multi_session_manager.active_count
+        return JSONResponse(
+            {
+                "error": "Concurrency limit reached",
+                "active_sessions": active,
+                "max_concurrent": MAX_CONCURRENT_SESSIONS,
+            },
+            status_code=429,
+        )
+
     try:
         scribe_model = settings_manager.get_scribe_model()
         info = await multi_session_manager.create_session(
@@ -244,6 +266,8 @@ async def start_research(req: RunRequest) -> JSONResponse:
             selected_model=req.selected_model,
             agent_models=req.agent_models,
             scribe_model=scribe_model,
+            max_rounds=req.max_rounds,
+            semaphore=_session_semaphore,
         )
         return JSONResponse(
             {
@@ -259,9 +283,42 @@ async def start_research(req: RunRequest) -> JSONResponse:
 
 
 @app.get("/api/sessions")
-async def list_sessions() -> JSONResponse:
-    """List all research sessions (newest first)."""
-    return JSONResponse(multi_session_manager.list_sessions())
+async def list_sessions(
+    limit: int | None = None,
+    offset: int = 0,
+    status: str | None = None,
+    search: str | None = None,
+) -> JSONResponse:
+    """List research sessions with optional filtering and pagination.
+
+    Query params:
+        limit: Max sessions to return (omit for all).
+        offset: Skip first N sessions (for pagination).
+        status: Filter by status (running, complete, error, cancelled, all).
+        search: Filter by topic substring (case-insensitive).
+    """
+    result = multi_session_manager.list_sessions(
+        limit=limit,
+        offset=offset,
+        status_filter=status,
+        search=search,
+    )
+    return JSONResponse(result)
+
+
+@app.get("/api/sessions/stats")
+async def session_stats() -> JSONResponse:
+    """Return session counts grouped by status."""
+    sessions = multi_session_manager.list_sessions()
+    all_sessions = sessions.get("sessions", [])
+    counts: dict[str, int] = {}
+    for s in all_sessions:
+        st = s.get("status", "unknown")
+        counts[st] = counts.get(st, 0) + 1
+    return JSONResponse({
+        "total": len(all_sessions),
+        "by_status": counts,
+    })
 
 
 @app.get("/api/sessions/{session_id}")
@@ -314,7 +371,7 @@ async def get_session_state(session_id: str) -> JSONResponse:
                     agent_states[agent_id] = {"status": "waiting", "state": "waiting"}
         elif event_type == "round_start":
             round_num = event.get("round", 1)
-            current_state = "ROUND1" if round_num == 1 else "ROUND2"
+            current_state = f"ROUND{round_num}"
             for aid in agent_states:
                 agent_states[aid] = {"status": "waiting", "state": "waiting"}
         elif event_type == "agent_start":
@@ -363,6 +420,7 @@ async def get_session_state(session_id: str) -> JSONResponse:
             "scribe_info": scribe_info,
             "event_count": len(info.event_history),
             "elapsed_start": info.created_at,
+            "max_rounds": info.max_rounds,
         }
     )
 
@@ -460,13 +518,41 @@ async def clear_completed_sessions() -> JSONResponse:
     return JSONResponse({"status": "ok", "removed": count})
 
 
+@app.post("/api/sessions/bulk-delete")
+async def bulk_delete_sessions(request: Request) -> JSONResponse:
+    """Delete multiple sessions by ID list.
+
+    Request body: {"session_ids": ["id1", "id2", ...]}
+    """
+    body = await request.json()
+    ids = body.get("session_ids", [])
+    if not ids:
+        return JSONResponse({"error": "No session IDs provided"}, status_code=400)
+
+    removed = 0
+    errors = []
+    for sid in ids:
+        ok = multi_session_manager.remove_session(sid)
+        if ok:
+            removed += 1
+        else:
+            info = multi_session_manager.get_session(sid)
+            if info is not None:
+                errors.append(f"{sid}: Cannot delete a running session")
+            else:
+                errors.append(f"{sid}: Not found")
+
+    return JSONResponse({"status": "ok", "removed": removed, "errors": errors})
+
+
 # ── Legacy session endpoints (kept for backward compatibility) ─────────
 
 
 @app.get("/api/session")
 async def get_legacy_session() -> JSONResponse:
     """Return the latest session status and result (backward compat)."""
-    sessions = multi_session_manager.list_sessions()
+    result = multi_session_manager.list_sessions()
+    sessions = result.get("sessions", [])
     if not sessions:
         return JSONResponse({"status": "idle", "result": None})
     latest = sessions[0]
@@ -483,7 +569,8 @@ async def get_legacy_session() -> JSONResponse:
 async def cancel_legacy() -> JSONResponse:
     """Cancel the most recent running session (backward compat)."""
     # Find the most recent running session.
-    sessions = multi_session_manager.list_sessions()
+    result = multi_session_manager.list_sessions()
+    sessions = result.get("sessions", [])
     for s in sessions:
         if s["status"] == "running":
             cancelled = await multi_session_manager.cancel_session(s["session_id"])
@@ -564,7 +651,8 @@ async def get_profiles() -> JSONResponse:
 @app.get("/api/models")
 async def get_models() -> JSONResponse:
     """Return the list of available model configurations, including local
-    and auto-discovered provider models."""
+    and auto-discovered provider models.  Context window overrides from
+    settings are applied on top of the YAML defaults."""
     try:
         models = load_model_config()
 
@@ -593,6 +681,13 @@ async def get_models() -> JSONResponse:
         for pm in provider_models:
             if not any(m.get("id") == pm["id"] for m in models):
                 models.append(pm)
+
+        # Apply context window overrides from settings.
+        overrides = context_window_manager.get_overrides()
+        for m in models:
+            mid = m.get("id", "")
+            if mid in overrides:
+                m["context_window"] = overrides[mid]
 
         return JSONResponse(models)
     except Exception as e:
@@ -993,6 +1088,67 @@ async def delete_scribe_model() -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
+# ── Max Tokens per Agent Call ─────────────────────────────────────────
+
+
+@app.get("/api/settings/max-tokens")
+async def get_max_tokens() -> JSONResponse:
+    """Get the configured max tokens per agent call."""
+    value = settings_manager.get_max_tokens()
+    return JSONResponse({"max_tokens": value})
+
+
+class MaxTokensRequest(BaseModel):
+    """Request body for POST /api/settings/max-tokens."""
+
+    max_tokens: int
+
+
+@app.post("/api/settings/max-tokens")
+async def set_max_tokens(req: MaxTokensRequest) -> JSONResponse:
+    """Save the max tokens per agent call setting."""
+    try:
+        settings_manager.set_max_tokens(req.max_tokens)
+        logger.info("Max tokens set to %d", req.max_tokens)
+        return JSONResponse({"status": "ok", "max_tokens": req.max_tokens})
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+# ── Context Window Overrides ───────────────────────────────────────────
+
+
+class ContextWindowRequest(BaseModel):
+    """Request body for POST /api/config/context."""
+
+    model_id: str
+    context_window: int
+
+
+@app.get("/api/config/context")
+async def get_context_windows() -> JSONResponse:
+    """Return all context window overrides."""
+    return JSONResponse(context_window_manager.get_overrides())
+
+
+@app.post("/api/config/context")
+async def set_context_window(req: ContextWindowRequest) -> JSONResponse:
+    """Set a context window override for a model."""
+    if req.context_window < 1:
+        return JSONResponse({"error": "context_window must be >= 1"}, status_code=400)
+    context_window_manager.set_override(req.model_id, req.context_window)
+    return JSONResponse({"status": "ok", "model_id": req.model_id, "context_window": req.context_window})
+
+
+@app.delete("/api/config/context/{model_id:path}")
+async def delete_context_window(model_id: str) -> JSONResponse:
+    """Remove a context window override for a model."""
+    removed = context_window_manager.delete_override(model_id)
+    if removed:
+        return JSONResponse({"status": "ok", "model_id": model_id})
+    return JSONResponse({"error": f"No override found for '{model_id}'"}, status_code=404)
+
+
 # ── System Log Buffer ──────────────────────────────────────────────────
 # In-memory log buffer that captures log records from the deepresearch
 # logger tree. Accessible via the dashboard's System Log tab.
@@ -1053,11 +1209,110 @@ async def clear_system_log() -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
+@app.get("/api/system/concurrency")
+async def get_concurrency_status() -> JSONResponse:
+    """Return current concurrency state for sessions and web searches."""
+    from deepresearch.tools.web_search import get_search_semaphore_info
+
+    active_sessions = multi_session_manager.active_count
+    search_info = get_search_semaphore_info()
+    return JSONResponse(
+        {
+            "active_sessions": active_sessions,
+            "max_concurrent": MAX_CONCURRENT_SESSIONS,
+            "active_searches": search_info["active_searches"],
+            "max_searches": search_info["max_searches"],
+        }
+    )
+
+
+# ── Search Engine Endpoints ──────────────────────────────────────────
+
+
+@app.get("/api/system/search")
+async def get_search_status() -> JSONResponse:
+    """Return search engine configuration, health, and cache stats."""
+    from deepresearch.tools.web_search import get_search_health_info
+
+    return JSONResponse(get_search_health_info())
+
+
+class SearchTestRequest(BaseModel):
+    """Request body for POST /api/system/search/test."""
+
+    query: str = "test search"
+
+
+@app.post("/api/system/search/test")
+async def test_search_engine(req: SearchTestRequest | None = None) -> JSONResponse:
+    """Probe SearXNG with a test query and return latency + result count."""
+    from deepresearch.tools.web_search import _searxng_url, _searxng_timeout
+
+    query = req.query if req else "test search"
+    t0 = time.monotonic()
+    try:
+        async with httpx.AsyncClient(timeout=_searxng_timeout) as client:
+            resp = await client.get(
+                f"{_searxng_url}/search",
+                params={"q": query, "format": "json", "categories": "general"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            latency = (time.monotonic() - t0) * 1000
+            result_count = len(data.get("results", []))
+            return JSONResponse(
+                {
+                    "status": "ok",
+                    "results_count": result_count,
+                    "latency_ms": round(latency, 1),
+                    "engine_url": _searxng_url,
+                }
+            )
+    except httpx.ConnectError:
+        latency = (time.monotonic() - t0) * 1000
+        return JSONResponse(
+            {
+                "status": "error",
+                "message": f"Could not connect to SearXNG at {_searxng_url}",
+                "latency_ms": round(latency, 1),
+                "engine_url": _searxng_url,
+            },
+            status_code=502,
+        )
+    except Exception as e:
+        latency = (time.monotonic() - t0) * 1000
+        return JSONResponse(
+            {
+                "status": "error",
+                "message": str(e),
+                "latency_ms": round(latency, 1),
+                "engine_url": _searxng_url,
+            },
+            status_code=500,
+        )
+
+
 # ── Standalone launcher ─────────────────────────────────────────────────
 
 
-def run_server(host: str = "0.0.0.0", port: int = 8080) -> None:
-    """Start the uvicorn server (blocking)."""
+def run_server(
+    host: str = "0.0.0.0",
+    port: int = 8080,
+    max_concurrent: int = 3,
+) -> None:
+    """Start the uvicorn server (blocking).
+
+    Args:
+        host: Bind address.
+        port: Bind port.
+        max_concurrent: Max concurrent research sessions (1-10).
+    """
+    global _session_semaphore, MAX_CONCURRENT_SESSIONS
+    max_concurrent = max(1, min(max_concurrent, 10))
+    MAX_CONCURRENT_SESSIONS = max_concurrent
+    _session_semaphore = asyncio.Semaphore(max_concurrent)
+    logger.info("Session concurrency limit set to %d", max_concurrent)
+
     import uvicorn
 
     uvicorn.run(app, host=host, port=port, log_level="info")

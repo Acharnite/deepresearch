@@ -46,9 +46,25 @@ export async function fetchAvailableModels() {
   }
 }
 
-export async function fetchSessions() {
-  const resp = await fetch('/api/sessions');
-  if (!resp.ok) return [];
+export async function fetchSessions(params) {
+  let url = '/api/sessions';
+  if (params) {
+    const qs = new URLSearchParams();
+    if (params.limit != null) qs.set('limit', params.limit);
+    if (params.offset != null) qs.set('offset', params.offset);
+    if (params.status) qs.set('status', params.status);
+    if (params.search) qs.set('search', params.search);
+    const str = qs.toString();
+    if (str) url += '?' + str;
+  }
+  const resp = await fetch(url);
+  if (!resp.ok) return { sessions: [], total: 0, offset: 0, limit: null };
+  return await resp.json();
+}
+
+export async function fetchSessionStats() {
+  const resp = await fetch('/api/sessions/stats');
+  if (!resp.ok) return { total: 0, by_status: {} };
   return await resp.json();
 }
 
@@ -71,6 +87,14 @@ export async function deleteSessionAPI(sessionId) {
 
 export async function clearAllSessionsAPI() {
   return await fetch('/api/sessions/clear-completed', { method: 'POST' });
+}
+
+export async function bulkDeleteSessionsAPI(sessionIds) {
+  return await fetch('/api/sessions/bulk-delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_ids: sessionIds }),
+  });
 }
 
 export async function fetchSessionDetailAPI(sessionId) {
@@ -159,4 +183,43 @@ export async function fetchSystemLog(limit, level) {
 
 export async function clearSystemLogAPI() {
   await fetch('/api/system/log/clear', { method: 'POST' });
+}
+
+// ── Context Window Overrides ────────────────────────
+
+export async function fetchContextWindows() {
+  const resp = await fetch('/api/config/context');
+  if (!resp.ok) return {};
+  return await resp.json();
+}
+
+export async function saveContextWindowAPI(modelId, contextWindow) {
+  return await fetch('/api/config/context', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model_id: modelId, context_window: contextWindow }),
+  });
+}
+
+export async function deleteContextWindowAPI(modelId) {
+  return await fetch('/api/config/context/' + encodeURIComponent(modelId), {
+    method: 'DELETE',
+  });
+}
+
+// ── Max Tokens per Agent Call ───────────────────────
+
+export async function fetchMaxTokens() {
+  const resp = await fetch('/api/settings/max-tokens');
+  if (!resp.ok) return 4096;
+  const data = await resp.json();
+  return data.max_tokens || 4096;
+}
+
+export async function saveMaxTokensAPI(maxTokens) {
+  return await fetch('/api/settings/max-tokens', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ max_tokens: maxTokens }),
+  });
 }

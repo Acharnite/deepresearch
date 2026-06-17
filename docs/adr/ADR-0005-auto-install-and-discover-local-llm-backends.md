@@ -12,8 +12,8 @@ phase:
 
 Proposed
 
-**Version:** 1.0
-**Last Updated:** 2026-06-15
+**Version:** 2.0
+**Last Updated:** 2026-06-16
 
 ## Context
 
@@ -41,75 +41,124 @@ DeepeResearch currently supports cloud-based LLM providers (OpenAI, Anthropic, O
 5. Must not break existing Ollama integration
 6. Safety — auto-install should not overwrite existing installations
 
+### Existing Solutions
+- **llmfit** (28.1k stars, Rust, MIT) — hardware detection, model scoring, recommendations, download management
+- **llmserve** (281 stars, Rust, MIT) — backend detection, model serving, TUI for managing servers
+
+Both are well-maintained, cross-platform Rust binaries that solve hardware detection and backend management better than custom code.
+
 ## Decision
+
+### Approach: Integrate llmfit + llmserve
+
+Replace custom auto-install logic with integration of existing open-source tools. This reduces ~470 lines of custom code to integration with mature, community-maintained binaries.
 
 ### Implementation Phases
 
 | Phase | Scope | Timeline |
 |-------|-------|----------|
-| Phase 1 | Ollama auto-install + custom addresses | Week 1 |
-| Phase 2 | llama.cpp binary download | Week 2 |
-| Phase 3 | vLLM + SGLang (pip install) | Week 3 |
-| Phase 4 | Docker alternative + AMD support | Week 4 |
+| Phase 1 | llmfit/llmserve detection + install UI + custom addresses | Week 1 |
+| Phase 2 | Hardware-aware model recommendations | Week 2 |
+| Phase 3 | Backend management via llmserve | Week 3 |
+| Phase 4 | Model selection integration + polish | Week 4 |
 
 Each phase is independently testable and deployable.
 
-### Backend Installation Priority
+### Tool Integration
 
-| Priority | Backend | Install Method | Hardware | Complexity |
-|----------|---------|---------------|----------|------------|
-| 1 | **Ollama** | Download `install.sh` to temp file, execute via `sh` | CPU/GPU (auto-detect) | Low |
-| 2 | **llama.cpp** | Pre-built binary download via GitHub releases | CPU/GPU (auto-detect) | Medium |
-| 3 | **vLLM** | `pip install vllm` (requires CUDA) | NVIDIA GPU only | High |
-| 4 | **SGLang** | `pip install sglang[all]` (requires CUDA) | NVIDIA GPU only | High |
+#### llmfit — Hardware Detection & Model Recommendations
 
-### Web UI Installation Flow
+```bash
+# Detect hardware
+llmfit system --json
+# Returns: GPU type, VRAM, CPU cores, RAM, platform
 
-1. **Settings Tab → Local Models** section shows detected backends:
-   - 🟢 Running (green badge)
-   - 🟡 Installed but not running (yellow badge)
-   - 🔴 Not installed (red badge) with "Install" button
+# Get model recommendations
+llmfit recommend --json --use-case coding
+# Returns: model list with hardware fit scores
 
-2. **"Install" button** triggers backend-specific installation:
-   - Shows a modal with **live log output** (SSE stream from server)
-   - Installation runs as a background task on the server
-   - Real-time progress: downloading, extracting, verifying
-   - Success/error status with clear messaging
+# Download a model
+llmfit download <model-name>
+# Manages download with progress
+```
 
-3. **"Uninstall" button** for installed backends:
-   - Confirms with user (shows disk space to be reclaimed)
-   - Stops the backend if running
-   - Removes installed files
-   - Resets state to `not_installed`
+#### llmserve — Backend Management
 
-4. **"Start" button** for installed-but-stopped backends:
-   - Starts the backend as a subprocess
-   - Shows startup logs
-   - Verifies connectivity after start
+```bash
+# List running backends
+llmserve list --json
 
-5. **"Stop" button** for running backends:
-   - Graceful shutdown
-   - Process cleanup
+# Start a backend
+llmserve start --model <model-name> --backend ollama
 
-### Auto-Discovery Protocol
+# Stop a backend
+llmserve stop <server-id>
+```
 
-On startup and on-demand, the server probes backends in this order:
+### Web UI Integration
 
-1. **User-configured addresses** — Check each backend's saved custom address first
-2. **Default ports** — Probe `localhost:<default-port>` for each backend
+#### Settings Tab → Local LLM Section
 
-| Backend | Default Port | Probe Endpoint | Response |
-|---------|:------------:|----------------|----------|
-| Ollama | 11434 | `GET /api/tags` | `{"models": [...]}` |
-| llama.cpp | 8080 | `GET /v1/models` | `{"data": [{"id": "..."}]}` |
-| vLLM | 8000 | `GET /v1/models` | `{"data": [{"id": "..."}]}` |
-| SGLang | 30000 | `GET /v1/models` | `{"data": [{"id": "..."}]}` |
+```
+┌──────────────────────────────────────────────────────┐
+│ Local LLM                                            │
+│                                                      │
+│ Hardware Summary (from llmfit)                       │
+│ ┌──────────────────────────────────────────────────┐ │
+│ │ GPU: NVIDIA RTX 3080 (10GB VRAM)                 │ │
+│ │ CPU: 12 cores, 64GB RAM                         │ │
+│ │ Platform: Linux x86_64                          │ │
+│ └──────────────────────────────────────────────────┘ │
+│                                                      │
+│ Recommended Models (from llmfit recommend)           │
+│ ┌──────────────────────────────────────────────────┐ │
+│ │ Model                │ Fit  │ Size  │ Backend    │ │
+│ │ codellama-7b         │ 95%  │ 4.1GB │ ollama     │ │
+│ │ mistral-7b           │ 90%  │ 4.1GB │ ollama     │ │
+│ │ deepseek-coder-6.7b  │ 85%  │ 4.0GB │ ollama     │ │
+│ │ [Show more...]                                      │ │
+│ └──────────────────────────────────────────────────┘ │
+│                                                      │
+│ Running Backends (from llmserve / port probing)      │
+│ ┌──────────────────────────────────────────────────┐ │
+│ │ 🟢 Ollama — localhost:11434 — 3 models loaded    │ │
+│ │ 🟡 llama.cpp — localhost:8080 — idle             │ │
+│ │ [Configure Custom Address...]                     │ │
+│ └──────────────────────────────────────────────────┘ │
+│                                                      │
+│ Tool Status                                          │
+│ ┌──────────────────────────────────────────────────┐ │
+│ │ llmfit: ✅ Installed (v0.3.2)                   │ │
+│ │ llmserve: ❌ Not installed [Install Instructions]│ │
+│ └──────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────┘
+```
 
-If a custom address is configured, it takes priority over the default port. The probe is a lightweight HTTP GET with a 2-second timeout.
+#### Install Instructions Modal
+
+If llmfit/llmserve are not detected, show platform-specific instructions:
+
+```
+┌──────────────────────────────────────────────────────┐
+│ Install Local LLM Tools                              │
+│                                                      │
+│ macOS:                                               │
+│   brew install llmfit llmserve                       │
+│                                                      │
+│ Linux:                                               │
+│   curl -fsSL https://llmfit.dev/install.sh | sh      │
+│   curl -fsSL https://llmserve.dev/install.sh | sh    │
+│                                                      │
+│ Python (pip):                                        │
+│   pip install llmfit llmserve                        │
+│                                                      │
+│ [Copy to Clipboard] [I've installed these tools]     │
+└──────────────────────────────────────────────────────┘
+```
 
 ### Custom Address Configuration
 
-Users may run backends on non-standard addresses, remote machines, or Docker containers with port mapping. Each backend supports a configurable `host:port` address.
+Users may run backends on non-standard addresses, remote machines, or Docker containers. Each backend supports a configurable `host:port` address. This is retained from v1.0.
 
 #### Configuration Model
 
@@ -125,33 +174,10 @@ class LocalBackendConfig(BaseModel):
 
 Address resolution order:
 1. User-configured `address` (from Settings tab or config file)
-2. Auto-discovered address (from probe scan)
+2. Auto-discovered address (from llmserve or port probing)
 3. Default address (`localhost:<default-port>`)
 
-#### Web UI — Address Configuration
-
-In Settings → Local Models, each backend card has:
-
-```
-┌──────────────────────────────────────────────────┐
-│ 🟢 Ollama                                        │
-│ Status: Running on localhost:11434                │
-│                                                    │
-│ Address: [localhost:11434          ] [Test] [Save]│
-│ ☑ Enable auto-install if not found                │
-│                                                    │
-│ [Start] [Stop] [Logs] [Install]                  │
-└──────────────────────────────────────────────────┘
-```
-
-- **Address input field** — editable, shows current address
-- **"Test" button** — probes the address and shows connectivity status
-- **"Save" button** — persists the custom address
-- If user changes address to a non-default, auto-discovery still probes defaults AND the custom address
-
 #### Remote Backend Support
-
-Custom addresses enable running inference on remote machines:
 
 | Scenario | Address | Notes |
 |----------|---------|-------|
@@ -162,221 +188,50 @@ Custom addresses enable running inference on remote machines:
 | SSH tunnel | `localhost:8000` | Via `ssh -L 8000:localhost:8000` |
 | Cloud VM | `10.0.0.5:8000` | VPC or public IP |
 
-#### Storage
+### Auto-Discovery Protocol
 
-Custom addresses stored in `~/.deepresearch/local_backends.json`:
+On startup and on-demand, the server detects backends in this order:
 
-```json
-{
-  "ollama": {
-    "address": "192.168.1.50:11434",
-    "auto_install": true,
-    "enabled": true,
-    "installed_version": "0.4.0",
-    "last_checked": "2026-06-15T17:00:00"
-  },
-  "llamacpp": {
-    "address": "",
-    "auto_install": true,
-    "enabled": true,
-    "installed_version": null,
-    "last_checked": null
-  },
-  "vllm": {
-    "address": "gpu-server:8000",
-    "auto_install": false,
-    "enabled": true,
-    "installed_version": "0.5.0",
-    "last_checked": "2026-06-15T16:45:00"
-  },
-  "sglang": {
-    "address": "",
-    "auto_install": true,
-    "enabled": false,
-    "installed_version": null,
-    "last_checked": null
-  }
-}
-```
+1. **Custom addresses** — Check each backend's saved custom address first
+2. **llmserve** — Query `llmserve list --json` for managed backends
+3. **Default ports** — Probe `localhost:<default-port>` for each backend
 
-### Installation Implementation
+| Backend | Default Port | Probe Endpoint | Response |
+|---------|:------------:|----------------|----------|
+| Ollama | 11434 | `GET /api/tags` | `{"models": [...]}` |
+| llama.cpp | 8080 | `GET /v1/models` | `{"data": [{"id": "..."}]}` |
+| vLLM | 8000 | `GET /v1/models` | `{"data": [{"id": "..."}]}` |
+| SGLang | 30000 | `GET /v1/models` | `{"data": [{"id": "..."}]}` |
 
-Each backend has an install script that runs server-side:
+If a custom address is configured, it takes priority. The probe is a lightweight HTTP GET with a 2-second timeout.
+
+### Hardware-Aware Model Recommendations
+
+The server calls llmfit to get hardware info and model suggestions:
 
 ```python
-# Example: Ollama install
-async def install_ollama(progress_callback) -> InstallResult:
-    """Install Ollama with real-time progress."""
-    import tempfile
-    
-    # 1. Check if already installed
-    if shutil.which("ollama"):
-        return InstallResult(status="already_installed")
-    
-    # 2. Download install script to temp file (enables checksum verification)
-    await progress_callback("Downloading Ollama installer...")
-    script_path = os.path.join(tempfile.gettempdir(), "ollama_install.sh")
-    
-    download = await asyncio.create_subprocess_exec(
-        "curl", "-fsSL", "-o", script_path, "https://ollama.com/install.sh",
+async def get_hardware_info() -> HardwareInfo:
+    """Get hardware info from llmfit."""
+    result = await asyncio.create_subprocess_exec(
+        "llmfit", "system", "--json",
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
+        stderr=asyncio.subprocess.PIPE,
     )
-    await download.wait()
-    
-    if download.returncode != 0:
-        return InstallResult(status="error", error="Failed to download installer")
-    
-    # 3. Execute downloaded script (not piped)
-    await progress_callback("Running installer...")
-    process = await asyncio.create_subprocess_exec(
-        "sh", script_path,
+    stdout, _ = await result.communicate()
+    return json.loads(stdout)
+
+async def get_model_recommendations(use_case: str = "coding") -> list[ModelRecommendation]:
+    """Get model recommendations from llmfit."""
+    result = await asyncio.create_subprocess_exec(
+        "llmfit", "recommend", "--json", "--use-case", use_case,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.STDOUT,
+        stderr=asyncio.subprocess.PIPE,
     )
-    
-    # 4. Stream output
-    async for line in process.stdout:
-        await progress_callback(line.decode().strip())
-    
-    await process.wait()
-    
-    # 5. Cleanup temp file
-    os.unlink(script_path)
-    
-    # 6. Verify
-    if shutil.which("ollama"):
-        return InstallResult(status="success")
-    return InstallResult(status="error", error="Installation completed but ollama not in PATH")
+    stdout, _ = await result.communicate()
+    return json.loads(stdout)
 ```
 
-### Installation State Machine
-
-Each backend tracks installation state:
-
-```
-not_installed → downloading → extracting → verifying → installed
-                     ↓              ↓            ↓
-                  failed         failed       failed
-                     ↓              ↓            ↓
-                  (cleanup)     (cleanup)    (cleanup)
-```
-
-On any failure:
-1. Remove partially downloaded files (temp directory)
-2. Remove partially extracted binaries
-3. Log the exact failure point for debugging
-4. Reset state to `not_installed` so user can retry
-
-State is persisted in `~/.deepresearch/install_states.json`:
-```json
-{
-  "ollama": {
-    "state": "installed",
-    "version": "0.4.0",
-    "installed_at": "2026-06-15T17:00:00",
-    "address": "localhost:11434"
-  },
-  "vllm": {
-    "state": "not_installed",
-    "last_attempt_error": "CUDA not found",
-    "last_attempt_at": "2026-06-15T16:30:00"
-  }
-}
-```
-
-### Hardware Detection
-
-Before installation, detect hardware to recommend appropriate backends:
-
-```python
-def detect_hardware() -> HardwareInfo:
-    gpu_type = None
-    gpu_memory = None
-    
-    # NVIDIA GPU detection
-    try:
-        result = subprocess.run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
-                                capture_output=True, text=True, timeout=5)
-        if result.returncode == 0:
-            gpu_type = "nvidia"
-            # Parse memory
-    except FileNotFoundError:
-        pass
-    
-    # AMD GPU detection (ROCm)
-    try:
-        result = subprocess.run(["rocm-smi", "--showid"], capture_output=True, text=True, timeout=5)
-        if result.returncode == 0:
-            gpu_type = "amd_rocm"
-    except FileNotFoundError:
-        pass
-    # Fallback: check for ROCm installation directory
-    if gpu_type is None and os.path.exists("/opt/rocm"):
-        gpu_type = "amd_rocm"
-    
-    # Apple Silicon detection
-    if platform.system() == "darwin" and platform.machine() == "arm64":
-        gpu_type = "apple_silicon"
-    
-    return HardwareInfo(gpu_type=gpu_type, gpu_memory=gpu_memory)
-```
-
-### Disk Space Requirements
-
-Before installation, verify sufficient disk space:
-
-| Backend | Disk Space Required |
-|---------|:-------------------:|
-| Ollama | ~500 MB |
-| llama.cpp | ~500 MB |
-| vLLM | ~5000 MB (includes PyTorch) |
-| SGLang | ~5000 MB (includes PyTorch) |
-
-Each install function checks available space before proceeding:
-
-```python
-async def install_backend(name: str, required_mb: int, progress_callback) -> InstallResult:
-    # Check disk space first
-    import shutil as _shutil
-    free_mb = _shutil.disk_usage("/").free // (1024 * 1024)
-    if free_mb < required_mb:
-        await progress_callback(f"Insufficient disk space: {free_mb}MB free, {required_mb}MB required")
-        return InstallResult(status="error", error=f"Need {required_mb}MB, only {free_mb}MB available")
-    # ... continue with installation
-```
-
-### Address Validation
-
-Custom addresses are validated to prevent injection and ensure correct format:
-
-```python
-import re
-
-def validate_address(address: str) -> str:
-    """Validate and normalize backend address."""
-    # Strip scheme if present
-    address = re.sub(r'^https?://', '', address)
-    # Validate host:port format
-    match = re.match(r'^([a-zA-Z0-9._-]+):(\d{1,5})$', address)
-    if not match:
-        raise ValueError(f"Invalid address format: {address}. Expected host:port")
-    host, port = match.groups()
-    if not (1 <= int(port) <= 65535):
-        raise ValueError(f"Invalid port: {port}. Must be 1-65535")
-    return f"{host}:{port}"
-```
-
-### Backend Recommendations by Hardware
-
-| Hardware | Recommended | Alternative | Notes |
-|----------|-------------|-------------|-------|
-| NVIDIA GPU (≥8GB VRAM) | vLLM | SGLang, Ollama | Best throughput with vLLM |
-| NVIDIA GPU (<8GB VRAM) | Ollama | llama.cpp | Ollama auto-quantizes |
-| AMD GPU (ROCm) | vLLM | SGLang | vLLM supports ROCm |
-| Apple Silicon (M1+) | Ollama | llama.cpp | Metal acceleration |
-| CPU-only | Ollama | llama.cpp | Slow but works |
-| No GPU, limited RAM | Ollama | — | Smallest footprint |
+Model recommendations include a hardware fit score (0-100%) indicating how well each model runs on the detected hardware.
 
 ### API Endpoints
 
@@ -389,68 +244,56 @@ GET    /api/local-backends/{name}/logs      — Stream installation/runtime logs
 PUT    /api/local-backends/{name}/address   — Update custom address
 POST   /api/local-backends/{name}/test      — Test connectivity to address
 DELETE /api/local-backends/{name}           — Uninstall a backend
-GET    /api/hardware                        — Detected hardware info
-```
-
-### SSE Installation Stream
-
-Installation output streams to the client in real-time:
-
-```
-data: {"status": "downloading", "progress": 45, "message": "Downloading Ollama v0.4.0..."}
-data: {"status": "extracting", "progress": 70, "message": "Extracting to /usr/local/bin/..."}
-data: {"status": "verifying", "progress": 90, "message": "Verifying installation..."}
-data: {"status": "complete", "progress": 100, "message": "Ollama installed successfully!"}
-data: {"status": "error", "progress": -1, "message": "CUDA not found — vLLM requires NVIDIA GPU", "error_type": "hardware_incompatible"}
+GET    /api/hardware                        — Hardware info (from llmfit)
+GET    /api/recommendations                 — Model recommendations (from llmfit)
+GET    /api/tools/status                    — llmfit/llmserve installation status
 ```
 
 ## Consequences
 
 ### Security Considerations
 
-Auto-installation of external software requires careful security measures:
+1. **Tool installation**: llmfit and llmserve are installed via standard package managers (brew, pip, curl script). Users are shown instructions and must install manually — no silent background installation.
 
-1. **Script downloads**: All install scripts are downloaded over HTTPS. Checksums are verified where available (e.g., GitHub releases for llama.cpp binaries).
+2. **HTTPS-only downloads**: llmfit's model downloads use HTTPS with checksum verification. We do not implement custom download logic.
 
-2. **Shell script execution**: Ollama's `install.sh` is executed from a temp file (not piped from curl). Users are warned before first installation and can review the script.
-
-3. **No arbitrary code execution**: Only pre-approved install URLs are supported. Users cannot provide custom install scripts.
+3. **No arbitrary code execution**: Only pre-approved tools (llmfit, llmserve) are invoked. Users cannot provide custom scripts or binaries.
 
 4. **Input sanitization**: Custom addresses are validated (host:port format, port range 1-65535, no URL schemes). Prevents command injection.
 
-5. **Privilege awareness**: Installation uses current user privileges. No sudo/root escalation without explicit user consent.
+5. **Subprocess isolation**: Tool invocations run with current user privileges. Output is parsed as JSON only — no shell expansion of results.
 
-6. **Docker alternative**: For maximum isolation, users can run backends via Docker instead of auto-install. Docker images are pre-built and verified.
+6. **Docker alternative**: For maximum isolation, users can run backends via Docker. Docker containers are discovered via the same port-probing protocol.
 
 ### Positive
-- One-click installation from web UI — no terminal required
-- Real-time feedback during installation (log output, not spinner)
-- Auto-discovery finds backends on common ports — no manual URL entry
-- Hardware-aware recommendations — users get the best backend for their system
-- Graceful handling of existing installations (no overwrites)
-- Consistent API for all backends (start/stop/logs/status)
-- Custom address configuration — supports remote, Docker, and non-standard deployments
+- Dramatically less custom code (~300 lines vs ~470) — leverage community-maintained tools
+- Hardware detection is battle-tested (llmfit has 28.1k stars)
+- Model recommendations based on real hardware benchmarks
+- Custom address support retained for remote/Docker deployments
+- Clear install instructions — users choose their installation method
+- Auto-discovery still works for Ollama and other backends on known ports
+- Hardware fit scores help users pick the right model
 
 ### Negative
-- Installation scripts may fail on non-standard systems
-- vLLM/SGLang require CUDA — installation fails on non-NVIDIA hardware (must show clear error)
-- Subprocess management adds complexity (zombie processes, port conflicts)
-- Binary downloads (llama.cpp) may have platform-specific issues
+- Users must install llmfit/llmserve separately (extra step vs fully automatic)
+- Two external tool dependencies (llmfit, llmserve) must be maintained
+- If llmfit/llmserve change their CLI interface, integration must be updated
+- Port probing fallback is still custom code
 
 ### Risks
-- Install scripts from external sources (Ollama, llama.cpp releases) could change
+- llmfit/llmserve may not be available on all platforms (Rust binaries)
+- CLI interface changes in upstream tools could break integration
 - Port conflicts if user already has something running on default ports
-- Disk space requirements vary (Ollama: ~500MB, vLLM: ~5GB with PyTorch)
 - Remote backends may have higher latency affecting research speed
 - Custom addresses may become stale if services move
 
 ### Mitigations
-- Verify checksums for binary downloads
+- Provide installation instructions for all major platforms (macOS, Linux, Windows WSL)
+- Pin to specific tool versions and test before upgrading
 - Check port availability before starting
-- Show disk space requirements before installation
-- Cache installation logs for debugging
 - "Test" button validates address before saving
 - Periodic health check on configured addresses (warn if unreachable)
+- Cache tool output to reduce subprocess calls
 
 ### Docker Alternative
 
@@ -466,7 +309,46 @@ docker run -d --gpus all -p 8000:8000 vllm/vllm-openai --model meta-llama/Llama-
 
 Docker containers are discovered via the same auto-discovery protocol (they expose the same API endpoints on mapped ports). The web UI shows Docker containers as "running (docker)" with a separate badge.
 
+### Search Engine Setup
+
+DeepeResearch uses web search as a core part of the research pipeline. Users can choose between a self-hosted SearXNG instance (recommended) or the legacy DuckDuckGo backend (ddgs). ADR-0012 covers the full rationale for local search.
+
+#### Quick Install
+
+| Option | Command | Notes |
+|--------|---------|-------|
+| Docker (recommended) | `docker run -d --name searxng --restart unless-stopped -p 8888:8080 -e SEARXNG_BASE_URL=http://localhost:8888 searxng/searxng` | Requires Docker |
+| With custom config | `docker run -d --name searxng --restart unless-stopped -p 8888:8080 -v ./settings.yml:/etc/searxng/settings.yml -e SEARXNG_BASE_URL=http://localhost:8888 searxng/searxng` | Disables limiter, enables JSON |
+| Skip (use ddgs) | `pip install deepresearch[ddgs]` | Uses DuckDuckGo via ddgs library (rate-limited under load) |
+
+#### Critical settings.yml
+
+```yaml
+use_default_settings: true
+server:
+  limiter: false
+search:
+  formats: [html, json]
+```
+
+#### Verify it works
+
+```bash
+curl "http://localhost:8888/search?q=test&format=json" | python -m json.tool
+```
+
+#### User Choice
+
+| Option | Pros | Cons |
+|--------|------|------|
+| **SearXNG** (recommended) | No rate limits, self-hosted, full control | Requires Docker |
+| **ddgs** (legacy) | No Docker needed, zero setup | Rate-limited under concurrent load |
+
+SearXNG runs on port 8888 by default and is auto-discovered by the same port-probing protocol used for LLM backends.
+
 ## References
 - ADR-0001: Multi-Agent Research Architecture (backend integration point)
 - ADR-0003: Web Frontend and Multi-Session (Settings tab extension)
 - ADR-0004: Test Findings (DuckDuckGo timeout → local model alternative)
+- llmfit: https://github.com/llmfit/llmfit
+- llmserve: https://github.com/llmserve/llmserve

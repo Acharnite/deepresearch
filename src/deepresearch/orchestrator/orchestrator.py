@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from collections.abc import Awaitable
@@ -78,6 +79,14 @@ class Orchestrator:
 
     # Custom time-budget keyword used when --minutes is provided.
     _CUSTOM_BUDGET_KEY = "custom"
+
+    # Max rounds by budget keyword.
+    _MAX_ROUNDS_BY_BUDGET: dict[str, int] = {
+        "quick": 3,
+        "medium": 4,
+        "deep": 5,
+        "custom": 4,
+    }
 
     def __init__(
         self,
@@ -349,6 +358,18 @@ class Orchestrator:
             return max(120, self.session_config.time_budget_seconds // 2)
         return 120
 
+    def _get_round_timeout(self) -> int:
+        """Per-agent timeout for research rounds (R1+).
+
+        Formula: total_budget / (max_rounds + 2), minimum 60s.
+        The +2 reserves budget for collaboration and compilation phases.
+        """
+        if self.session_config is not None:
+            b = self.session_config.time_budget_seconds
+            m = self.session_config.max_rounds
+            return max(60, b // (m + 2))
+        return 120
+
     # ------------------------------------------------------------------
     # Collaboration — aggregate findings into shared knowledge
     # ------------------------------------------------------------------
@@ -401,6 +422,125 @@ class Orchestrator:
     def _extract_gaps(results: dict[str, Findings]) -> list[str]:
         """Extract knowledge gaps (stub)."""
         return ["Further research needed for comprehensive understanding"]
+
+    # ------------------------------------------------------------------
+    # Convergence Detection
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _total_gaps(shared: SharedKnowledge) -> int:
+        """Count total gaps (knowledge_gaps + disagreements)."""
+        return len(shared.knowledge_gaps) + len(shared.areas_of_disagreement)
+
+    @staticmethod
+    def _compute_gap_delta(
+        round_history: list[SharedKnowledge],
+    ) -> float:
+        """Compute gap delta between last two rounds.
+
+        Positive value = gaps decreasing (progress).
+        Negative or zero = stagnation (should stop).
+
+        Requires 2 consecutive rounds of non-decreasing gaps to trigger.
+        Returns -1.0 if not enough data to decide.
+        """
+        if len(round_history) < 3:
+            return -1.0  # Not enough data, continue
+
+        d1 = Orchestrator._total_gaps(round_history[-2]) - Orchestrator._total_gaps(
+            round_history[-1]
+        )
+        d2 = Orchestrator._total_gaps(round_history[-3]) - Orchestrator._total_gaps(
+            round_history[-2]
+        )
+        # Only stop if 2 consecutive non-decreasing gap deltas
+        return d1 if d1 <= 0 and d2 <= 0 else -1.0
+
+    @staticmethod
+    def _diminishing_returns(
+        round_history: list[SharedKnowledge],
+    ) -> bool:
+        """Detect diminishing returns: 2 consecutive non-decreasing gap deltas."""
+        if len(round_history) < 3:
+            return False
+
+        d1 = Orchestrator._total_gaps(round_history[-2]) - Orchestrator._total_gaps(
+            round_history[-1]
+        )
+        d2 = Orchestrator._total_gaps(round_history[-3]) - Orchestrator._total_gaps(
+            round_history[-2]
+        )
+        return d1 <= 0 and d2 <= 0
+
+    @staticmethod
+    def _converged_by_confidence(
+        round_history: list[SharedKnowledge],
+    ) -> bool:
+        """Check if confidence has converged across agents.
+
+        Returns True when mean confidence >= 0.7 for 2+ rounds.
+        Note: We don't track per-agent confidence in SharedKnowledge,
+        so this is a stub that returns False for now.
+        The convergence is detected via gap delta instead.
+        """
+        return False  # Stub — confidence tracking requires per-agent data in SharedKnowledge
+
+    async def _should_continue(
+        self,
+        round_num: int,
+        round_history: list[SharedKnowledge],
+        start_time: float,
+    ) -> bool:
+        """Evaluate whether to continue with another research round.
+
+        Priority order:
+        1. Cancel event — user-initiated cancellation
+        2. Time budget — reserve 10% for compilation
+        3. Max rounds — hard safety cap
+        4. Trend convergence — gaps no longer decreasing
+        5. Diminishing returns — 2 consecutive non-decreasing gap deltas
+        6. Confidence convergence
+        """
+        # 1. Cancel event
+        if self._cancel_event and self._cancel_event.is_set():
+            logger.info("Cancel event set — stopping rounds")
+            return False
+
+        # 2. Time budget — reserve 10% for compilation
+        if self.session_config is not None:
+            session_timeout = min(
+                MAX_SESSION_DURATION,
+                self.session_config.time_budget_seconds * 4 + 300,
+            )
+            if time.monotonic() - start_time > session_timeout * 0.9:
+                logger.info("Time budget 90%% exceeded — stopping rounds")
+                return False
+
+        # 3. Max rounds — hard safety cap
+        if self.session_config is not None:
+            if round_num >= self.session_config.max_rounds:
+                logger.info(
+                    "Max rounds reached (%d) — stopping", self.session_config.max_rounds
+                )
+                return False
+
+        # 4. Trend convergence — gaps no longer decreasing
+        gaps = self._compute_gap_delta(round_history)
+        if gaps is not None and gaps >= 0:
+            logger.info("Gap delta %.2f >= 0 — convergence detected, stopping", gaps)
+            return False
+
+        # 5. Diminishing returns — 2 consecutive non-decreasing gap deltas
+        if self._diminishing_returns(round_history):
+            logger.info("Diminishing returns detected — stopping")
+            return False
+
+        # 6. Confidence convergence
+        if self._converged_by_confidence(round_history):
+            logger.info("Confidence convergence detected — stopping")
+            return False
+
+        return True
 
     # ------------------------------------------------------------------
     # Follow-up Questions
@@ -467,6 +607,9 @@ class Orchestrator:
         If Round 2 results are available they are returned directly.
         Otherwise, Round 1 findings are converted to IndividualReport
         directly — no extra LLM calls needed.
+
+        Note: With the new round loop, this method is called less
+        frequently — the loop handles R2+ report collection inline.
         """
         if round_2:
             return round_2
@@ -483,6 +626,40 @@ class Orchestrator:
                 analysis=findings.raw_response or findings.summary,
                 full_text=findings.raw_response or findings.summary,
             )
+        return results
+
+    async def collect_reports_variable(
+        self,
+        agents: dict[str, AgentFunc],
+        round_results: dict[int, dict[str, Any]],
+    ) -> dict[str, IndividualReport]:
+        """Collect reports from variable-length round results.
+
+        Args:
+            agents: Agent callables.
+            round_results: {round_num: {agent_id: result}} — results may be
+                Findings (R1) or IndividualReport (R2+ wrapped by dispatch).
+
+        Returns:
+            Mapping of agent_id → IndividualReport for all active agents.
+        """
+        latest_round = max(round_results.keys()) if round_results else 1
+        results: dict[str, IndividualReport] = {}
+        for agent_id in agents:
+            if agent_id in self.failed_agents:
+                continue
+            latest = round_results.get(latest_round, {}).get(agent_id)
+            if isinstance(latest, IndividualReport):
+                results[agent_id] = latest
+            elif isinstance(latest, Findings):
+                results[agent_id] = IndividualReport(
+                    agent_id=agent_id,
+                    title=f"Report from {agent_id}",
+                    perspective_summary=latest.summary,
+                    key_insights=latest.key_points,
+                    analysis=latest.raw_response or latest.summary,
+                    full_text=latest.raw_response or latest.summary,
+                )
         return results
 
     # ------------------------------------------------------------------
@@ -774,123 +951,290 @@ class Orchestrator:
         output_path: Path,
         agent_factory: Any,
     ) -> None:
-        """Inner session execution (wrapped by session-level timeout)."""
-        # ── Round 1: Independent Research ──────────────────────────────
-        self.state = "ROUND1"
-        console.print("\n[bold]Round 1:[/bold] Independent Research")
-        console.print(f"  Running {len(agents)} agents in parallel...")
-        self._log_event("round_start", round=1)
-        round_1_results = await self.run_round(
-            1,
-            {aid: agents[aid] for aid in active_agents()},
-            config.topic,
-        )
+        """Inner session execution (wrapped by session-level timeout).
 
-        logger.info(
-            "Round 1 complete — %d/%d agents succeeded",
-            len(round_1_results),
-            len(agents),
-        )
-        # Publish Round 1 findings to the collaboration bus.
-        for agent_id, findings in round_1_results.items():
-            await self.bus.publish_round_1(agent_id, findings)
+        Round flow:
+          R1 → Collab → Followup → Refinement → (compute shared) → check converge
+          R2 → (compute shared) → check converge
+          R3 → ...
+        """
+        start_time = time.monotonic()
+        round_num = 1
+        round_results: dict[int, dict[str, Any]] = {}
+        round_history: list[SharedKnowledge] = []
+        latest_shared: SharedKnowledge | None = None
 
-        # ── Save Round 1 findings to files for reuse ───────────────────
-        try:
-            agents_dir = output_path.parent / "agents"
-            agents_dir.mkdir(parents=True, exist_ok=True)
-            for agent_id, findings in round_1_results.items():
-                if findings is None:
-                    continue
-                agent_file = agents_dir / f"{agent_id}_round1.json"
-                agent_file.write_text(
-                    json.dumps(
-                        {
-                            "agent_id": findings.agent_id,
-                            "round": findings.round,
-                            "summary": findings.summary,
-                            "key_points": findings.key_points,
-                            "perspective": findings.perspective,
-                            "confidence": findings.confidence,
-                            "raw_response": findings.raw_response,
-                        },
-                        indent=2,
-                    ),
-                    encoding="utf-8",
-                )
-            logger.info(
-                "Saved %d Round 1 findings to %s", len(round_1_results), agents_dir
+        while round_num <= (config.max_rounds if config.max_rounds else 4):
+            # ── Cancel check ──────────────────────────────────────────
+            if self._cancel_event and self._cancel_event.is_set():
+                logger.info("Cancel event set — aborting round loop")
+                break
+
+            # ── Time budget check (10% reserved for compilation) ──────
+            if time.monotonic() - start_time > (
+                min(MAX_SESSION_DURATION, config.time_budget_seconds * 4 + 300) * 0.9
+            ):
+                logger.info("Time budget exceeded — stopping after round %d", round_num - 1)
+                break
+
+            # ── Run round ─────────────────────────────────────────────
+            self.state = f"ROUND{round_num}"
+            console.print(
+                f"\n[bold]Round {round_num}:[/bold] "
+                + ("Independent Research" if round_num == 1 else "Refined Research")
             )
-        except Exception as e:
-            logger.warning("Failed to save Round 1 findings: %s", e)
+            self._log_event("round_start", round=round_num)
 
-        # ── Collaboration ──────────────────────────────────────────────
-        self.state = "COLLABORATING"
-        console.print("\n[bold]Collaboration:[/bold] Sharing findings across agents")
-        shared = await self.bus.compute_shared_knowledge()
-        logger.info(
-            "Collaboration complete — shared knowledge from %d agents",
-            len(round_1_results),
-        )
-        self._log_event("collaboration_phase", shared_agent_count=len(round_1_results))
-
-        # ── Follow-up Questions ────────────────────────────────────────
-        self.state = "FOLLOWUP"
-        console.print("\n[bold]Follow-up:[/bold] Collecting follow-up questions")
-        logger.info(
-            "Follow-up: collecting questions from %d agents", len(active_agents())
-        )
-        self._log_event("followup_start", active_agents=len(active_agents()))
-        followup_results = await self.collect_followup_questions(
-            {aid: agents[aid] for aid in active_agents()},
-            shared,
-        )
-        logger.info("Follow-up complete — %d agents responded", len(followup_results))
-
-        # Publish follow-up questions to the collaboration bus.
-        qa_questions: dict[str, list[str]] = {}
-        qa_targets: dict[str, list[str | None]] = {}
-        for agent_id, questions in followup_results.items():
-            if isinstance(questions, FollowUpQuestions):
-                await self.bus.publish_followup(agent_id, questions.questions)
-                if questions.questions:
-                    qa_questions[agent_id] = list(questions.questions)
-                    qa_targets[agent_id] = list(
-                        questions.target_agent_ids or [None] * len(questions.questions)
-                    )
+            if round_num == 1:
+                results = await self.run_round(
+                    1,
+                    {aid: agents[aid] for aid in active_agents()},
+                    config.topic,
+                )
+            elif round_num == 2:
+                assert latest_shared is not None
+                results = await self.run_round(
+                    round_num,
+                    {aid: agents[aid] for aid in active_agents()},
+                    config.topic,
+                    latest_shared,
+                )
             else:
-                logger.warning(
-                    "Unexpected follow-up result type for agent '%s': %s",
-                    agent_id,
-                    type(questions).__name__,
+                # R3+ — dispatch via (topic, shared, round_num, prev_findings)
+                assert latest_shared is not None
+                prev_round = round_results.get(round_num - 1, {})
+                results = await self._run_round_n(
+                    round_num,
+                    {aid: agents[aid] for aid in active_agents()},
+                    config.topic,
+                    latest_shared,
+                    prev_round,
                 )
 
-        # Log follow-up complete with Q&A data for dashboard visualization
-        self._log_event(
-            "followup_complete",
-            results=len(followup_results),
-            questions=qa_questions,
-            targets=qa_targets,
-        )
+            round_results[round_num] = results
+            logger.info(
+                "Round %d complete — %d/%d agents succeeded",
+                round_num,
+                len(results),
+                len(agents),
+            )
 
-        # ── Refinement Phase (parallel) ────────────────────────────────
-        # Give each agent their follow-up questions and let them refine
-        # their findings with an additional web search if needed.
-        # This happens BEFORE the Round 2 decision so refined findings
-        # are used for both the Round 2 question and final reports.
-        self.state = "REFINING"
-        console.print(
-            "\n[bold]Refinement:[/bold] Agents refining findings from questions"
+            # Publish round findings to the collaboration bus.
+            for agent_id, findings in results.items():
+                await self.bus.publish_round(agent_id, round_num, findings)
+
+            # Save R1 findings to files.
+            if round_num == 1:
+                self._save_round_findings(results, output_path, round_num)
+
+            # ── Collab / Followup / Refinement (once after R1) ────────
+            if round_num == 1:
+                # Collaboration phase
+                self.state = "COLLABORATING"
+                console.print(
+                    "\n[bold]Collaboration:[/bold] Sharing findings across agents"
+                )
+                latest_shared = await self.bus.compute_shared_knowledge()
+                round_history.append(latest_shared)
+                self._log_event(
+                    "collaboration_phase", shared_agent_count=len(results)
+                )
+
+                # Follow-up questions
+                self.state = "FOLLOWUP"
+                console.print(
+                    "\n[bold]Follow-up:[/bold] Collecting follow-up questions"
+                )
+                self._log_event("followup_start", active_agents=len(active_agents()))
+                followup_results = await self.collect_followup_questions(
+                    {aid: agents[aid] for aid in active_agents()},
+                    latest_shared,
+                )
+                for agent_id, questions in followup_results.items():
+                    if isinstance(questions, FollowUpQuestions):
+                        await self.bus.publish_followup(agent_id, questions.questions)
+                self._log_event("followup_complete", results=len(followup_results))
+
+                # Refinement phase
+                self.state = "REFINING"
+                console.print(
+                    "\n[bold]Refinement:[/bold] Agents refining findings"
+                )
+                self._log_event("refinement_start")
+                refined = await self._run_refinement(
+                    agents, followup_results, active_agents
+                )
+                for agent_id, refined_findings in refined.items():
+                    results[agent_id] = refined_findings
+                self._log_event("refinement_complete", refined_agents=len(refined))
+
+            # ── Compute shared knowledge after EVERY round ─────────────
+            # For R2+ (not R1 which did collab above), re-compute shared
+            # knowledge from the latest bus data.
+            if round_num > 1:
+                latest_shared = await self.bus.compute_shared_knowledge()
+                if latest_shared:
+                    latest_shared.round_number = round_num
+                    latest_shared.round_history = [s for s in round_history]
+                    round_history.append(latest_shared)
+
+            # ── Check convergence ──────────────────────────────────────
+            if not await self._should_continue(round_num + 1, round_history, start_time):
+                logger.info("Convergence check: stopping after round %d", round_num)
+                self._log_event("round_skip", round=round_num, reason="convergence")
+                break
+
+            round_num += 1
+
+        # ── Collect Reports ────────────────────────────────────────────
+        self.state = "COMPILING"
+        console.print("\n[bold]Compilation:[/bold] Gathering final reports")
+        reports: dict[str, IndividualReport] = {}
+        latest_round = max(round_results.keys()) if round_results else 1
+        for agent_id in active_agents():
+            if agent_id in self.failed_agents:
+                continue
+            latest_result = round_results.get(latest_round, {}).get(agent_id)
+            if isinstance(latest_result, IndividualReport):
+                reports[agent_id] = latest_result
+            elif isinstance(latest_result, Findings):
+                reports[agent_id] = IndividualReport(
+                    agent_id=agent_id,
+                    title=f"Report from {agent_id}",
+                    perspective_summary=latest_result.summary,
+                    key_insights=latest_result.key_points,
+                    analysis=latest_result.raw_response or latest_result.summary,
+                    full_text=latest_result.raw_response or latest_result.summary,
+                )
+
+        for agent_id, report in reports.items():
+            await self.bus.publish_report(agent_id, report)
+
+        # ── Compile with Scribe ────────────────────────────────────────
+        all_reports = await self.bus.get_all_reports()
+        self._log_event(
+            "scribe_start",
+            report_count=len(all_reports),
+            total_reports_chars=sum(len(str(r)) for r in all_reports.values()),
+            model="unknown",
         )
-        self._log_event("refinement_start")
+        paper = await self.compile(all_reports, scribe)
+        self._current_paper = paper
+
+    async def _run_round_n(
+        self,
+        round_num: int,
+        agents: dict[str, AgentFunc],
+        topic: ResearchTopic,
+        shared: SharedKnowledge,
+        prev_round: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Run a Round N (N >= 3) for all agents.
+
+        Dispatches with (topic, shared, round_num, prev_findings) so the
+        registry routes to research_round_n.
+        """
+        timeout = self._get_round_timeout()
+        tasks: dict[str, asyncio.Task[Any]] = {}
+        for agent_id, agent_fn in agents.items():
+            if agent_id in self.failed_agents:
+                continue
+            if self._cancel_event and self._cancel_event.is_set():
+                break
+
+            prev_findings = prev_round.get(agent_id)
+            if prev_findings is None:
+                logger.warning(
+                    "No previous findings for agent '%s' in round %d", agent_id, round_num
+                )
+                continue
+            # Convert IndividualReport to Findings if needed (R2 dispatch wraps)
+            if isinstance(prev_findings, IndividualReport):
+                prev_findings = Findings(
+                    agent_id=prev_findings.agent_id,
+                    round=round_num - 1,
+                    summary=prev_findings.perspective_summary,
+                    key_points=prev_findings.key_insights,
+                    perspective=prev_findings.analysis,
+                    confidence=0.7,
+                )
+
+            self._log_event(
+                "agent_start",
+                agent_id=agent_id,
+                round=round_num,
+                model=self.session_config.agent_models.get(agent_id, "unknown")
+                if self.session_config
+                else "unknown",
+                timeout=timeout,
+                agent_state="researching",
+            )
+
+            coro = agent_fn(topic, shared, round_num, prev_findings)
+            tasks[agent_id] = asyncio.create_task(
+                asyncio.wait_for(coro, timeout=timeout),
+            )
+
+        results: dict[str, Any] = {}
+        for agent_id, task in tasks.items():
+            try:
+                result = await task
+                results[agent_id] = result
+                result_size = len(str(result)) if result else 0
+
+                # Check for empty/meaningless results
+                is_empty = False
+                if result is None:
+                    is_empty = True
+                elif hasattr(result, "summary") and not result.summary:
+                    is_empty = True
+                elif hasattr(result, "key_points") and not result.key_points:
+                    is_empty = True
+
+                if is_empty and result_size < 200:
+                    logger.warning(
+                        "Agent '%s' returned empty result in round %d, marking failed",
+                        agent_id,
+                        round_num,
+                    )
+                    self.handle_agent_failure(agent_id, "empty_result")
+                    del results[agent_id]
+                else:
+                    self._log_event(
+                        "agent_complete",
+                        agent_id=agent_id,
+                        round=round_num,
+                        result_chars=result_size,
+                        status="success",
+                    )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Agent '%s' timed out in Round %d (timeout=%ds)",
+                    agent_id,
+                    round_num,
+                    timeout,
+                )
+                self.handle_agent_failure(agent_id, "timeout")
+            except Exception as e:
+                self.handle_agent_failure(agent_id, str(e))
+
+        return results
+
+    async def _run_refinement(
+        self,
+        agents: dict[str, AgentFunc],
+        followup_results: dict[str, FollowUpQuestions],
+        active_agents: Callable[[], list[str]],
+    ) -> dict[str, Findings]:
+        """Run refinement phase for all agents based on follow-up questions."""
+        refined: dict[str, Findings] = {}
 
         async def _refine_agent(agent_id: str, followup: FollowUpQuestions):
             if not isinstance(followup, FollowUpQuestions) or not followup.questions:
                 return None
             if agent_id in self.failed_agents:
                 return None
-            # Filter questions by target_agent_ids — only send questions
-            # that target this agent or have no specific target.
+            # Filter questions by target_agent_ids
             targeted_questions: list[str] = []
             targets = followup.target_agent_ids or [None] * len(followup.questions)
             for q, target in zip(followup.questions, targets):
@@ -903,122 +1247,93 @@ class Orchestrator:
                 questions=targeted_questions,
             )
             try:
-                refined = await asyncio.wait_for(
+                refined_result = await asyncio.wait_for(
                     agents[agent_id](targeted_followup),
                     timeout=max(30, self._get_timeout() // 2),
                 )
                 if (
-                    refined
-                    and isinstance(refined, Findings)
-                    and (refined.summary or refined.key_points)
+                    refined_result
+                    and isinstance(refined_result, Findings)
+                    and (refined_result.summary or refined_result.key_points)
                 ):
-                    return (agent_id, refined)
+                    return (agent_id, refined_result)
             except Exception as e:
                 logger.warning("Agent '%s' refinement failed: %s", agent_id, e)
             return None
 
         tasks = [_refine_agent(aid, fu) for aid, fu in followup_results.items()]
         results = await asyncio.gather(*tasks)
-        _refined_count = 0
         for result in results:
             if result:
-                agent_id, refined = result
-                round_1_results[agent_id] = refined
-                _refined_count += 1
+                agent_id, refined_findings = result
+                refined[agent_id] = refined_findings
                 logger.info("Agent '%s' refined findings", agent_id)
 
-        if _refined_count:
+        if refined:
             console.print(
-                f"  [dim]{_refined_count} agent(s) refined their findings[/dim]"
+                f"  [dim]{len(refined)} agent(s) refined their findings[/dim]"
             )
-        self._log_event("refinement_complete", refined_agents=_refined_count)
+        return refined
 
-        # ── Round 2: Refined Research ──────────────────────────────────
-        # Dynamic decision: run Round 2 only if there are significant
-        # knowledge gaps or low-confidence agents.
-        _gap_threshold = 2
-        _knowledge_gaps = (
-            len(shared.knowledge_gaps) if hasattr(shared, "knowledge_gaps") else 0
-        )
-        _disagreements = (
-            len(shared.areas_of_disagreement)
-            if hasattr(shared, "areas_of_disagreement")
-            else 0
-        )
-        _total_gaps = _knowledge_gaps + _disagreements
+    async def _compute_round_shared_knowledge(
+        self,
+        round_num: int,
+        results: dict[str, Any],
+        round_history: list[SharedKnowledge],
+    ) -> SharedKnowledge | None:
+        """Compute SharedKnowledge for a given round's results.
 
-        _low_confidence_agents = sum(
-            1
-            for f in round_1_results.values()
-            if hasattr(f, "confidence") and f.confidence < 0.5
-        )
+        For R2+ rounds, the bus receives findings and computes shared knowledge.
+        """
+        # Update the bus with this round's findings
+        for agent_id, findings in results.items():
+            if isinstance(findings, Findings):
+                await self.bus.publish_round(agent_id, round_num, findings)
 
-        _should_run_round_2 = (
-            _total_gaps >= _gap_threshold or _low_confidence_agents > 0
-        )
+        # Re-compute shared knowledge from ALL accumulated findings
+        shared = await self.bus.compute_shared_knowledge()
+        if shared:
+            shared.round_number = round_num
+            shared.round_history = [s for s in round_history]
+        return shared
 
-        if not _should_run_round_2:
-            # Skip Round 2 — sufficient agreement
-            reason = f"Sufficient agreement ({_total_gaps} gaps, {_low_confidence_agents} low-confidence agents)"
-            console.print(f"\n[bold]{reason}:[/bold] Skipping Round 2")
-            self._log_event(
-                "round2_skip",
-                budget=config.topic.time_budget,
-                gaps=_total_gaps,
-                low_confidence=_low_confidence_agents,
+    def _save_round_findings(
+        self,
+        results: dict[str, Any],
+        output_path: Path,
+        round_num: int,
+    ) -> None:
+        """Save round findings to JSON files for reuse."""
+        try:
+            agents_dir = output_path.parent / "agents"
+            agents_dir.mkdir(parents=True, exist_ok=True)
+            for agent_id, findings in results.items():
+                if findings is None:
+                    continue
+                agent_file = agents_dir / f"{agent_id}_round{round_num}.json"
+                agent_file.write_text(
+                    json.dumps(
+                        {
+                            "agent_id": getattr(findings, "agent_id", agent_id),
+                            "round": round_num,
+                            "summary": getattr(findings, "summary", ""),
+                            "key_points": getattr(findings, "key_points", []),
+                            "perspective": getattr(findings, "perspective", ""),
+                            "confidence": getattr(findings, "confidence", 0.5),
+                            "raw_response": getattr(findings, "raw_response", None),
+                        },
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+            logger.info(
+                "Saved %d round %d findings to %s",
+                len(results),
+                round_num,
+                agents_dir,
             )
-            round_2_results = {}
-        else:
-            self.state = "ROUND2"
-            console.print(
-                f"\n[bold]Round 2:[/bold] Refined Research with Shared Context "
-                f"({_total_gaps} gaps, {_low_confidence_agents} low-confidence agents)"
-            )
-            self._log_event("round_start", round=2)
-            round_2_results = await self.run_round(
-                2,
-                {aid: agents[aid] for aid in active_agents()},
-                config.topic,
-                shared,
-            )
-
-            # Publish Round 2 findings to the collaboration bus.
-            for agent_id, findings in round_2_results.items():
-                await self.bus.publish_round_2(agent_id, findings)
-
-        # ── Collect Reports ────────────────────────────────────────────
-        self.state = "COMPILING"
-        console.print("\n[bold]Compilation:[/bold] Gathering final reports")
-        reports = await self.collect_reports(
-            {aid: agents[aid] for aid in active_agents()},
-            round_1_results,
-            round_2_results,
-        )
-
-        # Publish reports to the collaboration bus.
-        for agent_id, report in reports.items():
-            await self.bus.publish_report(agent_id, report)
-
-        # ── Compile with Scribe ────────────────────────────────────────
-        all_reports = await self.bus.get_all_reports()
-        report_count = len(all_reports)
-        total_chars = sum(len(str(r)) for r in all_reports.values())
-        scribe_model = "unknown"
-        if self.session_config:
-            pass  # scribe model isn't stored in session_config
-        self._log_event(
-            "scribe_start",
-            report_count=report_count,
-            total_reports_chars=total_chars,
-            model=scribe_model,
-        )
-        logger.info(
-            "Scribe compiling paper from %d reports (%d chars)",
-            report_count,
-            total_chars,
-        )
-        paper = await self.compile(all_reports, scribe)
-        self._current_paper = paper
+        except Exception as e:
+            logger.warning("Failed to save round %d findings: %s", round_num, e)
 
     async def _finalize_output(self, output_path: Path) -> Path:
         """Generate PDF (or HTML fallback) from compiled paper."""
@@ -1042,7 +1357,7 @@ class Orchestrator:
             self._log_event("pdf_generated", path=str(pdf_path))
             console.print(f"\n[bold green]✓ PDF generated: {pdf_path}[/bold green]")
             # Verify PDF size — mark as underweight if < 12KB
-            PDF_MIN_HEALTHY_BYTES = 12_000
+            PDF_MIN_HEALTHY_BYTES = 20_000
             try:
                 pdf_size = output_path.stat().st_size
                 if pdf_size < PDF_MIN_HEALTHY_BYTES:

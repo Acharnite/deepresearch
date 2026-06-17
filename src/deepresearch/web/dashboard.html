@@ -163,27 +163,7 @@
 
   <!-- Research Pipeline (full-width bar above grid) -->
   <div class="pipeline-bar">
-    <div class="phase-indicator" id="phaseIndicator">
-      <span class="phase-step" data-phase="IDLE">⏸ Idle</span>
-      <span class="phase-arrow">→</span>
-      <span class="phase-step" data-phase="CONFIGURING">⚙ Config</span>
-      <span class="phase-arrow">→</span>
-      <span class="phase-step" data-phase="ROUND1">🔍 Round 1</span>
-      <span class="phase-arrow">→</span>
-      <span class="phase-step" data-phase="COLLABORATING">🤝 Collaborate</span>
-      <span class="phase-arrow">→</span>
-      <span class="phase-step" data-phase="FOLLOWUP">❓ Follow-up</span>
-      <span class="phase-arrow">→</span>
-      <span class="phase-step" data-phase="REFINING">🔄 Refining</span>
-      <span class="phase-arrow">→</span>
-      <span class="phase-step" data-phase="ROUND2">🔎 Round 2</span>
-      <span class="phase-arrow">→</span>
-      <span class="phase-step" data-phase="COMPILING">📝 Compile</span>
-      <span class="phase-arrow">→</span>
-      <span class="phase-step" data-phase="OUTPUT">📄 Output</span>
-      <span class="phase-arrow">→</span>
-      <span class="phase-step" data-phase="COMPLETE">✅ Done</span>
-    </div>
+    <div class="phase-indicator" id="phaseIndicator"></div>
   </div>
 
   <!-- Scribe (compact, full-width, above agent progress) -->
@@ -267,6 +247,8 @@
       <button class="settings-tab active" data-tab="api-keys" onclick="switchSettingsTab('api-keys')">🔑 API Keys</button>
       <button class="settings-tab" data-tab="local-models" onclick="switchSettingsTab('local-models')">🖥️ Local Models</button>
       <button class="settings-tab" data-tab="scribe" onclick="switchSettingsTab('scribe')">📝 Scribe</button>
+      <button class="settings-tab" data-tab="context-window" onclick="switchSettingsTab('context-window')">📐 Context Window</button>
+      <button class="settings-tab" data-tab="max-tokens" onclick="switchSettingsTab('max-tokens')">🔢 Max Tokens</button>
     </div>
 
     <!-- API Keys Tab -->
@@ -335,6 +317,51 @@
         </div>
         <div id="scribeModelStatus" class="text-muted" style="font-size:12px;margin-top:8px;"></div>
       </div>
+    </div>
+
+    <!-- Context Window Tab -->
+    <div id="tab-context-window" class="settings-section">
+      <p class="text-muted" style="margin-bottom:16px;font-size:13px;">
+        Override context window sizes for models. These values tell the system how many tokens
+        each model can handle. Default values come from the built-in model definitions.
+      </p>
+      <div class="context-window-add" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:16px;padding:12px;background:var(--surface-2);border-radius:6px;">
+        <div style="flex:1;min-width:200px;">
+          <label style="font-size:12px;font-weight:600;">Model</label>
+          <div class="model-picker" id="ctxModelPicker">
+            <div class="model-picker-trigger" tabindex="0"><input type="text" class="model-picker-input" id="ctxModelInput" placeholder="Select a model..." readonly /><span class="model-picker-arrow">▾</span></div>
+            <div class="model-picker-dropdown hidden" id="ctxModelDropdown"><div class="model-picker-search"><input type="text" class="model-picker-search-input" id="ctxModelSearch" placeholder="Search models..." autocomplete="off" /></div><div class="model-picker-list" id="ctxModelList"></div></div>
+          </div>
+        </div>
+        <div style="width:160px;">
+          <label style="font-size:12px;font-weight:600;">Context Window (tokens)</label>
+          <input type="number" id="ctxWindowInput" placeholder="e.g. 128000" min="1" style="width:100%;padding:8px 10px;background:var(--input-bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;" />
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="window.saveContextWindow()" style="margin-bottom:0;">💾 Set</button>
+      </div>
+      <div id="contextWindowList">
+        <div class="text-muted" style="padding:12px;font-size:13px;">Loading context windows...</div>
+      </div>
+    </div>
+
+    <!-- Max Tokens Tab -->
+    <div id="tab-max-tokens" class="settings-section">
+      <p class="text-muted" style="margin-bottom:16px;font-size:13px;">
+        Set the maximum output tokens per agent LLM call. This controls how much
+        each agent can generate in a single response. Lower values save tokens
+        and cost; higher values allow more detailed outputs.
+      </p>
+      <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:16px;padding:12px;background:var(--surface-2);border-radius:6px;">
+        <div style="width:200px;">
+          <label style="font-size:12px;font-weight:600;">Max Tokens per Agent Call</label>
+          <input type="number" id="maxTokensInput" value="4096" min="1" style="width:100%;padding:8px 10px;background:var(--input-bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-size:13px;" />
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="window.saveMaxTokens()" style="margin-bottom:0;">💾 Save</button>
+      </div>
+      <div id="maxTokensStatus" class="text-muted" style="font-size:12px;margin-top:8px;">Loading...</div>
+      <p class="text-muted" style="margin-top:12px;font-size:12px;">
+        Common values: 1024 (fast/cheap), 2048 (balanced), 4096 (detailed), 8192 (max detail).
+      </p>
     </div>
   </div>
 </div>

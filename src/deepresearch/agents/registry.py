@@ -37,6 +37,7 @@ from deepresearch.models import (
     ResearchTopic,
     SharedKnowledge,
 )
+from deepresearch.web.settings_manager import settings_manager
 
 
 class AgentRegistry:
@@ -79,6 +80,7 @@ class AgentRegistry:
             model=model_name,
             timeout=self.llm.timeout,
             event_callback=event_callback,
+            max_tokens=settings_manager.get_max_tokens(),
         )
         return ResearchAgent(profile=profile, llm_client=llm)
 
@@ -219,6 +221,20 @@ class AgentRegistry:
                 )
                 r2 = await agent.research_round_2(args[0], args[1], questions)
                 return await agent.write_report(_round_1, r2)
+
+            if (
+                len(args) == 4
+                and isinstance(args[0], ResearchTopic)
+                and isinstance(args[1], SharedKnowledge)
+                and isinstance(args[2], int)
+                and isinstance(args[3], Findings)
+            ):
+                # Round N (3+) — deep iterative research.
+                await _dispatch_state("researching")
+                r_n = await agent.research_round_n(
+                    args[0], args[1], args[2], args[3]
+                )
+                return await agent.write_report(args[3], r_n)
 
             raise TypeError(
                 f"Agent dispatcher received unrecognised arguments for "

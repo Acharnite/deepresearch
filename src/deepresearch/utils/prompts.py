@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from deepresearch.models import AgentProfile, SharedKnowledge
+    from deepresearch.models import AgentProfile, Findings, SharedKnowledge
 
 
 def build_agent_system_prompt(profile: AgentProfile) -> str:
@@ -222,4 +222,54 @@ def build_clarify_prompt(question: str) -> str:
         f'"{question}"\n\n'
         "Please provide a clear, concise response addressing this question. "
         "Refer back to your research findings and analysis as needed."
+    )
+
+
+def build_round_n_prompt(
+    topic: str,
+    shared: SharedKnowledge,
+    round_num: int,
+    max_rounds: int,
+    prev_findings: Findings,
+) -> str:
+    """Build the prompt for Round N (N >= 3) iterative research.
+
+    Args:
+        topic: The research topic/question.
+        shared: The aggregated SharedKnowledge object from prior rounds.
+        round_num: Current round number (3, 4, 5...).
+        max_rounds: Maximum rounds configured for this session.
+        prev_findings: The agent's own findings from the previous round.
+
+    Returns:
+        The Round N user prompt.
+    """
+    themes = "\n".join(f"  - {t}" for t in shared.key_themes)
+    disagreements = "\n".join(
+        f"  - {d}" for d in shared.areas_of_disagreement
+    )
+    gaps = "\n".join(f"  - {g}" for g in shared.knowledge_gaps)
+    prev_kp_text = "\n".join(f"  - {kp}" for kp in prev_findings.key_points)
+
+    return (
+        f"# Research Topic\n{topic}\n\n"
+        f"## Round {round_num} of {max_rounds}\n\n"
+        f"## Your Previous Findings (Round {round_num - 1})\n"
+        f"Summary: {prev_findings.summary}\n\n"
+        f"Key Points:\n{prev_kp_text}\n\n"
+        "## Shared Context\n"
+        f"Key themes identified:\n{themes}\n\n"
+        f"Areas of disagreement to address:\n{disagreements}\n\n"
+        f"Knowledge gaps to explore:\n{gaps}\n\n"
+        "## Instructions\n"
+        f"You are in Round {round_num} of {max_rounds} research rounds. "
+        "Review the shared context from previous rounds and the knowledge "
+        "gaps that remain.\n\n"
+        "IMPORTANT: Only provide NEW insights not covered in previous rounds. "
+        "Do NOT repeat your earlier findings. Focus specifically on:\n"
+        "1. The knowledge gaps listed above\n"
+        "2. Areas where your earlier analysis was incomplete\n"
+        "3. New perspectives that emerge from cross-agent collaboration\n\n"
+        "Use the web_search tool to find additional information. "
+        "Your report should build upon, not duplicate, your previous findings."
     )

@@ -613,6 +613,15 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
     ) -> Findings:
         raise NotImplementedError("ScribeAgent does not perform research rounds.")
 
+    async def research_round_n(
+        self,
+        topic: ResearchTopic,
+        shared: SharedKnowledge,
+        round_num: int,
+        prev_findings: Findings,
+    ) -> Findings:
+        raise NotImplementedError("ScribeAgent does not perform research rounds.")
+
     async def write_report(
         self, round_1: Findings, round_2: Findings | None
     ) -> IndividualReport:

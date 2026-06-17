@@ -1,5 +1,5 @@
 /* ── Session detail view — progress, events, SSE processing ── */
-import { getState, resetDetailState } from '../state.js';
+import { getState, resetDetailState, getSessionConfig } from '../state.js';
 import { STATE_ORDER, STATE_LABELS, STATE_BADGE_CLASSES, STATE_COLORS, stateLabels } from '../constants.js';
 import { esc, showToast, $ } from '../helpers.js';
 import { fetchSessionDetailAPI, fetchSessionStateAPI, startResearchAPI } from '../api.js';
@@ -8,6 +8,73 @@ import { addEvent } from '../event-log.js';
 import { renderAgents } from '../agent-panels.js';
 import { addQA, renderQA } from '../qa-log.js';
 import { getModelPicker } from '../model-picker.js';
+
+// ── Dynamic pipeline rendering ───────────────────────
+const ROUND_ICONS = {
+  ROUND1: '🔍', ROUND2: '🔎', ROUND3: '🔎', ROUND4: '🔎', ROUND5: '🔎',
+};
+
+function buildPipelineStates(maxRoundCount) {
+  const container = document.getElementById('phaseIndicator');
+  if (!container) return;
+  container.innerHTML = '';
+  
+  const states = ['IDLE', 'CONFIGURING'];
+  for (let i = 1; i <= maxRoundCount; i++) {
+    states.push(`ROUND${i}`);
+    if (i < maxRoundCount) {
+      states.push('COLLABORATING', 'FOLLOWUP', 'REFINING');
+    }
+  }
+  states.push('COMPILING', 'OUTPUT', 'COMPLETE');
+  
+  const labels = {
+    IDLE: '⏸ Idle', CONFIGURING: '⚙ Config',
+    COLLABORATING: '🤝 Collaborate', FOLLOWUP: '❓ Follow-up',
+    REFINING: '🔄 Refining', COMPILING: '📝 Compile',
+    OUTPUT: '📄 Output', COMPLETE: '✅ Done',
+  };
+  
+  states.forEach((state, idx) => {
+    const span = document.createElement('span');
+    span.className = 'phase-step';
+    span.dataset.phase = state;
+    if (state.startsWith('ROUND')) {
+      const roundNum = parseInt(state.slice(5));
+      span.textContent = `${ROUND_ICONS[state] || '🔍'} Round ${roundNum}`;
+    } else {
+      span.textContent = labels[state] || state;
+    }
+    container.appendChild(span);
+    
+    if (idx < states.length - 1) {
+      const arrow = document.createElement('span');
+      arrow.className = 'phase-arrow';
+      arrow.textContent = '→';
+      container.appendChild(arrow);
+    }
+  });
+  
+  // Update STATE_ORDER to match dynamic states
+  window._dynamicStateOrder = states;
+}
+
+function updatePipelineDisplay(currentState) {
+  const container = document.getElementById('phaseIndicator');
+  if (!container) return;
+  
+  const stateOrder = window._dynamicStateOrder || STATE_ORDER;
+  const curIdx = stateOrder.indexOf(currentState);
+  
+  container.querySelectorAll('.phase-step').forEach(el => {
+    const phase = el.dataset.phase;
+    const idx = stateOrder.indexOf(phase);
+    el.classList.remove('active', 'done', 'current');
+    if (idx < curIdx) el.classList.add('done');
+    else if (idx === curIdx) el.classList.add('current');
+    else el.classList.add('active');
+  });
+}
 
 // ── Render Q&A graph (wraps qa-graph module) ─────────
 function renderGraph() {
@@ -63,8 +130,9 @@ export function updateState(stateName) {
 
   document.querySelectorAll('.phase-step').forEach(el => {
     const phase = el.dataset.phase;
-    const idx = STATE_ORDER.indexOf(phase);
-    const curIdx = STATE_ORDER.indexOf(state.currentState);
+    const stateOrder = window._dynamicStateOrder || STATE_ORDER;
+    const idx = stateOrder.indexOf(phase);
+    const curIdx = stateOrder.indexOf(state.currentState);
     el.classList.remove('active', 'done', 'current');
     if (idx < curIdx) el.classList.add('done');
     else if (idx === curIdx) el.classList.add('current');
@@ -176,6 +244,12 @@ async function fetchSessionDetail(sessionId) {
   // Restore live state from event history for running sessions
   if (stateData && stateData.status === 'running') {
     const state = getState();
+
+    // Restore max_rounds from session state
+    if (stateData.max_rounds) {
+      state.sessionConfig.max_rounds = stateData.max_rounds;
+      buildPipelineStates(stateData.max_rounds);
+    }
 
     // Restore agent states
     if (stateData.agent_states) {
@@ -303,6 +377,11 @@ export function processEvent(data) {
     if (cancelBtn) cancelBtn.classList.remove('hidden');
     state.agents = {};
     startElapsedTimer();
+    // Extract max_rounds from session_start event and build pipeline
+    if (data.max_rounds) {
+      state.sessionConfig.max_rounds = data.max_rounds;
+      buildPipelineStates(data.max_rounds);
+    }
   }
 
   if (eventType === 'session_end') {

@@ -554,6 +554,17 @@ def build_bus_aware_mock_agent_factory():
 
             if isinstance(first, ResearchTopic):
                 if len(args) > 1 and isinstance(args[1], SharedKnowledge):
+                    # Round 2 or R3+ dispatch
+                    if len(args) == 4 and isinstance(args[2], int) and isinstance(args[3], Findings):
+                        # R3+ dispatch — return IndividualReport
+                        return IndividualReport(
+                            agent_id=profile.id,
+                            title=f"Report by {profile.name}",
+                            perspective_summary=f"{profile.name}'s perspective",
+                            key_insights=["Deep insight"],
+                            analysis=f"Analysis by {profile.name}",
+                            full_text=f"Full report by {profile.name}.",
+                        )
                     return IndividualReport(
                         agent_id=profile.id,
                         title=f"Refined Report by {profile.name}",
@@ -574,6 +585,17 @@ def build_bus_aware_mock_agent_factory():
                     ],
                     perspective=f"{profile.name}'s unique perspective.",
                     confidence=0.7,
+                )
+
+            if isinstance(first, FollowUpQuestions):
+                # Refinement phase — return updated Findings
+                return Findings(
+                    agent_id=profile.id,
+                    round=1,
+                    summary=f"Refined findings by {profile.name}",
+                    key_points=["Refined point"],
+                    perspective="Refined perspective",
+                    confidence=0.8,
                 )
 
             if isinstance(first, SharedKnowledge):

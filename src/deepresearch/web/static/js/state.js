@@ -11,6 +11,7 @@ const state = {
   eventCount: 0,
   qaLog: [],
   availableModels: [],
+  sessionConfig: { max_rounds: 4 },
 };
 
 export function getState() {
@@ -24,4 +25,8 @@ export function resetDetailState() {
   state.currentState = 'IDLE';
   state.currentTopic = '';
   state.qaLog = [];
+}
+
+export function getSessionConfig() {
+  return state.sessionConfig;
 }

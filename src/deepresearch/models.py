@@ -56,6 +56,7 @@ class SharedKnowledge(BaseModel):
     areas_of_agreement: list[str]
     areas_of_disagreement: list[str]
     knowledge_gaps: list[str]
+    round_history: list = []  # list[SharedKnowledge] snapshots from prior rounds
 
 
 class FollowUpQuestions(BaseModel):
@@ -131,3 +132,4 @@ class SessionConfig(BaseModel):
     agent_profiles: list[AgentProfile]
     agent_models: dict[str, str]  # agent_id -> model_name
     time_budget_seconds: int = Field(default=30, ge=1, le=3600)  # Up to 1 hour
+    max_rounds: int = Field(default=4, ge=1, le=10)  # Max research rounds

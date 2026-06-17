@@ -139,7 +139,7 @@ def test_get_dashboard(client: TestClient) -> None:
     assert 'id="scribeCard"' in html
     assert 'id="agent-output-scribe"' in html
     assert 'id="phaseIndicator"' in html
-    assert 'data-phase="REFINING"' in html
+    # Pipeline spans replaced with dynamic #phaseIndicator container (no data-phase attrs)
     assert "startResearch" in html
     assert "showSessions" in html
     assert "showSettings" in html
@@ -274,11 +274,14 @@ def test_run_endpoint_missing_topic_returns_422(client: TestClient) -> None:
 
 
 def test_list_sessions_endpoint(client: TestClient) -> None:
-    """GET /api/sessions returns a list."""
+    """GET /api/sessions returns a dict with sessions, total, offset, limit."""
     resp = client.get("/api/sessions")
     assert resp.status_code == 200
     data = resp.json()
-    assert isinstance(data, list)
+    assert isinstance(data, dict)
+    assert "sessions" in data
+    assert "total" in data
+    assert isinstance(data["sessions"], list)
 
 
 def test_get_session_not_found(client: TestClient) -> None:
@@ -442,13 +445,15 @@ async def test_multi_session_manager_create_custom_budget() -> None:
 
 @pytest.mark.asyncio
 async def test_multi_session_manager_list() -> None:
-    """MultiSessionManager.list_sessions returns sorted list."""
+    """MultiSessionManager.list_sessions returns dict with sessions list."""
     mgr = MultiSessionManager(max_sessions=10)
     info1 = await mgr.create_session(topic="First", time_budget="quick")
     info2 = await mgr.create_session(topic="Second", time_budget="deep")
 
-    sessions = mgr.list_sessions()
+    result = mgr.list_sessions()
+    sessions = result["sessions"]
     assert len(sessions) >= 2
+    assert result["total"] >= 2
 
     # Newest first
     assert sessions[0]["topic"] == "Second"

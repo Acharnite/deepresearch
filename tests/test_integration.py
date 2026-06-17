@@ -284,12 +284,12 @@ class TestIntegration:
         assert orch.state == "COMPLETE"
 
     @pytest.mark.asyncio
-    async def test_quick_mode_skips_round_2(
+    async def test_quick_mode_completes_successfully(
         self,
         mock_profiles,
         mock_model_configs,
     ):
-        """Quick mode should skip Round 2 and still produce output."""
+        """Quick mode should complete successfully with up to 3 rounds."""
         orch = Orchestrator(
             profiles=mock_profiles,
             model_configs=mock_model_configs,
@@ -306,13 +306,13 @@ class TestIntegration:
 
         assert isinstance(output_path, Path)
         assert orch.state == "COMPLETE"
-        # Verify Round 2 was not executed (no round_start with round=2).
-        round_2_events = [
+        # Quick mode runs up to 3 rounds (convergence-based)
+        round_events = [
             e
             for e in orch.events
-            if e.get("event_type") == "round_start" and e.get("round") == 2
+            if e.get("event_type") == "round_start"
         ]
-        assert len(round_2_events) == 0
+        assert len(round_events) >= 1  # At least R1 ran
 
     @pytest.mark.asyncio
     async def test_full_session_events_recorded(
@@ -471,21 +471,9 @@ class TestCollaborationBusIntegration:
             qs = await orch.bus.get_followup_questions(profile.id)
             assert len(qs) >= 1
 
-        # Round 2 runs dynamically based on knowledge quality (gaps + disagreements).
-        # With mock data (1 gap, 0 disagreements, all confidence >= 0.5), Round 2
-        # may be skipped — verify the session completed regardless.
-        async with orch.bus._lock:
-            if len(orch.bus.round_2_findings) > 0:
-                # Round 2 did run — verify findings are present.
-                pass
-            else:
-                # Round 2 was dynamically skipped — verify the skip event was logged.
-                skip_events = [
-                    e for e in orch.events if e.get("event_type") == "round2_skip"
-                ]
-                assert len(skip_events) >= 1
-
-        # All reports collected (works regardless of Round 2).
+        # Round 2 runs dynamically based on convergence.
+        # With the new dynamic rounds, R2 always runs at least once.
+        # Verify the session completed successfully.
         all_reports = await orch.bus.get_all_reports()
         assert len(all_reports) == len(mock_profiles)
 

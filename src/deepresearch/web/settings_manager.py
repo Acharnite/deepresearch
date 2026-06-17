@@ -65,6 +65,50 @@ PROVIDERS: dict[str, dict[str, str]] = {
 }
 
 
+class ContextWindowManager:
+    """Manages per-model context window overrides.
+
+    Stores overrides in ``~/.deepresearch/context_windows.json``.
+    """
+
+    def __init__(self) -> None:
+        self._settings_dir = Path.home() / ".deepresearch"
+        self._settings_dir.mkdir(parents=True, exist_ok=True)
+        self._path = self._settings_dir / "context_windows.json"
+
+    def get_overrides(self) -> dict[str, int]:
+        """Return all context window overrides as ``{model_id: token_count}``."""
+        if self._path.exists():
+            try:
+                data = json.loads(self._path.read_text())
+                if isinstance(data, dict):
+                    return {k: int(v) for k, v in data.items() if isinstance(v, (int, float))}
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning("Failed to read context windows: %s", e)
+        return {}
+
+    def get_override(self, model_id: str) -> int | None:
+        """Return the context window override for a specific model, or None."""
+        return self.get_overrides().get(model_id)
+
+    def set_override(self, model_id: str, context_window: int) -> None:
+        """Set a context window override for a model."""
+        overrides = self.get_overrides()
+        overrides[model_id] = context_window
+        self._path.write_text(json.dumps(overrides, indent=2))
+        logger.info("Context window override set for '%s': %d", model_id, context_window)
+
+    def delete_override(self, model_id: str) -> bool:
+        """Remove a context window override. Returns True if it existed."""
+        overrides = self.get_overrides()
+        if model_id in overrides:
+            del overrides[model_id]
+            self._path.write_text(json.dumps(overrides, indent=2))
+            logger.info("Context window override removed for '%s'", model_id)
+            return True
+        return False
+
+
 class SettingsManager:
     """Manages API keys and local model endpoints.
 
@@ -209,6 +253,101 @@ class SettingsManager:
         os.environ.pop("SCRIBE_MODEL", None)
         self._remove_from_file("SCRIBE_MODEL")
 
+    # ── Search Engine Config ──────────────────────────────────────────
 
-# Module-level singleton.
+    def get_search_config(self) -> dict[str, Any]:
+        """Return the search engine configuration.
+
+        Reads from ``~/.deepresearch/settings.json`` ``search`` field.
+        Returns defaults if not set.
+        """
+        defaults: dict[str, Any] = {
+            "engine": "searxng",
+            "searxng_url": "http://localhost:8888",
+            "searxng_fallback_url": "https://searx.be",
+            "searxng_engines": ["google", "bing", "duckduckgo"],
+            "searxng_categories": ["general"],
+            "searxng_timeout": 10,
+        }
+        settings_path = self._settings_dir / "settings.json"
+        if settings_path.exists():
+            try:
+                data = json.loads(settings_path.read_text())
+                if isinstance(data, dict) and "search" in data:
+                    merged = {**defaults, **data["search"]}
+                    return merged
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning("Failed to read search config: %s", e)
+        return defaults
+
+    def set_search_config(self, config: dict[str, Any]) -> None:
+        """Save the search engine configuration.
+
+        ``config`` should contain one or more of: engine, searxng_url,
+        searxng_fallback_url, searxng_engines, searxng_categories,
+        searxng_timeout.
+        """
+        settings_path = self._settings_dir / "settings.json"
+        data: dict[str, Any] = {}
+        if settings_path.exists():
+            try:
+                data = json.loads(settings_path.read_text())
+                if not isinstance(data, dict):
+                    data = {}
+            except (json.JSONDecodeError, OSError):
+                data = {}
+        # Merge with existing search config
+        existing = data.get("search", {})
+        existing.update(config)
+        data["search"] = existing
+        settings_path.write_text(json.dumps(data, indent=2))
+        logger.info("Search config updated: %s", config)
+
+    # ── Max Tokens per Agent Call ──────────────────────────────────────
+
+    def get_max_tokens(self) -> int:
+        """Get the configured max tokens per agent call.
+
+        Reads from ``~/.deepresearch/settings.json`` ``max_tokens`` field.
+        Returns 4096 if not set or invalid.
+        """
+        settings_path = self._settings_dir / "settings.json"
+        if settings_path.exists():
+            try:
+                data = json.loads(settings_path.read_text())
+                if isinstance(data, dict) and "max_tokens" in data:
+                    val = int(data["max_tokens"])
+                    if val > 0:
+                        return val
+            except (json.JSONDecodeError, OSError, ValueError) as e:
+                logger.warning("Failed to read max_tokens setting: %s", e)
+        return 4096
+
+    def set_max_tokens(self, value: int) -> None:
+        """Save the max tokens per agent call setting.
+
+        Args:
+            value: Max output tokens (must be > 0).
+
+        Raises:
+            ValueError: If value is not a positive integer.
+        """
+        if value < 1:
+            raise ValueError("max_tokens must be >= 1")
+        settings_path = self._settings_dir / "settings.json"
+        data: dict[str, Any] = {}
+        if settings_path.exists():
+            try:
+                data = json.loads(settings_path.read_text())
+                if not isinstance(data, dict):
+                    data = {}
+            except (json.JSONDecodeError, OSError):
+                data = {}
+        data["max_tokens"] = value
+        settings_path.write_text(json.dumps(data, indent=2))
+        logger.info("Max tokens set to %d", value)
+
+
+# Module-level singletons.
 settings_manager = SettingsManager()
+context_window_manager = ContextWindowManager()

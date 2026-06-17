@@ -4,7 +4,9 @@ import { esc, showToast, formatSize, $ } from '../helpers.js';
 import {
   fetchProviderKeys, saveApiKeyAPI, deleteApiKeyAPI,
   fetchLocalModels, addEndpointAPI, removeEndpointAPI, testEndpointAPI,
-  fetchScribeModelAPI, saveScribeModelAPI, clearScribeModelAPI
+  fetchScribeModelAPI, saveScribeModelAPI, clearScribeModelAPI,
+  fetchContextWindows, saveContextWindowAPI, deleteContextWindowAPI,
+  fetchMaxTokens, saveMaxTokensAPI
 } from '../api.js';
 import { ModelPicker } from '../model-picker.js';
 
@@ -234,10 +236,142 @@ window.clearScribeModel = async function() {
   }
 };
 
+// ── Max Tokens per Agent Call ────────────────────────
+async function loadMaxTokens() {
+  try {
+    const value = await fetchMaxTokens();
+    const input = $('maxTokensInput');
+    if (input) input.value = value;
+    const statusEl = $('maxTokensStatus');
+    if (statusEl) statusEl.textContent = 'Current: ' + value + ' tokens';
+  } catch (e) {
+    console.warn('Failed to load max tokens:', e);
+  }
+}
+
+window.saveMaxTokens = async function() {
+  const input = $('maxTokensInput');
+  const value = parseInt(input?.value, 10);
+
+  if (!value || value < 1) {
+    showToast('Please enter a valid token count (>= 1).', 'error');
+    return;
+  }
+
+  try {
+    const resp = await saveMaxTokensAPI(value);
+    if (resp.ok) {
+      showToast('Max tokens set to ' + value.toLocaleString(), 'success');
+      const statusEl = $('maxTokensStatus');
+      if (statusEl) statusEl.textContent = 'Current: ' + value.toLocaleString() + ' tokens';
+    } else {
+      const err = await resp.json();
+      showToast('Error: ' + (err.error || 'Failed'), 'error');
+    }
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
+};
+
+// ── Context Window ──────────────────────────────────
+let ctxModelPicker = null;
+
+async function loadContextWindows() {
+  try {
+    const state = getState();
+    const models = state.availableModels || [];
+    const overrides = await fetchContextWindows();
+
+    // Build the list: show models with their default or overridden context window.
+    let html = '';
+    const displayModels = models.filter(m => m.id);
+    if (displayModels.length === 0) {
+      html = '<div class="text-muted" style="padding:12px;font-size:13px;">No models loaded.</div>';
+    } else {
+      for (const m of displayModels) {
+        const defaultCtx = m.context_window;
+        const overridden = m.id in overrides;
+        const value = overrides[m.id] ?? defaultCtx;
+        if (!value) continue; // Skip models with no context window info
+
+        const badge = overridden
+          ? '<span class="context-badge context-badge-override">override</span>'
+          : '<span class="context-badge context-badge-default">default</span>';
+
+        html += '<div class="context-window-row">' +
+          '<span class="context-window-model">' + esc(m.display_name || m.id) + '</span>' +
+          '<span class="context-window-provider">' + esc(m.provider || '?') + '</span>' +
+          '<span class="context-window-value">' + Number(value).toLocaleString() + ' tokens</span>' +
+          badge +
+          (overridden
+            ? '<button class="btn btn-sm btn-danger" onclick="window.resetContextWindow(\'' + esc(m.id) + '\')">Reset</button>'
+            : '') +
+        '</div>';
+      }
+    }
+    const el = $('contextWindowList');
+    if (el) el.innerHTML = html;
+
+    // Init model picker for the add form.
+    if (!ctxModelPicker) {
+      ctxModelPicker = new ModelPicker('ctxModelPicker', () => {});
+    }
+    ctxModelPicker.setModels(models);
+    ctxModelPicker.setValue('');
+  } catch (err) {
+    console.warn('Failed to load context windows:', err);
+    const el = $('contextWindowList');
+    if (el) el.innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">Failed to load context windows.</div>';
+  }
+}
+
+window.saveContextWindow = async function() {
+  const model = ctxModelPicker ? ctxModelPicker.getValue() : '';
+  const input = $('ctxWindowInput');
+  const value = parseInt(input?.value, 10);
+
+  if (!model) {
+    showToast('Please select a model.', 'error');
+    return;
+  }
+  if (!value || value < 1) {
+    showToast('Please enter a valid token count (>= 1).', 'error');
+    return;
+  }
+
+  try {
+    const resp = await saveContextWindowAPI(model, value);
+    if (resp.ok) {
+      showToast('Context window set for ' + model + ': ' + value.toLocaleString() + ' tokens', 'success');
+      if (input) input.value = '';
+      loadContextWindows();
+    } else {
+      const err = await resp.json();
+      showToast('Error: ' + (err.error || 'Failed'), 'error');
+    }
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
+};
+
+window.resetContextWindow = async function(modelId) {
+  try {
+    const resp = await deleteContextWindowAPI(modelId);
+    if (resp.ok) {
+      showToast('Context window reset for ' + modelId, 'success');
+      loadContextWindows();
+    }
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
+};
+
 // ── Exports for index.js ────────────────────────────
 export function loadSettingsView() {
   loadProviderList();
   loadDiscoveredModels();
   loadEndpointList();
   loadScribeModel();
+  loadMaxTokens();
+  loadContextWindows();
 }

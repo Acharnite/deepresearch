@@ -199,6 +199,7 @@ class TestDryRun:
             "estimated_cost",
             "estimated_tokens",
             "rounds",
+            "max_rounds",
             "agents_count",
         }
         assert set(result.keys()) == expected_keys
@@ -216,17 +217,19 @@ class TestDryRun:
             assert "temperature" in a
 
     def test_dry_run_rounds_quick(self, config):
-        """Quick mode should report 1 round."""
+        """Quick mode should report 3 rounds (ADR-0010)."""
         config.topic.time_budget = "quick"
+        config.max_rounds = 3  # ADR-0010: _MAX_ROUNDS_BY_BUDGET["quick"] = 3
         orch = Orchestrator()
         result = orch.dry_run("Topic", "quick", "same", config=config)
-        assert result["rounds"] == 1
+        assert result["rounds"] == 3
 
     def test_dry_run_rounds_medium(self, config):
-        """Medium mode should report 2 rounds."""
+        """Medium mode should report 4 rounds (ADR-0010)."""
+        # config fixture already has max_rounds=4 (SessionConfig default)
         orch = Orchestrator()
         result = orch.dry_run("Topic", "medium", "same", config=config)
-        assert result["rounds"] == 2
+        assert result["rounds"] == 4
 
     def test_dry_run_estimated_cost_is_float(self, config):
         """Estimated cost must be a non-negative float."""
@@ -715,6 +718,7 @@ class TestKeyboardInterrupt:
             seed = None
             model = None
             web = False
+            rounds = None  # max rounds override (ADR-0010)
 
         args = FakeArgs()
 

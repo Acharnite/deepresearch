@@ -55,6 +55,24 @@ class BaseAgent(ABC):
         """Deeper research round with shared context and follow-up questions."""
 
     @abstractmethod
+    async def research_round_n(
+        self,
+        topic: ResearchTopic,
+        shared: SharedKnowledge,
+        round_num: int,
+        prev_findings: Findings,
+    ) -> Findings:
+        """Research round for N >= 3.
+
+        Args:
+            topic: Original research topic.
+            shared: Shared knowledge from collaboration phase.
+            round_num: Current round number (3, 4, 5...).
+            prev_findings: Agent's own findings from the previous round,
+                to avoid repetition.
+        """
+
+    @abstractmethod
     async def write_report(
         self, round_1: Findings, round_2: Findings | None
     ) -> IndividualReport:

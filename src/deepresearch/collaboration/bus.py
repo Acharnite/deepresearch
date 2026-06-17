@@ -80,7 +80,11 @@ class CollaborationBus:
     # ------------------------------------------------------------------
 
     async def compute_shared_knowledge(self) -> SharedKnowledge:
-        """Aggregate all Round 1 findings into a ``SharedKnowledge`` object.
+        """Aggregate all findings into a ``SharedKnowledge`` object.
+
+        Uses the most recent findings per agent (round_2 > round_1 >
+        other_rounds).  For round 1, this is just the R1 findings.
+        For round 2+, this includes the latest findings from each agent.
 
         The aggregation extracts:
           - **all_summaries**: ``{agent_id: summary}`` from each agent.
@@ -98,11 +102,23 @@ class CollaborationBus:
         quality and nuance.
         """
         async with self._lock:
-            all_summaries = {aid: f.summary for aid, f in self.round_1_findings.items()}
+            # Build the latest findings per agent: prefer round_2, then
+            # round_1, then other_rounds.
+            latest_findings: dict[str, Findings] = {}
+            # Start with round_1 as baseline
+            latest_findings.update(self.round_1_findings)
+            # Overlay round_2 if available
+            latest_findings.update(self.round_2_findings)
+            # Overlay other rounds (most recent wins)
+            for (aid, rnd), f in self.other_rounds_findings.items():
+                if rnd >= 2:
+                    latest_findings[aid] = f
+
+            all_summaries = {aid: f.summary for aid, f in latest_findings.items()}
 
             # Themes: unique first-5-word prefixes from key points.
             theme_counter: Counter[str] = Counter()
-            for f in self.round_1_findings.values():
+            for f in latest_findings.values():
                 for kp in f.key_points:
                     prefix = " ".join(kp.split()[:5])
                     if prefix:
@@ -113,7 +129,7 @@ class CollaborationBus:
             # Areas of agreement: key points that multiple agents share
             # (exact substring match across agents).
             all_points: dict[str, set[str]] = {}
-            for f in self.round_1_findings.values():
+            for f in latest_findings.values():
                 for kp in f.key_points:
                     normalized = kp.strip().lower()
                     if normalized not in all_points:
@@ -127,7 +143,7 @@ class CollaborationBus:
             # Areas of disagreement: compare perspective fields for
             # contradictory language markers.
             perspectives = {
-                aid: f.perspective.lower() for aid, f in self.round_1_findings.items()
+                aid: f.perspective.lower() for aid, f in latest_findings.items()
             }
             disagreement_markers = [
                 "however",
@@ -146,8 +162,6 @@ class CollaborationBus:
                 for i in range(len(pids)):
                     for j in range(i + 1, len(pids)):
                         a, b = pids[i], pids[j]
-                        # Simple heuristic: if one mentions limitations
-                        # of the other's view, flag as disagreement.
                         combined = perspectives[a] + " " + perspectives[b]
                         if any(m in combined for m in disagreement_markers):
                             areas_of_disagreement.append(
@@ -168,7 +182,7 @@ class CollaborationBus:
                 "insufficient",
             ]
             knowledge_gaps_set: set[str] = set()
-            for aid, f in self.round_1_findings.items():
+            for aid, f in latest_findings.items():
                 summary_lower = f.summary.lower()
                 for marker in gap_markers:
                     if marker in summary_lower:
@@ -184,7 +198,7 @@ class CollaborationBus:
             if not areas_of_agreement:
                 topic_str = self.topic.question if self.topic else "the topic"
                 areas_of_agreement = [
-                    f"All {len(self.round_1_findings)} agents explored the topic of "
+                    f"All {len(latest_findings)} agents explored the topic of "
                     f"'{topic_str}'"
                 ]
 
@@ -242,11 +256,33 @@ class CollaborationBus:
             logger.debug("Round 2 findings published for agent '%s'", agent_id)
 
     async def publish_round(
-        self, agent_id: str, round_num: int, findings: Findings
+        self, agent_id: str, round_num: int, findings: Findings | IndividualReport
     ) -> None:
-        """Publish an agent's findings for any round (generic)."""
+        """Publish an agent's findings for any round (generic).
+
+        Accepts both ``Findings`` (R1) and ``IndividualReport`` (R2+ wrapped
+        by the registry dispatch). For the purpose of shared knowledge
+        computation, extracts ``Findings``-like fields from either type.
+
+        For round 1, also populates ``round_1_findings`` for backward compat.
+        """
         async with self._lock:
-            self.other_rounds_findings[(agent_id, round_num)] = findings
+            # Normalize to Findings-like structure for bus storage
+            if isinstance(findings, IndividualReport):
+                normalized = Findings(
+                    agent_id=findings.agent_id,
+                    round=round_num,
+                    summary=findings.perspective_summary,
+                    key_points=findings.key_insights,
+                    perspective=findings.analysis,
+                    confidence=0.7,
+                )
+            else:
+                normalized = findings
+            self.other_rounds_findings[(agent_id, round_num)] = normalized
+            # Backward compat: populate round_1_findings for R1
+            if round_num == 1:
+                self.round_1_findings[agent_id] = normalized
             logger.debug(
                 "Round %d findings published for agent '%s'", round_num, agent_id
             )
