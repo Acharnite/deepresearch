@@ -294,7 +294,7 @@ class TestSearchHealthInfo:
         info = get_search_health_info()
         assert "engine" in info
         assert "status" in info
-        assert "cached_queries" in info
+        assert "last_search_latency_ms" in info
         assert "searxng_url" in info
 
     def test_health_values(self) -> None:

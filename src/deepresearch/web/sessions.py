@@ -18,9 +18,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import json as _json
+from deepresearch.constants import MAX_ROUNDS_BY_BUDGET, PDF_MIN_HEALTHY_BYTES, TIME_BUDGET_SECONDS
 from deepresearch.web.event_bus import EventBus
 from deepresearch.web.settings_manager import settings_manager
 
@@ -40,30 +41,23 @@ def _load_session_db() -> dict[str, dict]:
     return {}
 
 
-def _save_session_db(db: dict[str, dict]) -> None:
-    """Persist session metadata to disk (synchronous, no lock)."""
-    try:
-        SESSION_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        SESSION_DB_PATH.write_text(
-            _json.dumps(db, indent=2, default=str), encoding="utf-8"
-        )
-    except Exception as e:
-        logger.warning("Failed to save session DB: %s", e)
-
-
 _session_db_lock = asyncio.Lock()
 
 
-async def _save_session_db_async(db: dict[str, dict]) -> None:
-    """Persist session metadata to disk with async lock to prevent concurrent writes."""
+async def _atomic_update_session_db(
+    updater: Callable[[dict[str, dict]], None],
+) -> None:
+    """Atomically load, modify via updater, and persist session DB."""
     async with _session_db_lock:
         try:
+            db = _load_session_db()
+            updater(db)
             SESSION_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
             SESSION_DB_PATH.write_text(
                 _json.dumps(db, indent=2, default=str), encoding="utf-8"
             )
         except Exception as e:
-            logger.warning("Failed to save session DB: %s", e)
+            logger.warning("Failed to update session DB: %s", e)
 
 
 def _slugify(text: str, max_len: int = 50) -> str:
@@ -153,10 +147,10 @@ class MultiSessionManager:
         if time_budget_seconds is not None:
             secs = time_budget_seconds
         else:
-            secs = {"quick": 300, "medium": 300, "deep": 480}.get(time_budget, 300)
+            secs = TIME_BUDGET_SECONDS.get(time_budget, 300)
 
         # Derive max_rounds from budget if not explicitly provided.
-        max_rounds_by_budget = {"quick": 3, "medium": 4, "deep": 5, "custom": 4}
+        max_rounds_by_budget = MAX_ROUNDS_BY_BUDGET.copy()
         if max_rounds is None:
             max_rounds = max_rounds_by_budget.get(time_budget, 4)
         # Clamp to valid range.
@@ -196,8 +190,7 @@ class MultiSessionManager:
             info.status = "error"
             info.error = f"Model connectivity check failed for '{test_model}': {e}"
             info.completed_at = datetime.now().isoformat()
-            db = _load_session_db()
-            db[info.session_id] = {
+            entry = {
                 "topic": info.topic,
                 "status": info.status,
                 "time_budget": info.time_budget,
@@ -211,7 +204,7 @@ class MultiSessionManager:
                 "error": info.error,
                 "output_language": info.output_language,
             }
-            await _save_session_db_async(db)
+            await _atomic_update_session_db(lambda db: db.__setitem__(info.session_id, entry))
             await info.event_bus.publish(
                 {
                     "event_type": "session_error",
@@ -235,9 +228,8 @@ class MultiSessionManager:
         info = self._sessions[session_id]
         info.status = "running"
 
-        # Acquire concurrency semaphore if provided (limits parallel sessions).
-        if semaphore is not None:
-            await semaphore.acquire()
+        # Semaphore is already acquired by the server handler before
+        # create_session() returns. Only release happens here (in finally).
 
         # Create a cancel event for this session so cancellation is
         # immediate even when an agent is inside a long LLM call.
@@ -328,7 +320,7 @@ class MultiSessionManager:
             # Check underweight PDF — mark as error instead of complete
             pdf_size = pdf_file.stat().st_size if pdf_file.exists() else 0
             is_underweight = getattr(orchestrator, '_pdf_underweight', False) or (
-                pdf_file.exists() and pdf_size < 12_000
+                pdf_file.exists() and pdf_size < PDF_MIN_HEALTHY_BYTES
             )
             if is_underweight:
                 info.result = {
@@ -341,7 +333,7 @@ class MultiSessionManager:
                 info.error = f"PDF too small ({pdf_size} bytes)"
             else:
                 # Check if all agents failed — mark as error instead of complete
-                total_agents = len(orchestrator.failed_agents) + len(
+                total_agents = len(
                     [
                         a
                         for a in (
@@ -376,8 +368,7 @@ class MultiSessionManager:
                     info.status = "complete"
             info.completed_at = datetime.now().isoformat()
             # Persist to disk so it survives restarts
-            db = _load_session_db()
-            db[info.session_id] = {
+            entry = {
                 "topic": info.topic,
                 "status": info.status,
                 "time_budget": info.time_budget,
@@ -391,7 +382,7 @@ class MultiSessionManager:
                 "error": info.error,
                 "output_language": info.output_language,
             }
-            await _save_session_db_async(db)
+            await _atomic_update_session_db(lambda db: db.__setitem__(info.session_id, entry))
             info.output_path = str(output_path)
 
             await info.event_bus.publish(

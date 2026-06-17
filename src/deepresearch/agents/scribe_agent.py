@@ -33,7 +33,7 @@ from deepresearch.models import (
 logger = logging.getLogger(__name__)
 
 # Maximum clarification rounds per agent per session.
-_MAX_CLARIFICATION_ROUNDS = 5
+_MAX_CLARIFICATION_ROUNDS = 2
 
 _SCRIBE_SYSTEM_PROMPT = (
     "You are a professional research editor and synthesiser. Your role is to "
@@ -362,13 +362,8 @@ class ScribeAgent(BaseAgent):
                 )
                 continue
 
-            # Skip if agent already answered > 2 clarifications.
-            if agent_id in _asked_agents and _asked_agents[agent_id] >= 2:
-                logger.info(
-                    "Agent '%s' already answered 2 clarifications, skipping",
-                    agent_id,
-                )
-                continue
+            # Skip if agent already answered max clarifications.
+            # (Checked by _MAX_CLARIFICATION_ROUNDS above)
 
             # Fire clarification as a concurrent task (don't await).
             if status_callback:
@@ -398,8 +393,8 @@ class ScribeAgent(BaseAgent):
                     agent_id,
                     _consecutive_empties,
                 )
-                if _consecutive_empties >= 3:
-                    logger.info("3 consecutive empty clarifications, stopping protocol")
+                if _consecutive_empties >= 2:
+                    logger.info("2 consecutive empty clarifications, stopping protocol (per ADR-0007)")
                     break
                 continue
 

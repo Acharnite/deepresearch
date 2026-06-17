@@ -26,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 
 from deepresearch import __version__ as _deepresearch_version
 from deepresearch.config import load_agent_profiles, load_model_config
+from deepresearch.constants import TIME_BUDGET_SECONDS
 from deepresearch.web.event_bus import event_bus as global_event_bus
 from deepresearch.web.sessions import multi_session_manager
 from deepresearch.web.settings_manager import PROVIDERS, settings_manager, context_window_manager
@@ -111,10 +112,13 @@ logger.info(
 )
 
 # ── CORS (allow browser-based access from any origin) ──────────────────
+# NOTE: allow_credentials=False because allow_origins=["*"] is used.
+# CORS spec explicitly forbids the combination of wildcard origin + credentials.
+# The dashboard uses fetch() without credentials, so this is safe.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -245,13 +249,19 @@ async def start_research(req: RunRequest) -> JSONResponse:
     Respects the global session concurrency limit. If the limit is
     reached, returns HTTP 429 with active session count.
     """
-    # Check concurrency limit — non-blocking check.
-    if _session_semaphore.locked():
-        active = multi_session_manager.active_count
+    # Atomic concurrency check — acquire immediately or reject.
+    # This replaces the old non-atomic locked() check.
+    # Note: wait_for(timeout=0) always raises TimeoutError for coroutines
+    # in Python 3.12+ (coro is never "done" before being awaited), so a
+    # small non-zero timeout is used instead.  When capacity is available,
+    # acquire() completes synchronously before the timer fires (1 ms).
+    try:
+        await asyncio.wait_for(_session_semaphore.acquire(), timeout=0.001)
+    except asyncio.TimeoutError:
         return JSONResponse(
             {
                 "error": "Concurrency limit reached",
-                "active_sessions": active,
+                "active_sessions": multi_session_manager.active_count,
                 "max_concurrent": MAX_CONCURRENT_SESSIONS,
             },
             status_code=429,
@@ -271,6 +281,7 @@ async def start_research(req: RunRequest) -> JSONResponse:
             output_language=req.output_language,
             semaphore=_session_semaphore,
         )
+        # Semaphore released by _run_session's finally block.
         return JSONResponse(
             {
                 "status": "started",
@@ -281,6 +292,7 @@ async def start_research(req: RunRequest) -> JSONResponse:
             }
         )
     except RuntimeError as e:
+        _session_semaphore.release()
         return JSONResponse({"error": str(e)}, status_code=409)
 
 
@@ -336,11 +348,7 @@ async def get_session(session_id: str) -> JSONResponse:
             "status": info.status,
             "time_budget": info.time_budget,
             "time_budget_seconds": info.time_budget_seconds,
-            "estimated_duration_seconds": {
-                "quick": 360,
-                "medium": 600,
-                "deep": 900,
-            }.get(info.time_budget, 600),
+            "estimated_duration_seconds": TIME_BUDGET_SECONDS.get(info.time_budget, 600),
             "model_mode": info.model_mode,
             "created_at": info.created_at,
             "completed_at": info.completed_at,

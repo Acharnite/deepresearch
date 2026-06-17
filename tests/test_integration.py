@@ -596,33 +596,6 @@ class TestCollaborationBusIntegration:
         assert shared is not None
         assert "agent-alpha" not in shared.all_summaries
 
-    @pytest.mark.asyncio
-    async def test_run_parallel_utility(
-        self,
-        mock_profiles,
-        mock_model_configs,
-    ):
-        """_run_parallel helper executes tasks and handles failures."""
-        orch = Orchestrator(
-            profiles=mock_profiles,
-            model_configs=mock_model_configs,
-            agent_factory=build_mock_agent_factory(),
-            scribe_factory=build_mock_scribe_factory(),
-        )
-
-        async def success() -> str:
-            return "ok"
-
-        async def failure() -> str:
-            raise ValueError("task failed")
-
-        results = await orch._run_parallel({"a": success(), "b": failure()})
-
-        assert "a" in results
-        assert "b" not in results
-        assert results["a"] == "ok"
-
-
 class TestPDFIntegration:
     """Full pipeline integration — PDF output generation."""
 

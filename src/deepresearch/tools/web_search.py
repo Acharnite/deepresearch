@@ -27,7 +27,7 @@ _searxng_url: str = os.environ.get("SEARXNG_URL", "http://localhost:8888")
 _searxng_fallback_url: str = os.environ.get(
     "SEARXNG_FALLBACK_URL", "https://searx.be"
 )
-_searxng_engines: list[str] = ["google", "bing", "duckduckgo"]
+_searxng_engines: list[str] = ["google", "bing", "startpage"]
 _searxng_categories: list[str] = ["general"]
 _searxng_timeout: int = 10
 
@@ -219,7 +219,7 @@ async def web_search(
         Returns an empty list on failure (fallback mode).
     """
     # Lazy-load search config from settings on first call
-    if _search_engine == "searxng" and _searxng_url == "http://localhost:8888":
+    if _search_engine == "searxng":
         _load_search_config()
 
     use_searxng = _search_engine == "searxng"

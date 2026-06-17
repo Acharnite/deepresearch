@@ -14,13 +14,6 @@ class ResearchTopic(BaseModel):
     model_mode: Literal["same", "random", "manual"] = "same"
 
 
-class ModelConfig(BaseModel):
-    """Configuration for a specific model assignment."""
-
-    selected_model: str = "gpt-4o"
-    temperature_override: float | None = None
-
-
 class AgentProfile(BaseModel):
     """Definition of an agent's personality and methodology."""
 

@@ -26,6 +26,7 @@ from rich.prompt import Prompt
 
 from deepresearch.collaboration import CollaborationBus
 from deepresearch.config import ConfigError
+from deepresearch.constants import MAX_ROUNDS_BY_BUDGET, PDF_MIN_HEALTHY_BYTES, TIME_BUDGET_SECONDS
 from deepresearch.models import (
     AgentProfile,
     ClarificationQuery,
@@ -70,23 +71,8 @@ class Orchestrator:
         "deep": "Deep (~10 min — most thorough)",
     }
 
-    # Map time-budget keywords to seconds.
-    TIME_BUDGET_SECONDS: dict[str, int] = {
-        "quick": 240,
-        "medium": 420,
-        "deep": 660,
-    }
-
     # Custom time-budget keyword used when --minutes is provided.
     _CUSTOM_BUDGET_KEY = "custom"
-
-    # Max rounds by budget keyword.
-    _MAX_ROUNDS_BY_BUDGET: dict[str, int] = {
-        "quick": 2,
-        "medium": 3,
-        "deep": 5,
-        "custom": 4,
-    }
 
     def __init__(
         self,
@@ -243,6 +229,7 @@ class Orchestrator:
         agents: dict[str, AgentFunc],
         topic: ResearchTopic,
         shared: SharedKnowledge | None = None,
+        start_time: float | None = None,
     ) -> dict[str, Any]:
         """Execute all agents in parallel with individual timeout protection.
 
@@ -349,6 +336,13 @@ class Orchestrator:
                     timeout,
                 )
                 retry_tasks[agent_id] = agents.get(agent_id)
+            except asyncio.CancelledError:
+                logger.info(
+                    "Agent '%s' cancelled in Round %d",
+                    agent_id,
+                    round_num,
+                )
+                break
             except Exception as e:
                 logger.warning(
                     "Agent '%s' failed in Round %d: %s, will retry",
@@ -357,6 +351,26 @@ class Orchestrator:
                     e,
                 )
                 retry_tasks[agent_id] = agents.get(agent_id)
+
+            # ── Budget check after each agent ────────────────────────────
+            if start_time is not None:
+                b = (
+                    self.session_config.time_budget_seconds
+                    if self.session_config
+                    else MAX_SESSION_DURATION
+                )
+                if time.monotonic() - start_time > min(MAX_SESSION_DURATION, b):
+                    logger.warning(
+                        "Time budget exceeded during round %d — cancelling remaining agents",
+                        round_num,
+                    )
+                    self._log_event("budget_exceeded_during_round", round=round_num)
+                    if self._cancel_event:
+                        self._cancel_event.set()
+                    for t in tasks.values():
+                        if not t.done():
+                            t.cancel()
+                    break
 
         # ── Retry failed agents once ────────────────────────────────
         for agent_id in list(retry_tasks.keys()):
@@ -432,59 +446,6 @@ class Orchestrator:
         agent_budget = b - scribe_budget
         per_round = max(90, int(agent_budget / m))
         return per_round
-
-    # ------------------------------------------------------------------
-    # Collaboration — aggregate findings into shared knowledge
-    # ------------------------------------------------------------------
-
-    def share_findings(self, round_1_results: dict[str, Findings]) -> SharedKnowledge:
-        """Aggregate all Round 1 findings into a SharedKnowledge object.
-
-        Uses basic extraction heuristics for themes, agreements,
-        disagreements, and gaps. In Phase 4 these will be replaced with
-        LLM-powered extraction for higher quality.
-        """
-        all_summaries = {aid: f.summary for aid, f in round_1_results.items()}
-        all_key_points: list[str] = []
-        for f in round_1_results.values():
-            all_key_points.extend(f.key_points)
-
-        shared = SharedKnowledge(
-            round_number=1,
-            all_summaries=all_summaries,
-            key_themes=self._extract_themes(round_1_results),
-            areas_of_agreement=self._extract_agreements(round_1_results),
-            areas_of_disagreement=self._extract_disagreements(round_1_results),
-            knowledge_gaps=self._extract_gaps(round_1_results),
-        )
-        self._log_event("collaboration_phase", shared_agent_count=len(round_1_results))
-        return shared
-
-    @staticmethod
-    def _extract_themes(results: dict[str, Findings]) -> list[str]:
-        """Extract common themes from findings (simple stub — Phase 4 improves)."""
-        themes: set[str] = set()
-        for f in results.values():
-            for kp in f.key_points:
-                words = kp.split()[:5]
-                if words:
-                    themes.add(" ".join(words))
-        return list(themes)[:10]
-
-    @staticmethod
-    def _extract_agreements(results: dict[str, Findings]) -> list[str]:
-        """Extract areas of agreement (stub)."""
-        return ["Multiple perspectives identified on the core topic"]
-
-    @staticmethod
-    def _extract_disagreements(results: dict[str, Findings]) -> list[str]:
-        """Extract areas of disagreement (stub)."""
-        return []
-
-    @staticmethod
-    def _extract_gaps(results: dict[str, Findings]) -> list[str]:
-        """Extract knowledge gaps (stub)."""
-        return ["Further research needed for comprehensive understanding"]
 
     # ------------------------------------------------------------------
     # Convergence Detection
@@ -651,76 +612,6 @@ class Orchestrator:
         return results
 
     # ------------------------------------------------------------------
-    # Reports
-    # ------------------------------------------------------------------
-
-    async def collect_reports(
-        self,
-        agents: dict[str, AgentFunc],
-        round_1: dict[str, Findings],
-        round_2: dict[str, IndividualReport],
-    ) -> dict[str, IndividualReport]:
-        """Collect final individual reports from each agent.
-
-        If Round 2 results are available they are returned directly.
-        Otherwise, Round 1 findings are converted to IndividualReport
-        directly — no extra LLM calls needed.
-
-        Note: With the new round loop, this method is called less
-        frequently — the loop handles R2+ report collection inline.
-        """
-        if round_2:
-            return round_2
-
-        results: dict[str, IndividualReport] = {}
-        for agent_id, findings in round_1.items():
-            if agent_id in self.failed_agents:
-                continue
-            results[agent_id] = IndividualReport(
-                agent_id=agent_id,
-                title=f"Report from {agent_id}",
-                perspective_summary=findings.summary,
-                key_insights=findings.key_points,
-                analysis=findings.raw_response or findings.summary,
-                full_text=findings.raw_response or findings.summary,
-            )
-        return results
-
-    async def collect_reports_variable(
-        self,
-        agents: dict[str, AgentFunc],
-        round_results: dict[int, dict[str, Any]],
-    ) -> dict[str, IndividualReport]:
-        """Collect reports from variable-length round results.
-
-        Args:
-            agents: Agent callables.
-            round_results: {round_num: {agent_id: result}} — results may be
-                Findings (R1) or IndividualReport (R2+ wrapped by dispatch).
-
-        Returns:
-            Mapping of agent_id → IndividualReport for all active agents.
-        """
-        latest_round = max(round_results.keys()) if round_results else 1
-        results: dict[str, IndividualReport] = {}
-        for agent_id in agents:
-            if agent_id in self.failed_agents:
-                continue
-            latest = round_results.get(latest_round, {}).get(agent_id)
-            if isinstance(latest, IndividualReport):
-                results[agent_id] = latest
-            elif isinstance(latest, Findings):
-                results[agent_id] = IndividualReport(
-                    agent_id=agent_id,
-                    title=f"Report from {agent_id}",
-                    perspective_summary=latest.summary,
-                    key_insights=latest.key_points,
-                    analysis=latest.raw_response or latest.summary,
-                    full_text=latest.raw_response or latest.summary,
-                )
-        return results
-
-    # ------------------------------------------------------------------
     # Compilation & PDF Generation
     # ------------------------------------------------------------------
 
@@ -846,37 +737,6 @@ class Orchestrator:
             f"  [yellow]⚠ Agent '{agent_id}' failed: {error}[/yellow]"
             " — continuing with remaining agents",
         )
-
-    # ------------------------------------------------------------------
-    # Parallel execution helper
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    async def _run_parallel(
-        tasks: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Execute coroutines in parallel with proper error handling.
-
-        Wraps ``asyncio.gather(return_exceptions=True)``. Failed tasks
-        are excluded from the returned dict and logged as warnings.
-
-        Args:
-            tasks: ``{name: awaitable}`` mapping.
-
-        Returns:
-            ``{name: result}`` — only successful results.
-        """
-        names = list(tasks.keys())
-        cors = list(tasks.values())
-        gathered = await asyncio.gather(*cors, return_exceptions=True)
-
-        results: dict[str, Any] = {}
-        for name, outcome in zip(names, gathered):
-            if isinstance(outcome, Exception):
-                logger.warning("Task '%s' failed: %s", name, outcome)
-            else:
-                results[name] = outcome
-        return results
 
     # ------------------------------------------------------------------
     # Session Lifecycle
@@ -1025,7 +885,9 @@ class Orchestrator:
             if time.monotonic() - start_time > min(
                 MAX_SESSION_DURATION, config.time_budget_seconds
             ):
-                logger.info("Time budget exceeded — stopping after round %d", round_num - 1)
+                logger.info("Time budget exceeded — stopping")
+                if self._cancel_event:
+                    self._cancel_event.set()
                 break
 
             # ── Run round ─────────────────────────────────────────────
@@ -1041,6 +903,7 @@ class Orchestrator:
                     1,
                     {aid: agents[aid] for aid in active_agents()},
                     config.topic,
+                    start_time=start_time,
                 )
             elif round_num == 2:
                 assert latest_shared is not None
@@ -1049,6 +912,7 @@ class Orchestrator:
                     {aid: agents[aid] for aid in active_agents()},
                     config.topic,
                     latest_shared,
+                    start_time=start_time,
                 )
             else:
                 # R3+ — dispatch via (topic, shared, round_num, prev_findings)
@@ -1060,6 +924,7 @@ class Orchestrator:
                     config.topic,
                     latest_shared,
                     prev_round,
+                    start_time=start_time,
                 )
 
             round_results[round_num] = results
@@ -1139,7 +1004,7 @@ class Orchestrator:
                 )
                 self._log_event("refinement_start")
                 refined = await self._run_refinement(
-                    agents, followup_results, active_agents
+                    agents, followup_results, active_agents, start_time=start_time
                 )
                 for agent_id, refined_findings in refined.items():
                     results[agent_id] = refined_findings
@@ -1205,6 +1070,7 @@ class Orchestrator:
         topic: ResearchTopic,
         shared: SharedKnowledge,
         prev_round: dict[str, Any],
+        start_time: float | None = None,
     ) -> dict[str, Any]:
         """Run a Round N (N >= 3) for all agents.
 
@@ -1293,6 +1159,13 @@ class Orchestrator:
                     timeout,
                 )
                 retry_tasks[agent_id] = agents.get(agent_id)
+            except asyncio.CancelledError:
+                logger.info(
+                    "Agent '%s' cancelled in round %d",
+                    agent_id,
+                    round_num,
+                )
+                break
             except Exception as e:
                 logger.warning(
                     "Agent '%s' failed in Round %d: %s, will retry",
@@ -1301,6 +1174,26 @@ class Orchestrator:
                     e,
                 )
                 retry_tasks[agent_id] = agents.get(agent_id)
+
+            # ── Budget check after each agent ────────────────────────────
+            if start_time is not None:
+                b = (
+                    self.session_config.time_budget_seconds
+                    if self.session_config
+                    else MAX_SESSION_DURATION
+                )
+                if time.monotonic() - start_time > min(MAX_SESSION_DURATION, b):
+                    logger.warning(
+                        "Time budget exceeded during round %d — cancelling remaining agents",
+                        round_num,
+                    )
+                    self._log_event("budget_exceeded_during_round", round=round_num)
+                    if self._cancel_event:
+                        self._cancel_event.set()
+                    for t in tasks.values():
+                        if not t.done():
+                            t.cancel()
+                    break
 
         # ── Retry failed agents once ────────────────────────────────
         for agent_id in list(retry_tasks.keys()):
@@ -1374,6 +1267,7 @@ class Orchestrator:
         agents: dict[str, AgentFunc],
         followup_results: dict[str, FollowUpQuestions],
         active_agents: Callable[[], list[str]],
+        start_time: float | None = None,
     ) -> dict[str, Findings]:
         """Run refinement phase for all agents based on follow-up questions."""
         refined: dict[str, Findings] = {}
@@ -1412,6 +1306,20 @@ class Orchestrator:
 
         tasks = [_refine_agent(aid, fu) for aid, fu in followup_results.items()]
         results = await asyncio.gather(*tasks)
+
+        # ── Budget check after refinement ────────────────────────────────
+        if start_time is not None:
+            b = (
+                self.session_config.time_budget_seconds
+                if self.session_config
+                else MAX_SESSION_DURATION
+            )
+            if time.monotonic() - start_time > min(MAX_SESSION_DURATION, b):
+                logger.warning("Time budget exceeded during refinement phase")
+                self._log_event("budget_exceeded_during_round", round=0, phase="refinement")
+                if self._cancel_event:
+                    self._cancel_event.set()
+
         for result in results:
             if result:
                 agent_id, refined_findings = result
@@ -1423,28 +1331,6 @@ class Orchestrator:
                 f"  [dim]{len(refined)} agent(s) refined their findings[/dim]"
             )
         return refined
-
-    async def _compute_round_shared_knowledge(
-        self,
-        round_num: int,
-        results: dict[str, Any],
-        round_history: list[SharedKnowledge],
-    ) -> SharedKnowledge | None:
-        """Compute SharedKnowledge for a given round's results.
-
-        For R2+ rounds, the bus receives findings and computes shared knowledge.
-        """
-        # Update the bus with this round's findings
-        for agent_id, findings in results.items():
-            if isinstance(findings, Findings):
-                await self.bus.publish_round(agent_id, round_num, findings)
-
-        # Re-compute shared knowledge from ALL accumulated findings
-        shared = await self.bus.compute_shared_knowledge()
-        if shared:
-            shared.round_number = round_num
-            shared.round_history = [s for s in round_history]
-        return shared
 
     def _save_round_findings(
         self,
@@ -1509,8 +1395,7 @@ class Orchestrator:
             pdf_path = generator.generate_pdf(paper, output_path, language=output_language)
             self._log_event("pdf_generated", path=str(pdf_path))
             console.print(f"\n[bold green]✓ PDF generated: {pdf_path}[/bold green]")
-            # Verify PDF size — mark as underweight if < 12KB
-            PDF_MIN_HEALTHY_BYTES = 20_000
+            # Verify PDF size — mark as underweight if below threshold
             try:
                 pdf_size = output_path.stat().st_size
                 if pdf_size < PDF_MIN_HEALTHY_BYTES:

@@ -12,7 +12,6 @@ from deepresearch.models import (
     Findings,
     FollowUpQuestions,
     IndividualReport,
-    ModelConfig,
     PaperSection,
     ResearchPaper,
     ResearchTopic,
@@ -116,23 +115,6 @@ class TestResearchTopic:
     def test_invalid_model_mode(self):
         with pytest.raises(ValidationError):
             ResearchTopic(question="Test", model_mode="invalid")  # type: ignore
-
-
-# ─── ModelConfig Tests ───────────────────────────────────────────────────────
-
-
-class TestModelConfig:
-    def test_defaults(self):
-        config = ModelConfig()
-        assert config.selected_model == "gpt-4o"
-        assert config.temperature_override is None
-
-    def test_with_overrides(self):
-        config = ModelConfig(
-            selected_model="claude-sonnet-4-20250514", temperature_override=0.5
-        )
-        assert config.selected_model == "claude-sonnet-4-20250514"
-        assert config.temperature_override == 0.5
 
 
 # ─── AgentProfile Tests ──────────────────────────────────────────────────────

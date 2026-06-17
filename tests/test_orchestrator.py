@@ -547,44 +547,6 @@ class TestRunRound:
         agents["agent-a"].assert_not_called()
 
 
-class TestShareFindings:
-    """Shared knowledge aggregation."""
-
-    def test_basic_aggregation(self, mock_findings):
-        """share_findings should produce SharedKnowledge with correct structure."""
-        orch = Orchestrator()
-        f1 = Findings(
-            agent_id="a",
-            round=1,
-            summary="Summary A",
-            key_points=["P1", "P2"],
-            perspective="Per A",
-            confidence=0.8,
-        )
-        f2 = Findings(
-            agent_id="b",
-            round=1,
-            summary="Summary B",
-            key_points=["P3"],
-            perspective="Per B",
-            confidence=0.6,
-        )
-
-        shared = orch.share_findings({"a": f1, "b": f2})
-        assert isinstance(shared, SharedKnowledge)
-        assert shared.round_number == 1
-        assert shared.all_summaries == {"a": "Summary A", "b": "Summary B"}
-        assert len(shared.key_themes) > 0
-        assert len(shared.areas_of_agreement) > 0
-
-    def test_empty_findings(self):
-        """Empty findings should still produce a valid SharedKnowledge."""
-        orch = Orchestrator()
-        shared = orch.share_findings({})
-        assert shared.round_number == 1
-        assert shared.all_summaries == {}
-
-
 class TestCollectFollowup:
     """Follow-up question collection."""
 
@@ -639,40 +601,6 @@ class TestCollectFollowup:
         assert "agent-a" not in results
         assert "agent-b" in results
         agents["agent-a"].assert_not_called()
-
-
-class TestCollectReports:
-    """Report collection from agents."""
-
-    @pytest.mark.asyncio
-    async def test_uses_round_2_when_available(self):
-        """If Round 2 results exist, collect_reports should return them directly."""
-        orch = Orchestrator()
-        round_2 = {
-            "a": IndividualReport(
-                agent_id="a",
-                title="R",
-                perspective_summary="S",
-                key_insights=["I"],
-                analysis="A",
-                full_text="F",
-            ),
-        }
-        result = await orch.collect_reports({}, {}, round_2)
-        assert result == round_2
-
-    @pytest.mark.asyncio
-    async def test_collects_from_agents_when_no_round_2(self, mock_findings):
-        """Without Round 2, collect_reports converts Findings to IndividualReport directly."""
-        orch = Orchestrator()
-        r1 = {"agent-a": mock_findings}
-
-        results = await orch.collect_reports({}, r1, {})
-        assert "agent-a" in results
-        report = results["agent-a"]
-        assert report.agent_id == "agent-a"
-        assert report.perspective_summary == "Test findings summary."
-        assert report.key_insights == ["Key point 1", "Key point 2"]
 
 
 class TestCompile:

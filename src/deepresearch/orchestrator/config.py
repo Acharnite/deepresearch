@@ -12,6 +12,7 @@ from typing import Any
 from rich.console import Console
 
 from deepresearch.config import ConfigError, load_agent_profiles, load_model_config
+from deepresearch.constants import MAX_ROUNDS_BY_BUDGET, TIME_BUDGET_SECONDS
 from deepresearch.models import AgentProfile, ResearchTopic, SessionConfig
 
 console = Console()
@@ -97,10 +98,10 @@ async def configure(
     if time_budget_seconds is not None:
         budget_seconds = time_budget_seconds
     else:
-        budget_seconds = orchestrator.TIME_BUDGET_SECONDS.get(time_budget, 300)
+        budget_seconds = TIME_BUDGET_SECONDS.get(time_budget, 300)
 
     # Derive max_rounds from budget keyword.
-    max_rounds = overrides.get("max_rounds") or orchestrator._MAX_ROUNDS_BY_BUDGET.get(
+    max_rounds = overrides.get("max_rounds") or MAX_ROUNDS_BY_BUDGET.get(
         time_budget, 4
     )
 

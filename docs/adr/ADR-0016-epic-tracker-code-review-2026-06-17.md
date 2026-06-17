@@ -655,15 +655,15 @@ async def research_round_1(self, topic):
 
 | Issue | Title (short) | Severity | Phase | Status | Assignee | Closed Date |
 |-------|---------------|----------|-------|--------|----------|-------------|
-| [#53](https://github.com/Acharnite/deepresearch/issues/53) | Inverted "all agents failed" check | P0 | 1 | open | — | — |
-| [#54](https://github.com/Acharnite/deepresearch/issues/54) | CORS misconfiguration | P0 | 1 | open | — | — |
-| [#55](https://github.com/Acharnite/deepresearch/issues/55) | Session concurrency race | P0 | 1 | open | — | — |
-| [#56](https://github.com/Acharnite/deepresearch/issues/56) | Constants duplicated 3× (keystone) | P0 | 1 | open | — | — |
-| [#57](https://github.com/Acharnite/deepresearch/issues/57) | Clarification cap constant mismatch | P0 | 1 | open | — | — |
-| [#58](https://github.com/Acharnite/deepresearch/issues/58) | DDG still in default engines | P0 | 1 | open | — | — |
-| [#59](https://github.com/Acharnite/deepresearch/issues/59) | Dead code in orchestrator | P0 | 1 | open | — | — |
-| [#60](https://github.com/Acharnite/deepresearch/issues/60) | DB writers race | P0 | 1 | open | — | — |
-| [#61](https://github.com/Acharnite/deepresearch/issues/61) | Tasks not cancelled on budget exit | P0 | 1 | open | — | — |
+| [#53](https://github.com/Acharnite/deepresearch/issues/53) | Inverted "all agents failed" check | P0 | 1 | closed 2026-06-17 | — | — |
+| [#54](https://github.com/Acharnite/deepresearch/issues/54) | CORS misconfiguration | P0 | 1 | closed 2026-06-17 | — | — |
+| [#55](https://github.com/Acharnite/deepresearch/issues/55) | Session concurrency race | P0 | 1 | closed 2026-06-17 | — | — |
+| [#56](https://github.com/Acharnite/deepresearch/issues/56) | Constants duplicated 3× (keystone) | P0 | 1 | closed 2026-06-17 | — | — |
+| [#57](https://github.com/Acharnite/deepresearch/issues/57) | Clarification cap constant mismatch | P0 | 1 | closed 2026-06-17 | — | — |
+| [#58](https://github.com/Acharnite/deepresearch/issues/58) | DDG still in default engines | P0 | 1 | closed 2026-06-17 | — | — |
+| [#59](https://github.com/Acharnite/deepresearch/issues/59) | Dead code in orchestrator | P0 | 1 | closed 2026-06-17 | — | — |
+| [#60](https://github.com/Acharnite/deepresearch/issues/60) | DB writers race | P0 | 1 | closed 2026-06-17 | — | — |
+| [#61](https://github.com/Acharnite/deepresearch/issues/61) | Tasks not cancelled on budget exit | P0 | 1 | closed 2026-06-17 | — | — |
 | [#62](https://github.com/Acharnite/deepresearch/issues/62) | Empty-result retry uses repr length | P1 | 3 | open | — | — |
 | [#63](https://github.com/Acharnite/deepresearch/issues/63) | Deterministic seed uses `hash()` | P1 | 3 | open | — | — |
 | [#64](https://github.com/Acharnite/deepresearch/issues/64) | Token tracking fragmented | P1 | 3 | open | — | — |
@@ -693,11 +693,11 @@ async def research_round_1(self, topic):
 
 | Phase | Issues | Closed | % |
 |-------|--------|--------|---|
-| Phase 1 (P0) | 9 | 0/9 | 0% |
+| Phase 1 (P0) | 9 | 9/9 | 100% |
 | Phase 2 (Arch) | 5 | 0/5 | 0% |
 | Phase 3 (Stab/Perf) | 13 | 1/13 | 8% |
 | Phase 4 (Docs/Obs) | 8 | 0/8 | 0% |
-| **Total** | **33** | **1/33** | **3%** |
+| **Total** | **33** | **10/33** | **30%** |
 
 ## Update Protocol
 
