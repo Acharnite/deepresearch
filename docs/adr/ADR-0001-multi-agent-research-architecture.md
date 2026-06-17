@@ -208,6 +208,9 @@ The `web_search()` function:
 3. Clarification queries run sequentially (intentional)
 4. In-memory sessions are lost on server restart (acceptable for v1.0)
 
+## Related Issues
+- #51 (ASA — Attributed Source Attribution): Extends the pipeline with source tracking from web search through agent findings to PDF output.
+
 ## ADR References
 - **ADR-0002** (Agent Personality & Model Selection)
 - **ADR-0003** (Web Frontend & Multi-Session Architecture)

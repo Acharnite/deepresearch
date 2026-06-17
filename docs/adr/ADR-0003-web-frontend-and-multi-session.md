@@ -232,6 +232,9 @@ Before a session starts, `MultiSessionManager.create_session()` runs a connectiv
 7. Event history trimmed to 500 entries — recent history always available, oldest events are lost
 8. System log buffer is in-memory (500 entries) — lost on server restart, distinct from file-based logging
 
+## Related Issues
+- #52 (Q&A Graph — Interactive visualization): Extends the frontend with a real-time SVG interaction graph showing agent-scribe communication flow.
+
 ## ADR References
 - **ADR-0001** (Multi-Agent Research Architecture) — core architecture this frontend connects to
 - **ADR-0002** (Agent Personality & Model Selection) — model selection and configuration

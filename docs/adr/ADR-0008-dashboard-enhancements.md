@@ -196,6 +196,9 @@ A static `demo.html` for layout testing:
 4. Collapsible agent logs use CSS transitions for smooth animation
 5. Demo page is static — no live updates, requires manual refresh
 
+## Related Issues
+- #52 (Q&A Graph — Interactive visualization): Extends the dashboard with a real-time SVG graph showing agent-scribe communication. Uses the existing qa-graph.js module.
+
 ## ADR References
 - **ADR-0001** (Multi-Agent Research Architecture) — pipeline states and agent lifecycle
 - **ADR-0003** (Web Frontend & Multi-Session Architecture) — base dashboard architecture

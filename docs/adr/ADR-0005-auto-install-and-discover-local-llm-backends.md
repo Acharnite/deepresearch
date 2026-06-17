@@ -346,6 +346,11 @@ curl "http://localhost:8888/search?q=test&format=json" | python -m json.tool
 
 SearXNG runs on port 8888 by default and is auto-discovered by the same port-probing protocol used for LLM backends.
 
+## Related Issues
+- #36 (llmfit/llmserve Integration): ADR-0005 v2.0 replaces 5 custom auto-installers with llmfit (hardware detection) + llmserve (model serving). SearXNG install instructions also included.
+- #37 (Deployment — systemd/launchd/NSSM): Natural companion — users who install local LLMs also want persistent service deployment.
+- #50 (Server Crash — no graceful shutdown): Resolved by #37 deployment as a systemd/launchd service with auto-restart.
+
 ## References
 - ADR-0001: Multi-Agent Research Architecture (backend integration point)
 - ADR-0003: Web Frontend and Multi-Session (Settings tab extension)

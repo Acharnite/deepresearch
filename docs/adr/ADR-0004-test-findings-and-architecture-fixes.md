@@ -156,6 +156,9 @@ The refinement phase depends on follow-up questions being properly distributed t
 3. Fixes apply to both CLI and web dashboard modes
 4. Existing ADRs (0001, 0002, 0003) remain valid; this ADR documents corrections to implementation, not architectural changes
 
+## Related Issues
+- #17 (Test Coverage 350+): Current suite has 309 tests. Gaps remain in multi-round, time budgets, providers, PDF edge cases, SSE reconnection.
+
 ## ADR References
 
 - **ADR-0001** (Multi-Agent Research Architecture) — timeout formula and Round 2 skip logic defined here; this ADR corrects both

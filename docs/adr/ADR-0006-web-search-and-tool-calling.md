@@ -128,6 +128,9 @@ This ensures research never blocks on tool-calling failures.
 3. Search results are not cached between agents — multiple agents may search for similar topics
 4. Max 5 tool-call rounds prevents infinite loops but may limit complex research strategies
 
+## Related Issues
+- #51 (ASA — Attributed Source Attribution): Web search results already carry URL, title, snippet, and engine metadata. ASA pipes this data through Findings → IndividualReport → PDF citations.
+
 ## ADR References
 - **ADR-0001** (Multi-Agent Research Architecture) — architecture this integrates with
 - **ADR-0002** (Agent Personality & Model Selection) — LLMClient and provider routing

@@ -340,6 +340,9 @@ Becoming the default means new users can run research immediately with just an O
 7. Provider model discovery is best-effort — some provider APIs return different model lists than LiteLLM supports
 8. 60s cache for model lists balances freshness with API call volume
 
+## Related Issues
+- #51 (ASA — Attributed Source Attribution): The Skeptical Academic agent already has a "citation requirement" bias. ASA formalizes this across all agents by carrying source references through the pipeline.
+
 ## ADR References
 - **ADR-0001** (Multi-Agent Research Architecture)
 - **ADR-0003** (Web Frontend & Multi-Session Architecture)

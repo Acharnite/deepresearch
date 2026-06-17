@@ -307,6 +307,10 @@ If a release partially fails (e.g., PyPI publishes but Docker fails), the GitHub
 | Release pipeline partial failure | GitHub Release not created on failure; manual intervention required; failed Docker images not tagged `latest` |
 | Supply chain attack (dependency tampering) | Trusted Publisher (OIDC) for PyPI, npm provenance, cosign for Docker, SHA256 checksums for GitHub Release |
 
+## Related Issues
+- #37 (Deployment — systemd/launchd/NSSM): Extends CI/CD with service deployment automation. Users can install DeepeResearch as a persistent background service via `deepresearch service install`.
+- #50 (Server Crash): Resolved by #37 — systemd/launchd auto-restarts on crash, handles SIGTERM gracefully.
+
 ## ADR References
 - **ADR-0001**: Multi-Agent Research Architecture
 - **ADR-0005**: Auto-Install and Auto-Discover Local LLM Backends (Docker discovery)
