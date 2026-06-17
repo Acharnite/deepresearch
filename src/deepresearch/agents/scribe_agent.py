@@ -316,7 +316,7 @@ class ScribeAgent(BaseAgent):
                 await status_callback("identifying_claims")
             try:
                 query_data = await self._identify_clarification_needs(
-                    paper, reports, clarifications_per_agent, _asked_claims
+                    paper, reports, clarifications_per_agent, _asked_claims, topic
                 )
             except LLMError as _exc:
                 logger.warning(
@@ -437,6 +437,7 @@ class ScribeAgent(BaseAgent):
         reports: dict[str, IndividualReport],
         clarifications_per_agent: dict[str, int],
         asked_claims: set[str] | None = None,
+        topic: str = "",
     ) -> dict[str, str] | None:
         """Ask the scribe LLM to identify claims needing clarification.
 
@@ -467,6 +468,15 @@ class ScribeAgent(BaseAgent):
             "Identify the **single most important** claim that is ambiguous, "
             "contradictory across agents, or lacks sufficient support, and "
             "that has NOT already been clarified.\n\n"
+        )
+        if topic:
+            prompt += (
+                f"**IMPORTANT: This paper is about '{topic}'. ALL content — including "
+                f"clarifications — must stay strictly on-topic. Do NOT include discussions "
+                f"about methodology, tools, or how agents found information. Only flag "
+                f"claims directly relevant to the research topic.**\n\n"
+            )
+        prompt += (
             "If all claims are sufficiently clear and supported, respond "
             'with: {"needs_clarification": false}\n\n'
             "Otherwise respond with:\n"
@@ -597,9 +607,11 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
         )
         if topic:
             prompt += (
-                f"**IMPORTANT: The paper is about '{topic}'. Keep all revisions "
-                f"focused on this topic. Do NOT shift focus to the clarification "
-                f"process itself.**\n\n"
+                f"**REMEMBER: This paper is about '{topic}'. ALL content — including "
+                f"clarifications — must stay strictly on-topic. Do NOT include discussions "
+                f"about methodology, tools, or how agents found information. Only include "
+                f"findings relevant to the research topic. Do NOT shift focus to the "
+                f"clarification process itself.**\n\n"
             )
         prompt += (
             f"## Clarification From Agent '{agent_id}'\n"
@@ -674,9 +686,11 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
         )
         if topic:
             prompt += (
-                f"**IMPORTANT: The paper is about '{topic}'. Keep all revisions "
-                f"focused on this topic. Do NOT shift focus to the clarification "
-                f"process itself.**\n\n"
+                f"**REMEMBER: This paper is about '{topic}'. ALL content — including "
+                f"clarifications — must stay strictly on-topic. Do NOT include discussions "
+                f"about methodology, tools, or how agents found information. Only include "
+                f"findings relevant to the research topic. Do NOT shift focus to the "
+                f"clarification process itself.**\n\n"
             )
         prompt += "## Clarifications\n\n"
         for agent_id, claim, response in collected:

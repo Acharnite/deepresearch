@@ -13,6 +13,8 @@ export function renderAgents() {
   // Save scroll position of the agent column container (FIX 4)
   const col1El = document.getElementById('agentColumn1');
   const savedColumnScrollTop = col1El ? col1El.scrollTop : 0;
+  // Also save window scroll to prevent page jumping to top on re-render
+  const savedWindowScrollY = window.scrollY || 0;
 
   if (ids.length === 0) {
     if (col1El) {
@@ -134,6 +136,8 @@ export function renderAgents() {
 
   // Restore column scroll position (FIX 4)
   if (col1El) col1El.scrollTop = savedColumnScrollTop;
+  // Restore window scroll position to prevent page jumping to top
+  window.scrollTo(0, savedWindowScrollY);
 }
 
 /* ── Collapsible agent output toggle (FIX 1: use classList) ── */

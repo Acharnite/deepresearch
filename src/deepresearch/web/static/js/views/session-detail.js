@@ -26,12 +26,12 @@ function buildPipelineStates(maxRoundCount) {
       states.push('COLLABORATING', 'FOLLOWUP', 'REFINING');
     }
   }
-  states.push('COMPILING', 'OUTPUT', 'COMPLETE');
+  states.push('CLARIFYING', 'COMPILING', 'OUTPUT', 'COMPLETE');
   
   const labels = {
     IDLE: '⏸ Idle', CONFIGURING: '⚙ Config',
     COLLABORATING: '🤝 Collaborate', FOLLOWUP: '❓ Follow-up',
-    REFINING: '🔄 Refining', COMPILING: '📝 Compile',
+    REFINING: '🔄 Refining', CLARIFYING: '🔍 Clarifying', COMPILING: '📝 Compile',
     OUTPUT: '📄 Output', COMPLETE: '✅ Done',
   };
   
@@ -72,7 +72,7 @@ function updatePipelineDisplay(currentState) {
     el.classList.remove('active', 'done', 'current');
     if (idx < curIdx) el.classList.add('done');
     else if (idx === curIdx) el.classList.add('current');
-    else el.classList.add('active');
+    // Future steps: no special class (unstyled) — NOT "active"
   });
 }
 
@@ -136,7 +136,7 @@ export function updateState(stateName) {
     el.classList.remove('active', 'done', 'current');
     if (idx < curIdx) el.classList.add('done');
     else if (idx === curIdx) el.classList.add('current');
-    else el.classList.add('active');
+    // Future steps: no special class (unstyled) — NOT "active"
   });
 }
 
@@ -544,6 +544,10 @@ export function processEvent(data) {
       window.addQAInteraction('scribe', targetAgent, 'clarification', 'clarification request');
       renderGraph();
     }
+    // Update pipeline to CLARIFYING state
+    updateState('CLARIFYING');
+    const phaseDisplay = document.getElementById('phaseDisplay');
+    if (phaseDisplay) phaseDisplay.textContent = STATE_LABELS['CLARIFYING'] || 'Clarifying';
   }
 
   if (eventType === 'refinement_start') {

@@ -271,10 +271,13 @@ class TestCSS:
         assert "page-break" in css
 
     def test_stylesheet_links_from_html(self, sample_paper):
-        """HTML should link to the stylesheet."""
+        """HTML should contain inline styles (CSS inlined for WeasyPrint compatibility)."""
         gen = PDFGenerator()
         html = gen.render_html(sample_paper)
-        assert 'href="styles.css"' in html or "href=styles.css" in html
+        # CSS is now inlined via <style> tag — WeasyPrint cannot resolve relative <link> paths
+        assert '<style>' in html
+        # Should contain actual CSS rules from styles.css
+        assert 'page-break' in html or '@page' in html
 
 
 class TestGeneratePDF:

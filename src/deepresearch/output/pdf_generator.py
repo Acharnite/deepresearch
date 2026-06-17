@@ -162,6 +162,15 @@ class PDFGenerator:
         # Resolve font family for the output language.
         font_family = _get_font_family(language)
 
+        # Read CSS file for inlining — WeasyPrint cannot resolve relative
+        # <link> paths, so the CSS must be embedded directly in the HTML.
+        css_content = ""
+        css_path = self._template_dir / "styles.css"
+        try:
+            css_content = css_path.read_text(encoding="utf-8")
+        except (OSError, IOError) as exc:
+            logger.warning("Could not read styles.css for inlining: %s", exc)
+
         return template.render(
             paper=paper,
             generation_date=datetime.now().strftime("%B %d, %Y"),
@@ -170,6 +179,7 @@ class PDFGenerator:
             agent_css_classes=agent_css_classes,
             budget_summary=budget_summary,
             font_family=font_family,
+            css_content=css_content,
         )
 
     def generate_pdf(

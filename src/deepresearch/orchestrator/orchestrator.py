@@ -700,6 +700,10 @@ class Orchestrator:
                 if isinstance(scribe, ScribeAgent):
 
                     async def _scribe_status(status: str) -> None:
+                        # Emit CLARIFYING state when scribe enters clarification protocol
+                        if status in ("identifying_claims",) or status.startswith("asking_agent:"):
+                            if self.state != "CLARIFYING":
+                                self.state = "CLARIFYING"
                         self._log_event("scribe_clarifying", step=status)
 
                     paper = await scribe.compile(
