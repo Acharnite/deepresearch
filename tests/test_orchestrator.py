@@ -263,7 +263,7 @@ class TestConfigure:
         assert config.topic.question == "Test topic"
         assert config.topic.time_budget == "deep"
         assert config.topic.model_mode == "random"
-        assert config.time_budget_seconds == 480  # deep → 480s
+        assert config.time_budget_seconds == 660  # deep → 660s
         assert len(config.agent_profiles) == 2
         assert len(config.agent_models) == 2
 

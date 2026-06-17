@@ -65,16 +65,16 @@ class Orchestrator:
 
     # Map time-budget keywords to human-readable descriptions.
     TIME_BUDGET_OPTIONS: dict[str, str] = {
-        "quick": "Quick (5 minutes — fastest results)",
-        "medium": "Standard (5 minutes — balanced)",
-        "deep": "Deep (8 minutes — most thorough)",
+        "quick": "Quick (~3 min — fastest results)",
+        "medium": "Standard (~6 min — balanced)",
+        "deep": "Deep (~10 min — most thorough)",
     }
 
     # Map time-budget keywords to seconds.
     TIME_BUDGET_SECONDS: dict[str, int] = {
-        "quick": 300,
-        "medium": 300,
-        "deep": 480,
+        "quick": 240,
+        "medium": 420,
+        "deep": 660,
     }
 
     # Custom time-budget keyword used when --minutes is provided.
@@ -82,8 +82,8 @@ class Orchestrator:
 
     # Max rounds by budget keyword.
     _MAX_ROUNDS_BY_BUDGET: dict[str, int] = {
-        "quick": 3,
-        "medium": 4,
+        "quick": 2,
+        "medium": 3,
         "deep": 5,
         "custom": 4,
     }
@@ -420,23 +420,18 @@ class Orchestrator:
         return results
 
     def _get_timeout(self) -> int:
-        """Per-agent timeout in seconds based on session time budget."""
-        if self.session_config is not None:
-            # Half the total budget per round, minimum 120 s.
-            return max(120, self.session_config.time_budget_seconds // 2)
-        return 120
+        """Per-agent timeout based on session budget, rounds, and scribe reservation.
 
-    def _get_round_timeout(self) -> int:
-        """Per-agent timeout for research rounds (R1+).
-
-        Formula: total_budget / (max_rounds + 2), minimum 60s.
-        The +2 reserves budget for collaboration and compilation phases.
+        Scribe gets 25% of budget (min 60s). Agents split the remaining 75%.
         """
-        if self.session_config is not None:
-            b = self.session_config.time_budget_seconds
-            m = self.session_config.max_rounds
-            return max(60, b // (m + 2))
-        return 120
+        if self.session_config is None:
+            return 120
+        b = self.session_config.time_budget_seconds
+        m = self.session_config.max_rounds
+        scribe_budget = max(60, int(b * 0.25))
+        agent_budget = b - scribe_budget
+        per_round = max(60, int(agent_budget / m))
+        return per_round
 
     # ------------------------------------------------------------------
     # Collaboration — aggregate findings into shared knowledge
@@ -574,14 +569,14 @@ class Orchestrator:
             logger.info("Cancel event set — stopping rounds")
             return False
 
-        # 2. Time budget — reserve 10% for compilation
+        # 2. Time budget — HARD cap
         if self.session_config is not None:
             session_timeout = min(
                 MAX_SESSION_DURATION,
-                self.session_config.time_budget_seconds * 4 + 300,
+                self.session_config.time_budget_seconds,
             )
-            if time.monotonic() - start_time > session_timeout * 0.9:
-                logger.info("Time budget 90%% exceeded — stopping rounds")
+            if time.monotonic() - start_time > session_timeout:
+                logger.info("Time budget exceeded (%ds) — stopping rounds", session_timeout)
                 return False
 
         # 3. Max rounds — hard safety cap
@@ -988,7 +983,7 @@ class Orchestrator:
         # ── Session-level timeout ──────────────────────────────────────
         session_timeout = min(
             MAX_SESSION_DURATION,
-            config.time_budget_seconds * 4 + 300,  # generous: budget × 4 + 5min grace
+            config.time_budget_seconds,
         )
 
         # ── Session-level timeout wrapper ────────────────────────────
@@ -1055,9 +1050,9 @@ class Orchestrator:
                 logger.info("Cancel event set — aborting round loop")
                 break
 
-            # ── Time budget check (10% reserved for compilation) ──────
-            if time.monotonic() - start_time > (
-                min(MAX_SESSION_DURATION, config.time_budget_seconds * 4 + 300) * 0.9
+            # ── Time budget check ────────────────────────────────────
+            if time.monotonic() - start_time > min(
+                MAX_SESSION_DURATION, config.time_budget_seconds
             ):
                 logger.info("Time budget exceeded — stopping after round %d", round_num - 1)
                 break
@@ -1230,7 +1225,7 @@ class Orchestrator:
         Dispatches with (topic, shared, round_num, prev_findings) so the
         registry routes to research_round_n.
         """
-        timeout = self._get_round_timeout()
+        timeout = self._get_timeout()
         tasks: dict[str, asyncio.Task[Any]] = {}
         for agent_id, agent_fn in agents.items():
             if agent_id in self.failed_agents:

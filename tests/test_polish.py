@@ -178,7 +178,7 @@ class TestDryRun:
             ),
             agent_profiles=profiles,
             agent_models={"agent-a": "gpt-4o", "agent-b": "gpt-4o"},
-            time_budget_seconds=300,
+            time_budget_seconds=420,
         )
 
     def test_dry_run_returns_dict(self, config):
