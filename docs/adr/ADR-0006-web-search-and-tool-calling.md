@@ -148,3 +148,9 @@ This ensures research never blocks on tool-calling failures.
 | Graceful fallback chain | ✅ Implemented | streaming+tools → streaming → non-streaming → no-tools |
 | All 6 agents use web search | ✅ Implemented | Round 1 only |
 | Cancel event support | ✅ Implemented | Checked in retry loop |
+
+## Documentation
+
+- **Design doc reference:** §3.2 Web Search
+- **Implementation PR:** TBD
+- **Related ADRs:** ADR-0011, ADR-0012, ADR-0013

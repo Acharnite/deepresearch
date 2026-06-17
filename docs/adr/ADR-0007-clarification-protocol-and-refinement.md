@@ -162,3 +162,9 @@ The orchestrator routes clarification queries to agents:
 | Asked claims tracking | ✅ Implemented | _asked_claims set |
 | Status events (scribe_clarifying) | ✅ Implemented | Identifying, asking, recompiling steps |
 | Orchestrator clarification routing | ✅ Implemented | _handle_clarification() |
+
+## Documentation
+
+- **Design doc reference:** §4 Clarification Protocol
+- **Implementation PR:** TBD
+- **Related ADRs:** ADR-0010

@@ -21,6 +21,7 @@ from deepresearch.models import (
     ResearchPaper,
     SessionConfig,
 )
+from deepresearch.observability.tracing import tracer
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -135,60 +136,66 @@ class ScribeCompiler:
             scribe: The scribe agent callable or ScribeAgent instance.
             topic: The original research topic string (optional).
         """
-        # Determine output language from session config.
-        output_language = "English"
-        if self._config:
-            output_language = getattr(self._config, "output_language", "English")
+        with tracer.start_as_current_span(
+            "scribe.compile",
+            attributes={
+                "report.count": len(reports),
+            },
+        ) as _:
+            # Determine output language from session config.
+            output_language = "English"
+            if self._config:
+                output_language = getattr(self._config, "output_language", "English")
 
-        try:
-            # Detect if scribe supports the clarification protocol.
-            if hasattr(scribe, "compile"):
-                from deepresearch.agents.scribe_agent import ScribeAgent
+            try:
+                # Detect if scribe supports the clarification protocol.
+                if hasattr(scribe, "compile"):
+                    from deepresearch.agents.scribe_agent import ScribeAgent
 
-                if isinstance(scribe, ScribeAgent):
+                    if isinstance(scribe, ScribeAgent):
 
-                    async def _scribe_status(status: str) -> None:
-                        # Emit CLARIFYING state when scribe enters clarification protocol
-                        if status in ("identifying_claims",) or status.startswith("asking_agent:"):
-                            if self._orch.state != "CLARIFYING":
-                                self._orch.state = "CLARIFYING"
-                        if self._event_bus:
-                            await self._event_bus.publish(
-                                {"event_type": "scribe_clarifying", "step": status}
-                            )
+                        async def _scribe_status(status: str) -> None:
+                            # Emit CLARIFYING state when scribe enters clarification protocol
+                            if status in ("identifying_claims",) or status.startswith("asking_agent:"):
+                                if self._orch.state != "CLARIFYING":
+                                    self._orch.state = "CLARIFYING"
+                            if self._event_bus:
+                                await self._event_bus.publish(
+                                    {"event_type": "scribe_clarifying", "step": status}
+                                )
 
-                    paper = await scribe.compile(
-                        reports,
-                        topic=topic,
-                        clarification_fn=self._orch.round_runner._handle_clarification,
-                        status_callback=_scribe_status,
-                        language=output_language,
-                    )
+                        paper = await scribe.compile(
+                            reports,
+                            topic=topic,
+                            clarification_fn=self._orch.round_runner._handle_clarification,
+                            status_callback=_scribe_status,
+                            language=output_language,
+                        )
+                    else:
+                        # Generic object with .compile method.
+                        paper = await scribe.compile(reports)
                 else:
-                    # Generic object with .compile method.
-                    paper = await scribe.compile(reports)
-            else:
-                # Plain async callable (mock / fallback scribe).
-                paper = await scribe(reports)
+                    # Plain async callable (mock / fallback scribe).
+                    paper = await scribe(reports)
 
-            if self._event_bus:
-                await self._event_bus.publish({"event_type": "scribe_end"})
-            logger.info(
-                "Scribe compilation successful — %d sections",
-                len(paper.sections) if paper.sections else 0,
-            )
-            return paper
-        except Exception as e:
-            logger.error("Scribe compilation failed: %s", e, exc_info=True)
-            return ResearchPaper(
-                title="Research Paper",
-                abstract="Compilation failed — partial results available.",
-                methodology_note="",
-                sections=[],
-                synthesis="",
-                key_takeaways=[],
-                conclusion="",
-            )
+                if self._event_bus:
+                    await self._event_bus.publish({"event_type": "scribe_end"})
+                logger.info(
+                    "Scribe compilation successful — %d sections",
+                    len(paper.sections) if paper.sections else 0,
+                )
+                return paper
+            except Exception as e:
+                logger.error("Scribe compilation failed: %s", e, exc_info=True)
+                return ResearchPaper(
+                    title="Research Paper",
+                    abstract="Compilation failed — partial results available.",
+                    methodology_note="",
+                    sections=[],
+                    synthesis="",
+                    key_takeaways=[],
+                    conclusion="",
+                )
 
     # ------------------------------------------------------------------
     # Scribe / Agent Construction

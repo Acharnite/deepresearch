@@ -19,6 +19,8 @@ from typing import Any
 
 import httpx
 
+from deepresearch.observability.tracing import tracer
+
 logger = logging.getLogger(__name__)
 
 # ── SearXNG configuration (loaded from settings / env) ────────────────
@@ -225,38 +227,45 @@ async def web_search(
     use_searxng = _search_engine == "searxng"
 
     async with _search_semaphore:
-        for attempt in range(retries):
-            try:
-                if use_searxng:
-                    results = await _searxng_search(query, max_results)
-                else:
-                    results = await _ddgs_search(query, max_results)
+        with tracer.start_as_current_span(
+            f"search.{_search_engine}",
+            attributes={
+                "search.engine": _search_engine,
+                "search.query": query[:100],
+            },
+        ) as _:
+            for attempt in range(retries):
+                try:
+                    if use_searxng:
+                        results = await _searxng_search(query, max_results)
+                    else:
+                        results = await _ddgs_search(query, max_results)
 
-                logger.debug(
-                    "Web search for '%s' returned %d results (engine=%s)",
-                    query,
-                    len(results),
-                    _search_engine,
-                )
-                return results
-            except Exception as e:
-                if attempt < retries - 1:
-                    wait = 1.0 * (2**attempt)  # 1s, 2s, 4s
-                    logger.warning(
-                        "Web search failed for '%s': %s, retrying in %.1fs (attempt %d/%d)",
+                    logger.debug(
+                        "Web search for '%s' returned %d results (engine=%s)",
                         query,
-                        e,
-                        wait,
-                        attempt + 1,
-                        retries,
+                        len(results),
+                        _search_engine,
                     )
-                    await asyncio.sleep(wait)
-                else:
-                    logger.warning(
-                        "Web search failed for query '%s': %s — returning empty results",
-                        query,
-                        str(e),
-                    )
+                    return results
+                except Exception as e:
+                    if attempt < retries - 1:
+                        wait = 1.0 * (2**attempt)  # 1s, 2s, 4s
+                        logger.warning(
+                            "Web search failed for '%s': %s, retrying in %.1fs (attempt %d/%d)",
+                            query,
+                            e,
+                            wait,
+                            attempt + 1,
+                            retries,
+                        )
+                        await asyncio.sleep(wait)
+                    else:
+                        logger.warning(
+                            "Web search failed for query '%s': %s — returning empty results",
+                            query,
+                            str(e),
+                        )
 
     return []
 

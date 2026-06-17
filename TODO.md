@@ -22,7 +22,7 @@
 - [x] ADR-0011: Session concurrency limit (max 3) + web search throttling
 - [x] ADR-0012: SearXNG migration — replaced ddgs with self-hosted SearXNG
 - [x] ADR-0013: SearXNG optimization — removed DDG/Wikidata/Brave, added academic engines
-- [ ] ADR-0015: Fix JSON parsing (strip tool output) + topic drift (topic in Scribe prompts)
+- [x] ADR-0015: Fix JSON parsing (strip tool output) + topic drift (topic in Scribe prompts)  ← 97d5b29
 - [x] Global web search rate limiter (1 search per 5 seconds)
 - [x] Search result cache (200 entries, LRU eviction)
 - [x] --rounds CLI flag for session round count

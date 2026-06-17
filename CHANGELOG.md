@@ -2,6 +2,26 @@
 
 All notable changes to DeepeResearch will be documented in this file.
 
+## v0.12.0 (2026-06-17)
+- Epic: ADR-0016 Code Review Handlingsplan — 33 issues closed
+- Phase 1: 9 P0 critical bug fixes (constants keystone, CORS, race conditions, etc.)
+- Phase 2: 5 architectural refactors (#82 SessionConfig, #67 Phase dispatch, #81 EventStore, #68 orchestrator split 1770→451 LOC, #69 rename)
+- Phase 3: 11 stability and performance fixes (deterministic seed, token tracker API, connection pool + circuit breaker, etc.)
+- Phase 4: Documentation fixes (ADR index, version bump, TODO, CHANGELOG, ADR docs sections)
+- Project version bumped 0.11.2 → 0.12.0
+- See ADR-0016 for full issue breakdown
+
+## v0.11.2 (2026-06-14)
+- Fix: Various bug fixes and stability improvements
+
+## v0.11.1 (2026-06-12)
+- Fix: JSON parsing and topic drift (ADR-0015)
+- Fix: Concurrency limit improvements
+
+## v0.11.0 (2026-06-10)
+- Major refactor: ADR-0014 time budget enforcement
+- Fix: Time budget and label corrections
+
 ## [0.10.0] - 2026-06-17
 
 ### Added

@@ -1,8 +1,8 @@
 """Concrete ResearchAgent that fulfils the BaseAgent contract.
 
-Each ResearchAgent wraps an LLMClient and uses the prompt builders from
-``deepresearch.utils.prompts`` plus JSON format instructions to produce
-structured outputs for every lifecycle phase.
+Each ResearchAgent wraps an LLMClient and uses prompt builders plus
+YAML-based JSON format instructions to produce structured outputs
+for every lifecycle phase.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ import logging
 
 from deepresearch.agents.base_agent import BaseAgent
 from deepresearch.llm.client import LLMClient, LLMError
+from prompts import PromptTemplate  # type: ignore[import-untyped]
 from deepresearch.models import (
     AgentProfile,
     ClarificationQuery,
@@ -30,72 +31,9 @@ from deepresearch.utils.prompts import (
     build_round_2_prompt,
     build_round_n_prompt,
 )
+from prompts import prompts as _default_prompts
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# JSON format instructions appended to user prompts so the LLM returns
-# structured output that can be parsed into our Pydantic models.
-# ---------------------------------------------------------------------------
-
-_ROUND_1_FORMAT = """
-Respond with valid JSON **only** — no markdown, no explanation:
-{
-  "summary": "Concise summary of your findings (2-3 paragraphs).",
-  "key_points": ["Key insight 1", "Key insight 2", "Key insight 3"],
-  "perspective": "Your unique perspective on this topic.",
-  "confidence": 0.8
-}
-"""
-
-_REVIEW_FORMAT = """
-Respond with valid JSON **only**:
-{
-  "questions": [
-    "What specific aspect needs deeper investigation?",
-    "How does X relate to Y based on other agents' findings?"
-  ],
-  "target_agent_ids": ["agent-id-or-null", "agent-id-or-null"]
-}
-"""
-
-_ROUND_2_FORMAT = """
-Respond with valid JSON **only**:
-{
-  "summary": "Refined summary of your deeper research.",
-  "key_points": ["Refined point 1", "Refined point 2"],
-  "perspective": "Your evolved perspective after reviewing shared knowledge.",
-  "confidence": 0.85
-}
-"""
-
-_REPORT_FORMAT = """
-Respond with valid JSON **only**:
-{
-  "title": "Your Individual Research Report Title",
-  "perspective_summary": "High-level summary of your perspective.",
-  "key_insights": ["Insight 1", "Insight 2"],
-  "analysis": "Detailed analysis text (2-4 paragraphs).",
-  "metaphors_or_analogies": ["Compelling analogy 1"],
-  "open_questions": ["Unresolved question 1"],
-  "full_text": "Complete report text.",
-  "sections": [
-    {
-      "heading": "Section Title",
-      "source_agent_id": null,
-      "content": "Section content here.",
-      "subsections": []
-    }
-  ]
-}
-"""
-
-_CLARIFY_FORMAT = """
-Respond with valid JSON **only**:
-{
-  "response": "Clear, concise answer to the clarification question."
-}
-"""
 
 
 class ResearchAgent(BaseAgent):
@@ -111,9 +49,15 @@ class ResearchAgent(BaseAgent):
         model instance is returned so the research session can continue.
     """
 
-    def __init__(self, profile: AgentProfile, llm_client: LLMClient) -> None:
+    def __init__(
+        self,
+        profile: AgentProfile,
+        llm_client: LLMClient,
+        prompt_tmpl: PromptTemplate | None = None,
+    ) -> None:
         super().__init__(profile, llm_client)
         self._system_prompt: str = build_agent_system_prompt(profile)
+        self._prompts: PromptTemplate = prompt_tmpl or _default_prompts
 
     # ------------------------------------------------------------------
     # Lifecycle methods
@@ -126,7 +70,7 @@ class ResearchAgent(BaseAgent):
         """
         await self._log_agent_state("researching")
         user_prompt = build_round_1_prompt(topic.question, topic.time_budget)
-        user_prompt += _ROUND_1_FORMAT
+        user_prompt += self._prompts.get("research", "round_1_format")
 
         from deepresearch.tools.web_search import WEB_SEARCH_TOOL
 
@@ -204,7 +148,7 @@ class ResearchAgent(BaseAgent):
                 "Use null for questions that apply to all agents.\n"
                 f"Agent IDs: {agent_ids}\n"
             )
-        user_prompt += _REVIEW_FORMAT
+        user_prompt += self._prompts.get("research", "review_format")
         response = await self._generate_with_retry(user_prompt)
         data = self._try_parse_json(response, "review_findings")
         return FollowUpQuestions(
@@ -241,7 +185,7 @@ class ResearchAgent(BaseAgent):
                 current_findings.key_points if current_findings else []
             ),
         )
-        user_prompt += _ROUND_1_FORMAT
+        user_prompt += self._prompts.get("research", "round_1_format")
 
         from deepresearch.tools.web_search import WEB_SEARCH_TOOL
 
@@ -304,7 +248,7 @@ class ResearchAgent(BaseAgent):
         """Deeper research after seeing shared context and follow-up questions."""
         await self._log_agent_state("researching")
         user_prompt = build_round_2_prompt(topic.question, shared, questions.questions)
-        user_prompt += _ROUND_2_FORMAT
+        user_prompt += self._prompts.get("research", "round_2_format")
         response = await self._generate_with_retry(user_prompt)
         data = self._try_parse_json(response, "research_round_2")
         return Findings(
@@ -330,7 +274,7 @@ class ResearchAgent(BaseAgent):
         user_prompt = build_round_n_prompt(
             topic.question, shared, round_num, max_rounds, prev_findings
         )
-        user_prompt += _ROUND_2_FORMAT
+        user_prompt += self._prompts.get("research", "round_2_format")
 
         from deepresearch.tools.web_search import WEB_SEARCH_TOOL
 
@@ -398,7 +342,7 @@ class ResearchAgent(BaseAgent):
             "Structure your report with a clear title, summary, analysis, "
             "key insights, and open questions."
         )
-        user_prompt += _REPORT_FORMAT
+        user_prompt += self._prompts.get("research", "report_format")
         response = await self._generate_with_retry(user_prompt)
         data = self._try_parse_json(response, "write_report")
         sections = self._parse_sections(data.get("sections", []))
@@ -418,7 +362,7 @@ class ResearchAgent(BaseAgent):
         """Answer a clarification question from the scribe — with web search."""
         await self._log_agent_state("answering")
         user_prompt = build_clarify_prompt(query.question)
-        user_prompt += _CLARIFY_FORMAT
+        user_prompt += self._prompts.get("research", "clarify_format")
         user_prompt += "\nUse the web_search tool if you need up-to-date information."
         try:
             from deepresearch.tools.web_search import WEB_SEARCH_TOOL

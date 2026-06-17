@@ -674,3 +674,9 @@ async def collect_reports(self, agents, round_results: dict[int, dict]):
 |------|--------|
 | 2026-06-16 | v1.1 — Applied review findings: FSM diagram fix (C1), dashboard HTML/constants (C2, I4), registry dispatch type uniformity (C3), 2-round diminishing returns (I1), follow-up questions for R3+ (I2), CollaborationBus plan step (I3), max_rounds mapping & timeout scope (I5, I6), gap extraction note (m1), first-round special behavior note (m2), explicit _should_continue ordering (m3), round_skip event rename (m4), CLI --rounds flag (m5), dry_run.py update (m6) |
 | 2026-06-16 | Initial version — ADR-0010 proposed |
+
+## Documentation
+
+- **Design doc reference:** §4 Research Rounds
+- **Implementation PR:** TBD
+- **Related ADRs:** ADR-0007, ADR-0014

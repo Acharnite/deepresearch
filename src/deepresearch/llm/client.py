@@ -17,6 +17,7 @@ import httpx
 import litellm
 
 from deepresearch.llm.tracker import TokenTracker
+from deepresearch.observability.tracing import tracer
 
 logger = logging.getLogger(__name__)
 
@@ -382,73 +383,92 @@ class LLMClient:
 
         last_exception: Exception | None = None
 
-        for attempt in range(3):  # initial + 2 retries
-            # Check cancellation before each attempt.
-            if _cancel and _cancel.is_set():
-                raise LLMError("Session cancelled")
-
-            # Circuit breaker check — fast-fail if the model is on cooldown.
-            breaker = self._get_breaker()
-            if breaker.is_open:
-                raise CircuitBreakerOpenError(
-                    f"Circuit breaker open for {self.model}"
-                )
-
-            try:
-                response = await asyncio.wait_for(
-                    self._acompletion(messages, temperature, effective_max_tokens),
-                    timeout=self.timeout,
-                )
-                self.call_count += 1
-                self._track_usage(response)
-                breaker.record_success()
-                return self._extract_content(response)
-
-            except asyncio.TimeoutError:
-                breaker.record_failure()
-                last_exception = LLMError(
-                    f"LLM request timed out after {self.timeout}s "
-                    f"(model={self.model}, attempt={attempt + 1})"
-                )
-                logger.warning(str(last_exception))
-
-            except (
-                litellm.BudgetExceededError,
-                litellm.ContextWindowExceededError,
-                litellm.RateLimitError,
-            ) as e:
-                # Token/rate errors are NOT retryable — fail immediately
-                breaker.record_failure()
-                raise LLMError(
-                    f"LLM resource exhausted (model={self.model}): {e}"
-                ) from e
-
-            except CircuitBreakerOpenError:
-                # Already checked above; re-raise without recording again.
-                raise
-
-            except Exception as e:
-                breaker.record_failure()
-                last_exception = e
-                logger.warning(
-                    "LLM request failed (model=%s, attempt=%d): %s",
-                    self.model,
-                    attempt + 1,
-                    e,
-                )
-
-            if attempt < 2:
-                # Check cancellation before sleeping for retry.
+        with tracer.start_as_current_span(
+            f"llm.{self.model}",
+            attributes={
+                "llm.model": self.model,
+                "llm.provider": self.provider or "unknown",
+            },
+        ) as llm_span:
+            for attempt in range(3):  # initial + 2 retries
+                # Check cancellation before each attempt.
                 if _cancel and _cancel.is_set():
                     raise LLMError("Session cancelled")
-                backoff = 2 ** (attempt + 1)  # 2s, 4s
-                logger.info("Retrying in %ds...", backoff)
-                await asyncio.sleep(backoff)
 
-        raise LLMError(
-            f"LLM request failed after all retries (model={self.model}): "
-            f"{last_exception}"
-        )
+                # Circuit breaker check — fast-fail if the model is on cooldown.
+                breaker = self._get_breaker()
+                if breaker.is_open:
+                    raise CircuitBreakerOpenError(
+                        f"Circuit breaker open for {self.model}"
+                    )
+
+                try:
+                    response = await asyncio.wait_for(
+                        self._acompletion(messages, temperature, effective_max_tokens),
+                        timeout=self.timeout,
+                    )
+                    self.call_count += 1
+                    self._track_usage(response)
+                    # Record span attributes from usage
+                    try:
+                        if hasattr(response, "usage") and response.usage:
+                            usage = response.usage
+                            prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+                            completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+                            llm_span.set_attribute("llm.prompt_tokens", prompt_tokens)
+                            llm_span.set_attribute("llm.completion_tokens", completion_tokens)
+                            cost = _lookup_cost(self.actual_model, prompt_tokens, completion_tokens)
+                            llm_span.set_attribute("llm.cost", cost)
+                    except Exception:
+                        pass
+                    breaker.record_success()
+                    return self._extract_content(response)
+
+                except asyncio.TimeoutError:
+                    breaker.record_failure()
+                    last_exception = LLMError(
+                        f"LLM request timed out after {self.timeout}s "
+                        f"(model={self.model}, attempt={attempt + 1})"
+                    )
+                    logger.warning(str(last_exception))
+
+                except (
+                    litellm.BudgetExceededError,
+                    litellm.ContextWindowExceededError,
+                    litellm.RateLimitError,
+                ) as e:
+                    # Token/rate errors are NOT retryable — fail immediately
+                    breaker.record_failure()
+                    raise LLMError(
+                        f"LLM resource exhausted (model={self.model}): {e}"
+                    ) from e
+
+                except CircuitBreakerOpenError:
+                    # Already checked above; re-raise without recording again.
+                    raise
+
+                except Exception as e:
+                    breaker.record_failure()
+                    last_exception = e
+                    logger.warning(
+                        "LLM request failed (model=%s, attempt=%d): %s",
+                        self.model,
+                        attempt + 1,
+                        e,
+                    )
+
+                if attempt < 2:
+                    # Check cancellation before sleeping for retry.
+                    if _cancel and _cancel.is_set():
+                        raise LLMError("Session cancelled")
+                    backoff = 2 ** (attempt + 1)  # 2s, 4s
+                    logger.info("Retrying in %ds...", backoff)
+                    await asyncio.sleep(backoff)
+
+            raise LLMError(
+                f"LLM request failed after all retries (model={self.model}): "
+                f"{last_exception}"
+            )
 
     def _build_acompletion_kwargs(
         self,

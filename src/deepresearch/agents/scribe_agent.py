@@ -19,6 +19,7 @@ from typing import Any, Callable, Coroutine
 
 from deepresearch.agents.base_agent import BaseAgent
 from deepresearch.llm.client import LLMClient, LLMError
+from prompts import PromptTemplate, prompts as _default_prompts  # type: ignore[import-untyped]
 from deepresearch.models import (
     ClarificationQuery,
     ClarificationResponse,
@@ -35,63 +36,7 @@ logger = logging.getLogger(__name__)
 # Maximum clarification rounds per agent per session.
 _MAX_CLARIFICATION_ROUNDS = 2
 
-_SCRIBE_SYSTEM_PROMPT = (
-    "You are a professional research editor and synthesiser. Your role is to "
-    "compile individual agent reports into a coherent, well-structured research "
-    "paper. You maintain a neutral, academic tone and give fair weight to all "
-    "perspectives presented by the agents.\n\n"
-    "Structure the paper with:\n"
-    "- A clear title reflecting the research topic\n"
-    "- An abstract summarising key findings across all perspectives\n"
-    "- A methodology note explaining the multi-agent approach\n"
-    '- Per-agent sections titled exactly with each agent\'s real ID and name (e.g., "Curious Teen", not invented titles). Do NOT rename agents or create new perspective names.\n'
-    "- A synthesis section connecting the perspectives and identifying "
-    "themes, agreements, and disagreements\n"
-    "- Key takeaways\n"
-    "- A conclusion\n"
-    "- Appendices for detailed analyses when appropriate"
-)
 
-_COMPILE_FORMAT = """
-Respond with valid JSON **only** — no markdown fences, no explanation:
-{
-  "title": "Research Paper Title",
-  "abstract": "Comprehensive abstract synthesising all perspectives.",
-  "methodology_note": "Multi-agent research methodology description.",
-  "sections": [
-    {
-      "heading": "Introduction",
-      "source_agent_id": null,
-      "content": "Section content here.",
-      "subsections": []
-    },
-    {
-      "heading": "Curious Teen Perspective",
-      "source_agent_id": "curious-teen",
-      "content": "Content from the curious teen agent's findings.",
-      "subsections": [
-        {
-          "heading": "Subsection",
-          "source_agent_id": "curious-teen",
-          "content": "Subsection content.",
-          "subsections": []
-        }
-      ]
-    }
-  ],
-  "synthesis": "Cross-cutting synthesis connecting all perspectives.",
-  "key_takeaways": ["Takeaway 1", "Takeaway 2", "Takeaway 3"],
-  "conclusion": "Final conclusion drawing everything together.",
-  "appendices": []
-}
-"""
-
-_CLARIFY_FORMAT = """
-Respond with valid JSON **only**:
-{
-  "response": "Clear, concise answer about compilation decisions."
-}
-"""
 
 
 class ScribeAgent(BaseAgent):
@@ -103,10 +48,15 @@ class ScribeAgent(BaseAgent):
     raise ``NotImplementedError``.
     """
 
-    def __init__(self, llm_client: LLMClient) -> None:
+    def __init__(
+        self,
+        llm_client: LLMClient,
+        prompt_tmpl: PromptTemplate | None = None,
+    ) -> None:
         # The scribe has no personality profile.
         super().__init__(profile=None, llm_client=llm_client)
-        self._system_prompt: str = _SCRIBE_SYSTEM_PROMPT
+        self._prompts: PromptTemplate = prompt_tmpl or _default_prompts
+        self._system_prompt: str = self._prompts.get("scribe", "scribe_system")
 
     # ------------------------------------------------------------------
     # Scribe-specific API
@@ -188,7 +138,7 @@ class ScribeAgent(BaseAgent):
             "Each agent section must be titled with the agent's real name. "
             "Highlight areas of agreement and disagreement."
         )
-        user_prompt += _COMPILE_FORMAT
+        user_prompt += self._prompts.get("scribe", "compile_format")
 
         try:
             logger.debug(
@@ -627,7 +577,7 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
             f"Synthesis: {paper.synthesis}\n"
             f"Conclusion: {paper.conclusion}\n"
         )
-        prompt += _COMPILE_FORMAT
+        prompt += self._prompts.get("scribe", "compile_format")
 
         try:
             response = await self.llm.generate_stream(
@@ -707,7 +657,7 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
             f"Synthesis: {paper.synthesis}\n"
             f"Conclusion: {paper.conclusion}\n"
         )
-        prompt += _COMPILE_FORMAT
+        prompt += self._prompts.get("scribe", "compile_format")
 
         try:
             response = await self.llm.generate_stream(
@@ -779,7 +729,7 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
             f'"{query.question}"\n\n'
             "Please provide a clear response about your compilation decision."
         )
-        user_prompt += _CLARIFY_FORMAT
+        user_prompt += self._prompts.get("scribe", "clarify_format")
         try:
             response = await self.llm.generate_stream(
                 system_prompt=self._system_prompt,

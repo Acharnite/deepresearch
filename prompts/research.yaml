@@ -1,0 +1,65 @@
+version: "1.0"
+description: "Research agent JSON format instructions"
+
+# Each template starts with a blank line (preserving the leading \n from
+# the original Python triple-quoted strings) so that appending the template
+# to a user prompt produces clean spacing.
+
+round_1_format: |
+
+  Respond with valid JSON **only** — no markdown, no explanation:
+  {
+    "summary": "Concise summary of your findings (2-3 paragraphs).",
+    "key_points": ["Key insight 1", "Key insight 2", "Key insight 3"],
+    "perspective": "Your unique perspective on this topic.",
+    "confidence": 0.8
+  }
+
+review_format: |
+
+  Respond with valid JSON **only**:
+  {
+    "questions": [
+      "What specific aspect needs deeper investigation?",
+      "How does X relate to Y based on other agents' findings?"
+    ],
+    "target_agent_ids": ["agent-id-or-null", "agent-id-or-null"]
+  }
+
+round_2_format: |
+
+  Respond with valid JSON **only**:
+  {
+    "summary": "Refined summary of your deeper research.",
+    "key_points": ["Refined point 1", "Refined point 2"],
+    "perspective": "Your evolved perspective after reviewing shared knowledge.",
+    "confidence": 0.85
+  }
+
+report_format: |
+
+  Respond with valid JSON **only**:
+  {
+    "title": "Your Individual Research Report Title",
+    "perspective_summary": "High-level summary of your perspective.",
+    "key_insights": ["Insight 1", "Insight 2"],
+    "analysis": "Detailed analysis text (2-4 paragraphs).",
+    "metaphors_or_analogies": ["Compelling analogy 1"],
+    "open_questions": ["Unresolved question 1"],
+    "full_text": "Complete report text.",
+    "sections": [
+      {
+        "heading": "Section Title",
+        "source_agent_id": null,
+        "content": "Section content here.",
+        "subsections": []
+      }
+    ]
+  }
+
+clarify_format: |
+
+  Respond with valid JSON **only**:
+  {
+    "response": "Clear, concise answer to the clarification question."
+  }

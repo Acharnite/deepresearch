@@ -1,8 +1,8 @@
 # DeepeResearch — Design Document
-**Version:** 1.1
+**Version:** 1.2
 **Status:** Active
 **Design Authority:** Architects
-**Last Reviewed:** 2026-06-13
+**Last Updated:** 2026-06-17
 
 ## 1. Purpose & Scope
 
@@ -255,33 +255,53 @@ workspaces/deepresearch/
 
 ## 4. Component Design
 
-### 4.1 Orchestrator (`src/deepresearch/orchestrator.py`)
+### 4.1 Orchestrator (`src/deepresearch/orchestrator/orchestrator.py`)
 
-The Orchestrator manages the full research session lifecycle as a finite state machine.
+The Orchestrator manages the full research session lifecycle via an adaptive finite state machine. Instead of a fixed 2-round sequence, the session runs a dynamic 2–5 round loop where each additional round depends on convergence criteria.
 
-**States:**
+**Adaptive FSM States:**
 
 ```
-IDLE → CONFIGURING → ROUND1 → COLLABORATING → FOLLOWUP → ROUND2 → COMPILING → OUTPUT → COMPLETE
+CONFIGURING → ROUND1 → COLLABORATING → FOLLOWUP → REFINING → ROUNDn → … → COMPILING
 ```
 
-| Method | Description |
-|--------|-------------|
-| `run(topic, config)` | Main entry point; runs the full session lifecycle |
-| `configure()` | Parse config, validate, assign models |
-| `assign_models(agents, mode, seed)` | Assign LLM models to agents per selected mode |
-| `run_round(round_num, agents, bus)` | Execute a research round in parallel via asyncio.gather |
-| `share_findings(agents, bus)` | Post-process: aggregate findings into SharedKnowledge |
-| `collect_follow_up_questions(agents)` | Gather follow-up questions from agents after reviewing shared knowledge |
-| `compile_paper(scribe, reports)` | Trigger scribe compilation |
-| `handle_timeout(agent_task, timeout)` | Wrap agent tasks with timeout handling |
-| `recover_agent_failure(failed_agent)` | Log failure, continue without agent if one fails |
+- **CONFIGURING** — Parse config, validate parameters, assign models to agents.
+- **ROUND1** — All agents perform independent initial research in parallel via `RoundRunner.run_round()`.
+- **COLLABORATING** — Findings are aggregated into `SharedKnowledge` via the `CollaborationBus`. Agents review each other's perspectives and identify knowledge gaps and areas of disagreement.
+- **FOLLOWUP** — Each agent formulates follow-up questions targeting other agents' findings (`RoundRunner.collect_followup_questions()`).
+- **REFINING** — Agents refine their findings in response to targeted follow-up questions (`RoundRunner._run_refinement()`).
+- **ROUNDn (2–5)** — Subsequent research rounds execute via `RoundRunner._run_round_n()`, passing previous findings so agents can build on prior work.
+- **COMPILING** — After convergence, the scribe gathers all final reports and compiles the research paper.
+
+**Convergence Detection (`SessionState.should_continue()`):**
+
+After each round (starting from round 2), the Orchestrator calls `SessionState.should_continue()` to decide whether to run another round. The check evaluates six criteria in priority order:
+
+1. **User cancellation** — `cancel_event` set by the caller (dashboard or CLI).
+2. **Emergency timeout** — 30-minute absolute safety net (`MAX_SESSION_DURATION`).
+3. **Max rounds reached** — Hard cap from `SessionConfig.budget.max_rounds` (default 4, range 1–10).
+4. **Trend convergence** — Gap delta between consecutive rounds: if knowledge gaps and disagreements are no longer decreasing (delta ≥ 0), the session has converged.
+5. **Diminishing returns** — Two consecutive non-decreasing gap deltas indicate further rounds are unlikely to yield novel insights.
+6. **Confidence convergence** — (Stub) When per-agent confidence data is available, mean confidence ≥ 0.7 for 2+ rounds signals convergence. Currently gap analysis serves as the primary convergence signal.
+
+The gap analysis tracks `gap_history` across rounds: each round's `total_gaps = len(knowledge_gaps) + len(areas_of_disagreement)`. When 3+ rounds of data show two consecutive non-decreasing deltas, the session terminates.
+
+**Implementation:**
+
+Round execution is delegated to `RoundRunner` (in `round_runner.py`), which provides:
+- `run_round()` — Round 1/2 execution with parallel `asyncio.wait_for()` per agent
+- `_run_round_n()` — Rounds 3+ with previous findings as context
+- `collect_followup_questions()` — Cross-agent question gathering
+- `_run_refinement()` — Targeted refinement based on follow-ups
+- Agent retry logic — one automatic retry for timeout/empty/failure per round
+
+`SessionState` (in `session_state.py`) owns convergence state: `gap_history`, `findings_history`, `current_round`, and the `should_continue()` decision logic. The `CollaborationBus` (`models.py`) computes `SharedKnowledge` including `knowledge_gaps`, `areas_of_disagreement`, and `confidence_scores`.
 
 **Error Handling:**
-- Agent timeout: `asyncio.wait_for()` per agent with configurable timeout
-- Agent failure: `asyncio.gather(return_exceptions=True)` — failed agents are logged and excluded
-- Configuration error: Raise `ConfigError` with descriptive message before any LLM calls
-- Scribe failure: Retry once, then fail with descriptive error
+- Agent timeout: `asyncio.wait_for()` per agent with configurable timeout.
+- Agent failure: `asyncio.gather(return_exceptions=True)` — failed agents are logged and excluded.
+- Configuration error: Raise `ConfigError` with descriptive message before any LLM calls.
+- Scribe failure: Retry once, then fail with descriptive error.
 
 **Scalability Note:** The single-process asyncio architecture is designed for 5-6 agents per session. Each agent is I/O-bound (LLM API calls), so Python's GIL is not a bottleneck. For future use cases requiring more than 20 agents per session, a distributed architecture (e.g., task queue with worker processes) would be needed. This is explicitly out of scope for v1.0.
 
@@ -750,11 +770,24 @@ A single test that runs the full pipeline (with mock LLM) and validates the PDF 
 
 ## 9. ADR Index
 
-| ADR | Title | Status |
-|-----|-------|--------|
+| # | Title | Status |
+|---|-------|--------|
 | ADR-0001 | Multi-Agent Research Architecture | Proposed |
 | ADR-0002 | Agent Personality & Model Selection | Proposed |
 | ADR-0003 | Web Frontend & Multi-Session Architecture | Proposed |
+| ADR-0004 | Test Findings and Architecture Fixes | Proposed |
+| ADR-0005 | Auto-Install and Auto-Discover Local LLM Backends | Proposed |
+| ADR-0006 | Web Search and Tool Calling Integration | Proposed |
+| ADR-0007 | Clarification Protocol and Refinement Phase | Proposed |
+| ADR-0008 | Dashboard Enhancements | Proposed |
+| ADR-0009 | CI/CD Pipeline, npm Wrapper, and Docker Distribution | Proposed |
+| ADR-0010 | Dynamic Research Rounds | Proposed |
+| ADR-0011 | Concurrency Limits and Web Search Throttling | Proposed |
+| ADR-0012 | Replace DuckDuckGo with SearXNG for Web Search | Proposed |
+| ADR-0013 | SearXNG Engine Optimization — Remove Problematic Backends, Tune Timeouts | Proposed |
+| ADR-0014 | Enforce Time Budget and Correct UI Labels | Proposed |
+| ADR-0015 | Fix JSON Parsing and Topic Drift | Proposed |
+| ADR-0016 | Epic Tracker — Code Review Handlingsplan (2026-06-17) | Accepted |
 
 ## 10. Open Questions
 
@@ -775,6 +808,7 @@ A single test that runs the full pipeline (with mock LLM) and validates the PDF 
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | 2026-06-17 | Batch 1 doc fixes: full ADR index (16 items), adaptive FSM description for dynamic rounds, version bump |
 | 1.1 | 2026-06-13 | Added Opencode AI as default provider, provider prefix routing, model connectivity check, model selector UI, session deletion, provider model auto-discovery, web module in project structure |
 | 1.0 | 2026-06-13 | Initial design document |
 | 0.1 | 2026-06-13 | Template created |

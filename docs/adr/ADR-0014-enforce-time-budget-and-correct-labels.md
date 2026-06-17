@@ -135,3 +135,9 @@ Existing tests use hardcoded budget values that will need updating:
 ## Deliverables
 
 - ADR document: `docs/adr/ADR-0014-enforce-time-budget-and-correct-labels.md`
+
+## Documentation
+
+- **Design doc reference:** §3 Time Budget
+- **Implementation PR:** TBD
+- **Related ADRs:** ADR-0010, ADR-0011

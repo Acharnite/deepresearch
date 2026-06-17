@@ -17,6 +17,7 @@ from rich.console import Console
 from deepresearch.agents.registry import Phase
 from deepresearch.config import ConfigError
 from deepresearch.constants import MAX_SESSION_DURATION
+from deepresearch.observability.tracing import tracer
 from deepresearch.models import (
     AgentProfile,
     ClarificationQuery,
@@ -107,201 +108,206 @@ class RoundRunner:
             ``{agent_id: result}`` — only successful results are included.
             Failed agents are recorded via :meth:`handle_agent_failure`.
         """
-        timeout = self._orch._get_round_timeout()
-        tasks: dict[str, asyncio.Task[Any]] = {}
-
-        for agent_id, agent_fn in agents.items():
-            if agent_id in self._orch.failed_agents:
-                logger.debug(
-                    "Skipping failed agent '%s' in round %d", agent_id, round_num
-                )
-                continue
-
-            # Check cancellation before launching each agent task.
-            if self._orch._cancel_event and self._orch._cancel_event.is_set():
-                logger.info(
-                    "Cancel event set — skipping remaining agents in round %d",
-                    round_num,
-                )
-                if self._event_bus:
-                    await self._event_bus.publish(
-                        {"event_type": "round_cancelled", "round": round_num, "agent_id": agent_id}
+        with tracer.start_as_current_span(
+            f"round.{round_num}",
+            attributes={
+                "round.num": round_num,
+            },
+        ) as _:
+            timeout = self._orch._get_round_timeout()
+            tasks: dict[str, asyncio.Task[Any]] = {}
+            for agent_id, agent_fn in agents.items():
+                if agent_id in self._orch.failed_agents:
+                    logger.debug(
+                        "Skipping failed agent '%s' in round %d", agent_id, round_num
                     )
-                break
+                    continue
 
-            # Publish start event BEFORE creating task so the dashboard
-            # immediately shows the agent as "running" (🔄).
-            agent_model = "unknown"
-            if self._config and hasattr(self._config, "agent_models"):
-                agent_model = self._config.agent_models.get(agent_id, "unknown")
-            if self._event_bus:
-                await self._event_bus.publish(
-                    {
-                        "event_type": "agent_start",
-                        "agent_id": agent_id,
-                        "round": round_num,
-                        "model": agent_model,
-                        "timeout": timeout,
-                        "agent_state": "researching",
-                    }
-                )
-
-            coro = (
-                agent_fn(Phase.ROUND_2, topic=topic, shared=shared)
-                if shared is not None
-                else agent_fn(Phase.INITIAL_ROUND, topic=topic)
-            )
-            tasks[agent_id] = asyncio.create_task(
-                asyncio.wait_for(coro, timeout=timeout),
-            )
-
-        results: dict[str, Any] = {}
-        # Track agents that need retry: agent_id -> agent_fn (or None if task failed before we can reuse)
-        retry_tasks: dict[str, Any | None] = {}
-
-        for agent_id, task in tasks.items():
-            # Check cancellation before awaiting each task result.
-            if self._orch._cancel_event and self._orch._cancel_event.is_set():
-                logger.info(
-                    "Cancel event set — cancelling remaining tasks in round %d",
-                    round_num,
-                )
-                for t in tasks.values():
-                    if not t.done():
-                        t.cancel()
-                break
-            try:
-                result = await task
-                result_size = len(str(result)) if result else 0
-
-                if self._is_empty_result(result):
-                    logger.warning(
-                        "Agent '%s' returned empty/meaningless result (%d chars), will retry",
-                        agent_id,
-                        result_size,
-                    )
-                    # Don't mark as failed yet — add to retry list
-                    retry_tasks[agent_id] = agents.get(agent_id)
-                else:
-                    results[agent_id] = result
-                    if self._event_bus:
-                        await self._event_bus.publish(
-                            {
-                                "event_type": "agent_complete",
-                                "agent_id": agent_id,
-                                "round": round_num,
-                                "result_chars": result_size,
-                                "status": "success",
-                            }
-                        )
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "Agent '%s' timed out in Round %d (timeout=%ds), will retry",
-                    agent_id,
-                    round_num,
-                    timeout,
-                )
-                retry_tasks[agent_id] = agents.get(agent_id)
-            except asyncio.CancelledError:
-                logger.info(
-                    "Agent '%s' cancelled in Round %d",
-                    agent_id,
-                    round_num,
-                )
-                break
-            except Exception as e:
-                logger.warning(
-                    "Agent '%s' failed in Round %d: %s, will retry",
-                    agent_id,
-                    round_num,
-                    e,
-                )
-                retry_tasks[agent_id] = agents.get(agent_id)
-
-            # ── Budget check after each agent ────────────────────────────
-            if start_time is not None:
-                b = MAX_SESSION_DURATION
-                if self._config:
-                    if hasattr(self._config, 'budget'):
-                        b = self._config.budget.seconds
-                    else:
-                        b = self._config.time_budget_seconds
-                if time.monotonic() - start_time > min(MAX_SESSION_DURATION, b):
-                    logger.warning(
-                        "Time budget exceeded during round %d — cancelling remaining agents",
+                # Check cancellation before launching each agent task.
+                if self._orch._cancel_event and self._orch._cancel_event.is_set():
+                    logger.info(
+                        "Cancel event set — skipping remaining agents in round %d",
                         round_num,
                     )
                     if self._event_bus:
                         await self._event_bus.publish(
-                            {"event_type": "budget_exceeded_during_round", "round": round_num}
+                            {"event_type": "round_cancelled", "round": round_num, "agent_id": agent_id}
                         )
-                    if self._orch._cancel_event:
-                        self._orch._cancel_event.set()
-                    for t in tasks.values():
-                        if not t.done():
-                            t.cancel()
                     break
 
-        # ── Retry failed agents once ────────────────────────────────
-        for agent_id in list(retry_tasks.keys()):
-            agent_fn = retry_tasks[agent_id]
-            if agent_fn is None or agent_id in self._orch.failed_agents:
-                # Already marked as failed by a concurrent path — skip
-                if agent_fn is not None and agent_id not in self._orch.failed_agents:
-                    # Agent fn available but task failed catastrophically — still mark
-                    await self.handle_agent_failure(agent_id, "retry_unavailable")
-                continue
+                # Publish start event BEFORE creating task so the dashboard
+                # immediately shows the agent as "running" (🔄).
+                agent_model = "unknown"
+                if self._config and hasattr(self._config, "agent_models"):
+                    agent_model = self._config.agent_models.get(agent_id, "unknown")
+                if self._event_bus:
+                    await self._event_bus.publish(
+                        {
+                            "event_type": "agent_start",
+                            "agent_id": agent_id,
+                            "round": round_num,
+                            "model": agent_model,
+                            "timeout": timeout,
+                            "agent_state": "researching",
+                        }
+                    )
 
-            logger.info("Retrying agent '%s' (attempt 2/2)", agent_id)
-            if self._event_bus:
-                await self._event_bus.publish(
-                    {"event_type": "agent_retry", "agent_id": agent_id, "round": round_num}
-                )
-
-            # Publish retry start event so the dashboard shows "Retrying..."
-            if self._event_bus:
-                await self._event_bus.publish(
-                    {
-                        "event_type": "agent_start",
-                        "agent_id": agent_id,
-                        "round": round_num,
-                        "model": "unknown",
-                        "timeout": timeout,
-                        "agent_state": "retrying",
-                    }
-                )
-
-            try:
                 coro = (
                     agent_fn(Phase.ROUND_2, topic=topic, shared=shared)
                     if shared is not None
                     else agent_fn(Phase.INITIAL_ROUND, topic=topic)
                 )
-                result = await asyncio.wait_for(coro, timeout=timeout)
-                result_size = len(str(result)) if result else 0
+                tasks[agent_id] = asyncio.create_task(
+                    asyncio.wait_for(coro, timeout=timeout),
+                )
 
-                if self._is_empty_result(result):
-                    await self.handle_agent_failure(agent_id, "empty_result (retry failed)")
-                else:
-                    results[agent_id] = result
-                    if self._event_bus:
-                        await self._event_bus.publish(
-                            {
-                                "event_type": "agent_complete",
-                                "agent_id": agent_id,
-                                "round": round_num,
-                                "result_chars": result_size,
-                                "status": "success",
-                                "attempt": 2,
-                            }
+            results: dict[str, Any] = {}
+            # Track agents that need retry: agent_id -> agent_fn (or None if task failed before we can reuse)
+            retry_tasks: dict[str, Any | None] = {}
+
+            for agent_id, task in tasks.items():
+                # Check cancellation before awaiting each task result.
+                if self._orch._cancel_event and self._orch._cancel_event.is_set():
+                    logger.info(
+                        "Cancel event set — cancelling remaining tasks in round %d",
+                        round_num,
+                    )
+                    for t in tasks.values():
+                        if not t.done():
+                            t.cancel()
+                    break
+                try:
+                    result = await task
+                    result_size = len(str(result)) if result else 0
+
+                    if self._is_empty_result(result):
+                        logger.warning(
+                            "Agent '%s' returned empty/meaningless result (%d chars), will retry",
+                            agent_id,
+                            result_size,
                         )
-                    logger.info("Agent '%s' succeeded on retry", agent_id)
-            except asyncio.TimeoutError:
-                await self.handle_agent_failure(agent_id, "timeout (retry failed)")
-            except Exception as e:
-                await self.handle_agent_failure(agent_id, f"{e} (retry failed)")
+                        # Don't mark as failed yet — add to retry list
+                        retry_tasks[agent_id] = agents.get(agent_id)
+                    else:
+                        results[agent_id] = result
+                        if self._event_bus:
+                            await self._event_bus.publish(
+                                {
+                                    "event_type": "agent_complete",
+                                    "agent_id": agent_id,
+                                    "round": round_num,
+                                    "result_chars": result_size,
+                                    "status": "success",
+                                }
+                            )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Agent '%s' timed out in Round %d (timeout=%ds), will retry",
+                        agent_id,
+                        round_num,
+                        timeout,
+                    )
+                    retry_tasks[agent_id] = agents.get(agent_id)
+                except asyncio.CancelledError:
+                    logger.info(
+                        "Agent '%s' cancelled in Round %d",
+                        agent_id,
+                        round_num,
+                    )
+                    break
+                except Exception as e:
+                    logger.warning(
+                        "Agent '%s' failed in Round %d: %s, will retry",
+                        agent_id,
+                        round_num,
+                        e,
+                    )
+                    retry_tasks[agent_id] = agents.get(agent_id)
 
-        return results
+                # ── Budget check after each agent ────────────────────────────
+                if start_time is not None:
+                    b = MAX_SESSION_DURATION
+                    if self._config:
+                        if hasattr(self._config, 'budget'):
+                            b = self._config.budget.seconds
+                        else:
+                            b = self._config.time_budget_seconds
+                    if time.monotonic() - start_time > min(MAX_SESSION_DURATION, b):
+                        logger.warning(
+                            "Time budget exceeded during round %d — cancelling remaining agents",
+                            round_num,
+                        )
+                        if self._event_bus:
+                            await self._event_bus.publish(
+                                {"event_type": "budget_exceeded_during_round", "round": round_num}
+                            )
+                        if self._orch._cancel_event:
+                            self._orch._cancel_event.set()
+                        for t in tasks.values():
+                            if not t.done():
+                                t.cancel()
+                        break
+
+            # ── Retry failed agents once ────────────────────────────────
+            for agent_id in list(retry_tasks.keys()):
+                agent_fn = retry_tasks[agent_id]
+                if agent_fn is None or agent_id in self._orch.failed_agents:
+                    # Already marked as failed by a concurrent path — skip
+                    if agent_fn is not None and agent_id not in self._orch.failed_agents:
+                        # Agent fn available but task failed catastrophically — still mark
+                        await self.handle_agent_failure(agent_id, "retry_unavailable")
+                    continue
+
+                logger.info("Retrying agent '%s' (attempt 2/2)", agent_id)
+                if self._event_bus:
+                    await self._event_bus.publish(
+                        {"event_type": "agent_retry", "agent_id": agent_id, "round": round_num}
+                    )
+
+                # Publish retry start event so the dashboard shows "Retrying..."
+                if self._event_bus:
+                    await self._event_bus.publish(
+                        {
+                            "event_type": "agent_start",
+                            "agent_id": agent_id,
+                            "round": round_num,
+                            "model": "unknown",
+                            "timeout": timeout,
+                            "agent_state": "retrying",
+                        }
+                    )
+
+                try:
+                    coro = (
+                        agent_fn(Phase.ROUND_2, topic=topic, shared=shared)
+                        if shared is not None
+                        else agent_fn(Phase.INITIAL_ROUND, topic=topic)
+                    )
+                    result = await asyncio.wait_for(coro, timeout=timeout)
+                    result_size = len(str(result)) if result else 0
+
+                    if self._is_empty_result(result):
+                        await self.handle_agent_failure(agent_id, "empty_result (retry failed)")
+                    else:
+                        results[agent_id] = result
+                        if self._event_bus:
+                            await self._event_bus.publish(
+                                {
+                                    "event_type": "agent_complete",
+                                    "agent_id": agent_id,
+                                    "round": round_num,
+                                    "result_chars": result_size,
+                                    "status": "success",
+                                    "attempt": 2,
+                                }
+                            )
+                        logger.info("Agent '%s' succeeded on retry", agent_id)
+                except asyncio.TimeoutError:
+                    await self.handle_agent_failure(agent_id, "timeout (retry failed)")
+                except Exception as e:
+                    await self.handle_agent_failure(agent_id, f"{e} (retry failed)")
+
+            return results
 
     @staticmethod
     def _is_empty_result(result: Any) -> bool:
@@ -347,172 +353,51 @@ class RoundRunner:
         Dispatches with (topic, shared, round_num, prev_findings) so the
         registry routes to research_round_n.
         """
-        timeout = self._orch._get_round_timeout()
-        tasks: dict[str, asyncio.Task[Any]] = {}
-        for agent_id, agent_fn in agents.items():
-            if agent_id in self._orch.failed_agents:
-                continue
-            if self._orch._cancel_event and self._orch._cancel_event.is_set():
-                break
-
-            prev_findings = prev_round.get(agent_id)
-            if prev_findings is None:
-                logger.warning(
-                    "No previous findings for agent '%s' in round %d", agent_id, round_num
-                )
-                continue
-            # Convert IndividualReport to Findings if needed (R2 dispatch wraps)
-            if isinstance(prev_findings, IndividualReport):
-                prev_findings = Findings(
-                    agent_id=prev_findings.agent_id,
-                    round=round_num - 1,
-                    summary=prev_findings.perspective_summary,
-                    key_points=prev_findings.key_insights,
-                    perspective=prev_findings.analysis,
-                    confidence=0.7,
-                )
-
-            if self._event_bus:
-                await self._event_bus.publish(
-                    {
-                        "event_type": "agent_start",
-                        "agent_id": agent_id,
-                        "round": round_num,
-                        "model": self._config.agent_models.get(agent_id, "unknown")
-                        if self._config
-                        else "unknown",
-                        "timeout": timeout,
-                        "agent_state": "researching",
-                    }
-                )
-
-            coro = agent_fn(
-                Phase.ROUND_N,
-                topic=topic,
-                shared=shared,
-                round_num=round_num,
-                prev_findings=prev_findings,
-            )
-            tasks[agent_id] = asyncio.create_task(
-                asyncio.wait_for(coro, timeout=timeout),
-            )
-
-        results: dict[str, Any] = {}
-        retry_tasks: dict[str, Any | None] = {}
-
-        for agent_id, task in tasks.items():
-            try:
-                result = await task
-                result_size = len(str(result)) if result else 0
-
-                if self._is_empty_result(result):
-                    logger.warning(
-                        "Agent '%s' returned empty result in round %d, will retry",
-                        agent_id,
-                        round_num,
-                    )
-                    retry_tasks[agent_id] = agents.get(agent_id)
-                else:
-                    results[agent_id] = result
-                    if self._event_bus:
-                        await self._event_bus.publish(
-                            {
-                                "event_type": "agent_complete",
-                                "agent_id": agent_id,
-                                "round": round_num,
-                                "result_chars": result_size,
-                                "status": "success",
-                            }
-                        )
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "Agent '%s' timed out in Round %d (timeout=%ds), will retry",
-                    agent_id,
-                    round_num,
-                    timeout,
-                )
-                retry_tasks[agent_id] = agents.get(agent_id)
-            except asyncio.CancelledError:
-                logger.info(
-                    "Agent '%s' cancelled in round %d",
-                    agent_id,
-                    round_num,
-                )
-                break
-            except Exception as e:
-                logger.warning(
-                    "Agent '%s' failed in Round %d: %s, will retry",
-                    agent_id,
-                    round_num,
-                    e,
-                )
-                retry_tasks[agent_id] = agents.get(agent_id)
-
-            # ── Budget check after each agent ────────────────────────────
-            if start_time is not None:
-                b = MAX_SESSION_DURATION
-                if self._config:
-                    if hasattr(self._config, 'budget'):
-                        b = self._config.budget.seconds
-                    else:
-                        b = self._config.time_budget_seconds
-                if time.monotonic() - start_time > min(MAX_SESSION_DURATION, b):
-                    logger.warning(
-                        "Time budget exceeded during round %d — cancelling remaining agents",
-                        round_num,
-                    )
-                    if self._event_bus:
-                        await self._event_bus.publish(
-                            {"event_type": "budget_exceeded_during_round", "round": round_num}
-                        )
-                    if self._orch._cancel_event:
-                        self._orch._cancel_event.set()
-                    for t in tasks.values():
-                        if not t.done():
-                            t.cancel()
+        with tracer.start_as_current_span(
+            f"round.{round_num}",
+            attributes={
+                "round.num": round_num,
+            },
+        ) as _:
+            timeout = self._orch._get_round_timeout()
+            tasks: dict[str, asyncio.Task[Any]] = {}
+            for agent_id, agent_fn in agents.items():
+                if agent_id in self._orch.failed_agents:
+                    continue
+                if self._orch._cancel_event and self._orch._cancel_event.is_set():
                     break
 
-        # ── Retry failed agents once ────────────────────────────────
-        for agent_id in list(retry_tasks.keys()):
-            agent_fn = retry_tasks[agent_id]
-            if agent_fn is None or agent_id in self._orch.failed_agents:
-                if agent_fn is not None and agent_id not in self._orch.failed_agents:
-                    await self.handle_agent_failure(agent_id, "retry_unavailable")
-                continue
+                prev_findings = prev_round.get(agent_id)
+                if prev_findings is None:
+                    logger.warning(
+                        "No previous findings for agent '%s' in round %d", agent_id, round_num
+                    )
+                    continue
+                # Convert IndividualReport to Findings if needed (R2 dispatch wraps)
+                if isinstance(prev_findings, IndividualReport):
+                    prev_findings = Findings(
+                        agent_id=prev_findings.agent_id,
+                        round=round_num - 1,
+                        summary=prev_findings.perspective_summary,
+                        key_points=prev_findings.key_insights,
+                        perspective=prev_findings.analysis,
+                        confidence=0.7,
+                    )
 
-            logger.info("Retrying agent '%s' (attempt 2/2)", agent_id)
-            if self._event_bus:
-                await self._event_bus.publish(
-                    {"event_type": "agent_retry", "agent_id": agent_id, "round": round_num}
-                )
+                if self._event_bus:
+                    await self._event_bus.publish(
+                        {
+                            "event_type": "agent_start",
+                            "agent_id": agent_id,
+                            "round": round_num,
+                            "model": self._config.agent_models.get(agent_id, "unknown")
+                            if self._config
+                            else "unknown",
+                            "timeout": timeout,
+                            "agent_state": "researching",
+                        }
+                    )
 
-            prev_findings = prev_round.get(agent_id)
-            if prev_findings is None:
-                await self.handle_agent_failure(agent_id, "no_previous_findings (retry)")
-                continue
-            if isinstance(prev_findings, IndividualReport):
-                prev_findings = Findings(
-                    agent_id=prev_findings.agent_id,
-                    round=round_num - 1,
-                    summary=prev_findings.perspective_summary,
-                    key_points=prev_findings.key_insights,
-                    perspective=prev_findings.analysis,
-                    confidence=0.7,
-                )
-
-            if self._event_bus:
-                await self._event_bus.publish(
-                    {
-                        "event_type": "agent_start",
-                        "agent_id": agent_id,
-                        "round": round_num,
-                        "model": "unknown",
-                        "timeout": timeout,
-                        "agent_state": "retrying",
-                    }
-                )
-
-            try:
                 coro = agent_fn(
                     Phase.ROUND_N,
                     topic=topic,
@@ -520,31 +405,158 @@ class RoundRunner:
                     round_num=round_num,
                     prev_findings=prev_findings,
                 )
-                result = await asyncio.wait_for(coro, timeout=timeout)
-                result_size = len(str(result)) if result else 0
+                tasks[agent_id] = asyncio.create_task(
+                    asyncio.wait_for(coro, timeout=timeout),
+                )
 
-                if self._is_empty_result(result):
-                    await self.handle_agent_failure(agent_id, "empty_result (retry failed)")
-                else:
-                    results[agent_id] = result
-                    if self._event_bus:
-                        await self._event_bus.publish(
-                            {
-                                "event_type": "agent_complete",
-                                "agent_id": agent_id,
-                                "round": round_num,
-                                "result_chars": result_size,
-                                "status": "success",
-                                "attempt": 2,
-                            }
+            results: dict[str, Any] = {}
+            retry_tasks: dict[str, Any | None] = {}
+
+            for agent_id, task in tasks.items():
+                try:
+                    result = await task
+                    result_size = len(str(result)) if result else 0
+
+                    if self._is_empty_result(result):
+                        logger.warning(
+                            "Agent '%s' returned empty result in round %d, will retry",
+                            agent_id,
+                            round_num,
                         )
-                    logger.info("Agent '%s' succeeded on retry", agent_id)
-            except asyncio.TimeoutError:
-                await self.handle_agent_failure(agent_id, "timeout (retry failed)")
-            except Exception as e:
-                await self.handle_agent_failure(agent_id, f"{e} (retry failed)")
+                        retry_tasks[agent_id] = agents.get(agent_id)
+                    else:
+                        results[agent_id] = result
+                        if self._event_bus:
+                            await self._event_bus.publish(
+                                {
+                                    "event_type": "agent_complete",
+                                    "agent_id": agent_id,
+                                    "round": round_num,
+                                    "result_chars": result_size,
+                                    "status": "success",
+                                }
+                            )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Agent '%s' timed out in Round %d (timeout=%ds), will retry",
+                        agent_id,
+                        round_num,
+                        timeout,
+                    )
+                    retry_tasks[agent_id] = agents.get(agent_id)
+                except asyncio.CancelledError:
+                    logger.info(
+                        "Agent '%s' cancelled in round %d",
+                        agent_id,
+                        round_num,
+                    )
+                    break
+                except Exception as e:
+                    logger.warning(
+                        "Agent '%s' failed in Round %d: %s, will retry",
+                        agent_id,
+                        round_num,
+                        e,
+                    )
+                    retry_tasks[agent_id] = agents.get(agent_id)
 
-        return results
+                # ── Budget check after each agent ────────────────────────────
+                if start_time is not None:
+                    b = MAX_SESSION_DURATION
+                    if self._config:
+                        if hasattr(self._config, 'budget'):
+                            b = self._config.budget.seconds
+                        else:
+                            b = self._config.time_budget_seconds
+                    if time.monotonic() - start_time > min(MAX_SESSION_DURATION, b):
+                        logger.warning(
+                            "Time budget exceeded during round %d — cancelling remaining agents",
+                            round_num,
+                        )
+                        if self._event_bus:
+                            await self._event_bus.publish(
+                                {"event_type": "budget_exceeded_during_round", "round": round_num}
+                            )
+                        if self._orch._cancel_event:
+                            self._orch._cancel_event.set()
+                        for t in tasks.values():
+                            if not t.done():
+                                t.cancel()
+                        break
+
+            # ── Retry failed agents once ────────────────────────────────
+            for agent_id in list(retry_tasks.keys()):
+                agent_fn = retry_tasks[agent_id]
+                if agent_fn is None or agent_id in self._orch.failed_agents:
+                    if agent_fn is not None and agent_id not in self._orch.failed_agents:
+                        await self.handle_agent_failure(agent_id, "retry_unavailable")
+                    continue
+
+                logger.info("Retrying agent '%s' (attempt 2/2)", agent_id)
+                if self._event_bus:
+                    await self._event_bus.publish(
+                        {"event_type": "agent_retry", "agent_id": agent_id, "round": round_num}
+                    )
+
+                prev_findings = prev_round.get(agent_id)
+                if prev_findings is None:
+                    await self.handle_agent_failure(agent_id, "no_previous_findings (retry)")
+                    continue
+                if isinstance(prev_findings, IndividualReport):
+                    prev_findings = Findings(
+                        agent_id=prev_findings.agent_id,
+                        round=round_num - 1,
+                        summary=prev_findings.perspective_summary,
+                        key_points=prev_findings.key_insights,
+                        perspective=prev_findings.analysis,
+                        confidence=0.7,
+                    )
+
+                if self._event_bus:
+                    await self._event_bus.publish(
+                        {
+                            "event_type": "agent_start",
+                            "agent_id": agent_id,
+                            "round": round_num,
+                            "model": "unknown",
+                            "timeout": timeout,
+                            "agent_state": "retrying",
+                        }
+                    )
+
+                try:
+                    coro = agent_fn(
+                        Phase.ROUND_N,
+                        topic=topic,
+                        shared=shared,
+                        round_num=round_num,
+                        prev_findings=prev_findings,
+                    )
+                    result = await asyncio.wait_for(coro, timeout=timeout)
+                    result_size = len(str(result)) if result else 0
+
+                    if self._is_empty_result(result):
+                        await self.handle_agent_failure(agent_id, "empty_result (retry failed)")
+                    else:
+                        results[agent_id] = result
+                        if self._event_bus:
+                            await self._event_bus.publish(
+                                {
+                                    "event_type": "agent_complete",
+                                    "agent_id": agent_id,
+                                    "round": round_num,
+                                    "result_chars": result_size,
+                                    "status": "success",
+                                    "attempt": 2,
+                                }
+                            )
+                        logger.info("Agent '%s' succeeded on retry", agent_id)
+                except asyncio.TimeoutError:
+                    await self.handle_agent_failure(agent_id, "timeout (retry failed)")
+                except Exception as e:
+                    await self.handle_agent_failure(agent_id, f"{e} (retry failed)")
+
+            return results
 
     # ------------------------------------------------------------------
     # Follow-up Questions

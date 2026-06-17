@@ -3,6 +3,7 @@ phase:
   current: 4
   total: 4
   status:
+     4: done
      3: done
      1: done
      2: done

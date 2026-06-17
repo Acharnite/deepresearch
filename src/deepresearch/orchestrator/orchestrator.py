@@ -21,6 +21,7 @@ from deepresearch.collaboration import CollaborationBus
 from deepresearch.config import ConfigError
 from deepresearch.config.session import SessionConfig
 from deepresearch.constants import MAX_SESSION_DURATION
+from deepresearch.observability.tracing import tracer
 from deepresearch.models import (
     AgentProfile,
     Findings,
@@ -270,160 +271,168 @@ class Orchestrator:
             if hasattr(config, 'budget') else getattr(config, 'time_budget_seconds', 300)
         )
 
-        while round_num <= (max_r if max_r else 4):
-            if self._cancel_event and self._cancel_event.is_set():
-                logger.info("Cancel event set — aborting round loop")
-                break
+        with tracer.start_as_current_span(
+            "session.run",
+            attributes={
+                "session.topic": config.topic.question[:100],
+                "session.budget": config.budget.keyword if hasattr(config, 'budget') else "",
+                "session.max_rounds": max_r or 0,
+            },
+        ) as _:
+            while round_num <= (max_r if max_r else 4):
+                if self._cancel_event and self._cancel_event.is_set():
+                    logger.info("Cancel event set — aborting round loop")
+                    break
 
-            if time.monotonic() - start_time > min(MAX_SESSION_DURATION, budget_secs):
-                logger.info("Time budget exceeded — stopping")
-                if self._cancel_event:
-                    self._cancel_event.set()
-                break
+                if time.monotonic() - start_time > min(MAX_SESSION_DURATION, budget_secs):
+                    logger.info("Time budget exceeded — stopping")
+                    if self._cancel_event:
+                        self._cancel_event.set()
+                    break
 
-            self.state = f"ROUND{round_num}"
-            console.print(
-                f"\n[bold]Round {round_num}:[/bold] "
-                + ("Independent Research" if round_num == 1 else "Refined Research")
-            )
-            if self._event_bus:
-                await self._event_bus.publish({"event_type": "round_start", "round": round_num})
-
-            if round_num == 1:
-                results = await self.round_runner.run_round(
-                    1, {aid: agents[aid] for aid in active_agents()},
-                    config.topic, start_time=start_time,
+                self.state = f"ROUND{round_num}"
+                console.print(
+                    f"\n[bold]Round {round_num}:[/bold] "
+                    + ("Independent Research" if round_num == 1 else "Refined Research")
                 )
-            elif round_num == 2:
-                assert latest_shared is not None
-                results = await self.round_runner.run_round(
-                    round_num, {aid: agents[aid] for aid in active_agents()},
-                    config.topic, latest_shared, start_time=start_time,
-                )
-            else:
-                assert latest_shared is not None
-                prev_round = round_results.get(round_num - 1, {})
-                results = await self.round_runner._run_round_n(
-                    round_num, {aid: agents[aid] for aid in active_agents()},
-                    config.topic, latest_shared, prev_round, start_time=start_time,
-                )
-
-            round_results[round_num] = results
-
-            if not results:
-                logger.error("ALL agents failed in round %d — stopping", round_num)
                 if self._event_bus:
-                    await self._event_bus.publish({"event_type": "all_agents_failed", "round": round_num})
-                console.print("[red]All agents failed — stopping research[/red]")
-                break
+                    await self._event_bus.publish({"event_type": "round_start", "round": round_num})
 
-            logger.info(
-                "Round %d complete — %d/%d agents succeeded",
-                round_num, len(results), len(agents),
-            )
-
-            for agent_id, findings in results.items():
-                await self.bus.publish_round(agent_id, round_num, findings)
-
-            if round_num == 1:
-                self.state_tracker.save_round_findings(results, output_path, round_num)
-
-            if round_num == 1:
-                self.state = "COLLABORATING"
-                console.print("\n[bold]Collaboration:[/bold] Sharing findings across agents")
-                latest_shared = await self.bus.compute_shared_knowledge()
-                round_history.append(latest_shared)
-                if self._event_bus:
-                    await self._event_bus.publish(
-                        {"event_type": "collaboration_phase", "shared_agent_count": len(results)}
+                if round_num == 1:
+                    results = await self.round_runner.run_round(
+                        1, {aid: agents[aid] for aid in active_agents()},
+                        config.topic, start_time=start_time,
+                    )
+                elif round_num == 2:
+                    assert latest_shared is not None
+                    results = await self.round_runner.run_round(
+                        round_num, {aid: agents[aid] for aid in active_agents()},
+                        config.topic, latest_shared, start_time=start_time,
+                    )
+                else:
+                    assert latest_shared is not None
+                    prev_round = round_results.get(round_num - 1, {})
+                    results = await self.round_runner._run_round_n(
+                        round_num, {aid: agents[aid] for aid in active_agents()},
+                        config.topic, latest_shared, prev_round, start_time=start_time,
                     )
 
-                self.state = "FOLLOWUP"
-                console.print("\n[bold]Follow-up:[/bold] Collecting follow-up questions")
-                if self._event_bus:
-                    await self._event_bus.publish({"event_type": "followup_start", "active_agents": len(active_agents())})
-                followup_results = await self.round_runner.collect_followup_questions(
-                    {aid: agents[aid] for aid in active_agents()}, latest_shared,
-                )
-                questions_dict: dict[str, list[str]] = {}
-                targets_dict: dict[str, list[str | None]] = {}
-                for agent_id, fu in followup_results.items():
-                    if isinstance(fu, FollowUpQuestions):
-                        await self.bus.publish_followup(agent_id, fu.questions)
-                        questions_dict[agent_id] = fu.questions
-                        raw_targets = fu.target_agent_ids or [None] * len(fu.questions)
-                        targets_dict[agent_id] = [
-                            t if t is not None else "All" for t in raw_targets
-                        ]
-                if self._event_bus:
-                    await self._event_bus.publish(
-                        {"event_type": "followup_complete", "results": len(followup_results),
-                         "questions": questions_dict, "targets": targets_dict}
-                    )
+                round_results[round_num] = results
 
-                self.state = "REFINING"
-                console.print("\n[bold]Refinement:[/bold] Agents refining findings")
-                if self._event_bus:
-                    await self._event_bus.publish({"event_type": "refinement_start"})
-                refined = await self.round_runner._run_refinement(
-                    agents, followup_results, active_agents, start_time=start_time,
-                )
-                for agent_id, refined_findings in refined.items():
-                    results[agent_id] = refined_findings
-                if self._event_bus:
-                    await self._event_bus.publish({"event_type": "refinement_complete", "refined_agents": len(refined)})
+                if not results:
+                    logger.error("ALL agents failed in round %d — stopping", round_num)
+                    if self._event_bus:
+                        await self._event_bus.publish({"event_type": "all_agents_failed", "round": round_num})
+                    console.print("[red]All agents failed — stopping research[/red]")
+                    break
 
-            if round_num > 1:
-                latest_shared = await self.bus.compute_shared_knowledge()
-                if latest_shared:
-                    latest_shared.round_number = round_num
-                    latest_shared.round_history = [s for s in round_history]
+                logger.info(
+                    "Round %d complete — %d/%d agents succeeded",
+                    round_num, len(results), len(agents),
+                )
+
+                for agent_id, findings in results.items():
+                    await self.bus.publish_round(agent_id, round_num, findings)
+
+                if round_num == 1:
+                    self.state_tracker.save_round_findings(results, output_path, round_num)
+
+                if round_num == 1:
+                    self.state = "COLLABORATING"
+                    console.print("\n[bold]Collaboration:[/bold] Sharing findings across agents")
+                    latest_shared = await self.bus.compute_shared_knowledge()
                     round_history.append(latest_shared)
+                    if self._event_bus:
+                        await self._event_bus.publish(
+                            {"event_type": "collaboration_phase", "shared_agent_count": len(results)}
+                        )
 
-            if not await self.state_tracker.should_continue(
-                self._cancel_event, self.session_config,
-                round_num + 1, round_history, start_time,
-            ):
-                logger.info("Convergence check: stopping after round %d", round_num)
-                if self._event_bus:
-                    await self._event_bus.publish(
-                        {"event_type": "round_skip", "round": round_num, "reason": "convergence"}
+                    self.state = "FOLLOWUP"
+                    console.print("\n[bold]Follow-up:[/bold] Collecting follow-up questions")
+                    if self._event_bus:
+                        await self._event_bus.publish({"event_type": "followup_start", "active_agents": len(active_agents())})
+                    followup_results = await self.round_runner.collect_followup_questions(
+                        {aid: agents[aid] for aid in active_agents()}, latest_shared,
                     )
-                break
+                    questions_dict: dict[str, list[str]] = {}
+                    targets_dict: dict[str, list[str | None]] = {}
+                    for agent_id, fu in followup_results.items():
+                        if isinstance(fu, FollowUpQuestions):
+                            await self.bus.publish_followup(agent_id, fu.questions)
+                            questions_dict[agent_id] = fu.questions
+                            raw_targets = fu.target_agent_ids or [None] * len(fu.questions)
+                            targets_dict[agent_id] = [
+                                t if t is not None else "All" for t in raw_targets
+                            ]
+                    if self._event_bus:
+                        await self._event_bus.publish(
+                            {"event_type": "followup_complete", "results": len(followup_results),
+                             "questions": questions_dict, "targets": targets_dict}
+                        )
 
-            round_num += 1
+                    self.state = "REFINING"
+                    console.print("\n[bold]Refinement:[/bold] Agents refining findings")
+                    if self._event_bus:
+                        await self._event_bus.publish({"event_type": "refinement_start"})
+                    refined = await self.round_runner._run_refinement(
+                        agents, followup_results, active_agents, start_time=start_time,
+                    )
+                    for agent_id, refined_findings in refined.items():
+                        results[agent_id] = refined_findings
+                    if self._event_bus:
+                        await self._event_bus.publish({"event_type": "refinement_complete", "refined_agents": len(refined)})
 
-        self.state = "COMPILING"
-        console.print("\n[bold]Compilation:[/bold] Gathering final reports")
-        reports: dict[str, IndividualReport] = {}
-        latest_round = max(round_results.keys()) if round_results else 1
-        for agent_id in active_agents():
-            if agent_id in self.failed_agents:
-                continue
-            latest_result = round_results.get(latest_round, {}).get(agent_id)
-            if isinstance(latest_result, IndividualReport):
-                reports[agent_id] = latest_result
-            elif isinstance(latest_result, Findings):
-                reports[agent_id] = IndividualReport(
-                    agent_id=agent_id, title=f"Report from {agent_id}",
-                    perspective_summary=latest_result.summary,
-                    key_insights=latest_result.key_points,
-                    analysis=latest_result.raw_response or latest_result.summary,
-                    full_text=latest_result.raw_response or latest_result.summary,
-                )
+                if round_num > 1:
+                    latest_shared = await self.bus.compute_shared_knowledge()
+                    if latest_shared:
+                        latest_shared.round_number = round_num
+                        latest_shared.round_history = [s for s in round_history]
+                        round_history.append(latest_shared)
 
-        for agent_id, report in reports.items():
-            await self.bus.publish_report(agent_id, report)
+                if not await self.state_tracker.should_continue(
+                    self._cancel_event, self.session_config,
+                    round_num + 1, round_history, start_time,
+                ):
+                    logger.info("Convergence check: stopping after round %d", round_num)
+                    if self._event_bus:
+                        await self._event_bus.publish(
+                            {"event_type": "round_skip", "round": round_num, "reason": "convergence"}
+                        )
+                    break
 
-        all_reports = await self.bus.get_all_reports()
-        if self._event_bus:
-            await self._event_bus.publish({
-                "event_type": "scribe_start", "report_count": len(all_reports),
-                "total_reports_chars": sum(len(str(r)) for r in all_reports.values()),
-                "model": "unknown",
-            })
-        paper = await self.scribe_comp.compile(all_reports, scribe, topic=config.topic.question)
-        self._current_paper = paper
+                round_num += 1
+
+            self.state = "COMPILING"
+            console.print("\n[bold]Compilation:[/bold] Gathering final reports")
+            reports: dict[str, IndividualReport] = {}
+            latest_round = max(round_results.keys()) if round_results else 1
+            for agent_id in active_agents():
+                if agent_id in self.failed_agents:
+                    continue
+                latest_result = round_results.get(latest_round, {}).get(agent_id)
+                if isinstance(latest_result, IndividualReport):
+                    reports[agent_id] = latest_result
+                elif isinstance(latest_result, Findings):
+                    reports[agent_id] = IndividualReport(
+                        agent_id=agent_id, title=f"Report from {agent_id}",
+                        perspective_summary=latest_result.summary,
+                        key_insights=latest_result.key_points,
+                        analysis=latest_result.raw_response or latest_result.summary,
+                        full_text=latest_result.raw_response or latest_result.summary,
+                    )
+
+            for agent_id, report in reports.items():
+                await self.bus.publish_report(agent_id, report)
+
+            all_reports = await self.bus.get_all_reports()
+            if self._event_bus:
+                await self._event_bus.publish({
+                    "event_type": "scribe_start", "report_count": len(all_reports),
+                    "total_reports_chars": sum(len(str(r)) for r in all_reports.values()),
+                    "model": "unknown",
+                })
+            paper = await self.scribe_comp.compile(all_reports, scribe, topic=config.topic.question)
+            self._current_paper = paper
 
     # ------------------------------------------------------------------
     # Dry-run Mode

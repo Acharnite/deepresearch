@@ -243,3 +243,9 @@ The `web_search()` function:
 | Clarification protocol | ✅ Implemented | ADR-0007 |
 | Refinement phase | ✅ Implemented | ADR-0007 |
 | Dynamic Round 2 | ✅ Implemented | Fixed in ADR-0004 |
+
+## Documentation
+
+- **Design doc reference:** §2 Architecture
+- **Implementation PR:** TBD
+- **Related ADRs:** ADR-0002, ADR-0005

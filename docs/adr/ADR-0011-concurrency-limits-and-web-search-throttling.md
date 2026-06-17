@@ -296,3 +296,9 @@ The key insight: staggered searches with retries are faster than failed searches
 | Date | Change |
 |------|--------|
 | 2026-06-16 | Initial version — ADR-0011 proposed |
+
+## Documentation
+
+- **Design doc reference:** §3.3 Concurrency
+- **Implementation PR:** TBD
+- **Related ADRs:** ADR-0006, ADR-0014

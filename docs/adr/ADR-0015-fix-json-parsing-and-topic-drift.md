@@ -101,6 +101,12 @@ if topic:
 - Tool output stripping is regex-based — may miss edge cases
 - If the LLM intentionally discusses search results in JSON context, stripping may remove valid content (unlikely in practice)
 
+## Documentation
+
+- **Design doc reference:** §4.5 JSON Parsing
+- **Implementation PR:** TBD
+- **Related ADRs:** ADR-0007
+
 ## References
 
 - `src/deepresearch/llm/client.py` — `parse_json_response()` at line 747
