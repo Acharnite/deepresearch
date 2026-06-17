@@ -439,6 +439,15 @@ export function processEvent(data) {
     renderAgents();
   }
 
+  if (eventType === 'agent_retry') {
+    const aid = data.agent_id;
+    if (state.agents[aid]) {
+      state.agents[aid].status = 'running';
+      state.agents[aid].state = 'retrying';
+    }
+    renderAgents();
+  }
+
   if (eventType === 'agent_failed') {
     const aid = data.agent_id;
     if (state.agents[aid]) { state.agents[aid].status = 'failed'; state.agents[aid].state = 'failed'; }

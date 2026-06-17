@@ -538,6 +538,7 @@ a:hover { text-decoration: underline; }
 .state-questioning { background: #fbbf2440; color: #fbbf24; }
 .state-answering { background: #f472b640; color: #f472b6; }
 .state-refining { background: #fb923c40; color: #fb923c; }
+.state-retrying { background: #f59e0b40; color: #f59e0b; }
 .state-done { background: #22c55e40; color: #22c55e; }
 .state-failed { background: #ef444440; color: #ef4444; }
 

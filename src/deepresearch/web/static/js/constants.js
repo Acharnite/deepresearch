@@ -12,8 +12,10 @@ export const STATE_LABELS = {
 
 export const EVENT_ICONS = {
   session_start: '🚀', round_start: '🔵', agent_start: '🔄', agent_complete: '🟣',
+  agent_retry: '🔁',
   collaboration_phase: '🤝', scribe_start: '📝', scribe_end: '✅',
   pdf_generated: '📄', session_end: '🏁', agent_failed: '❌',
+  all_agents_failed: '💀',
   session_timeout: '⏰', config_validated: '⚙', models_assigned: '📋',
   session_error: '💥',
   agent_output: '💬',
@@ -41,5 +43,5 @@ export const STATE_COLORS = {
 export const stateLabels = {
   waiting: '⏳ Waiting', researching: '🔬 Researching', searching: '🔍 Web Search',
   writing: '✍️ Writing', questioning: '❓ Questioning', answering: '💬 Answering',
-  refining: '🔄 Refining', done: '✅ Done', failed: '❌ Failed'
+  refining: '🔄 Refining', retrying: '🔁 Retrying', done: '✅ Done', failed: '❌ Failed'
 };

@@ -297,6 +297,9 @@ class Orchestrator:
             )
 
         results: dict[str, Any] = {}
+        # Track agents that need retry: agent_id -> agent_fn (or None if task failed before we can reuse)
+        retry_tasks: dict[str, AgentFunc | None] = {}
+
         for agent_id, task in tasks.items():
             # Check cancellation before awaiting each task result.
             if self._cancel_event and self._cancel_event.is_set():
@@ -310,7 +313,6 @@ class Orchestrator:
                 break
             try:
                 result = await task
-                results[agent_id] = result
                 result_size = len(str(result)) if result else 0
 
                 # Check for empty/meaningless results
@@ -324,13 +326,14 @@ class Orchestrator:
 
                 if is_empty and result_size < 200:
                     logger.warning(
-                        "Agent '%s' returned empty/meaningless result (%d chars), marking as failed",
+                        "Agent '%s' returned empty/meaningless result (%d chars), will retry",
                         agent_id,
                         result_size,
                     )
-                    self.handle_agent_failure(agent_id, "empty_result")
-                    del results[agent_id]  # Remove from valid results
+                    # Don't mark as failed yet — add to retry list
+                    retry_tasks[agent_id] = agents.get(agent_id)
                 else:
+                    results[agent_id] = result
                     self._log_event(
                         "agent_complete",
                         agent_id=agent_id,
@@ -340,14 +343,79 @@ class Orchestrator:
                     )
             except asyncio.TimeoutError:
                 logger.warning(
-                    "Agent '%s' timed out in Round %d (timeout=%ds)",
+                    "Agent '%s' timed out in Round %d (timeout=%ds), will retry",
                     agent_id,
                     round_num,
                     timeout,
                 )
-                self.handle_agent_failure(agent_id, "timeout")
+                retry_tasks[agent_id] = agents.get(agent_id)
             except Exception as e:
-                self.handle_agent_failure(agent_id, str(e))
+                logger.warning(
+                    "Agent '%s' failed in Round %d: %s, will retry",
+                    agent_id,
+                    round_num,
+                    e,
+                )
+                retry_tasks[agent_id] = agents.get(agent_id)
+
+        # ── Retry failed agents once ────────────────────────────────
+        for agent_id in list(retry_tasks.keys()):
+            agent_fn = retry_tasks[agent_id]
+            if agent_fn is None or agent_id in self.failed_agents:
+                # Already marked as failed by a concurrent path — skip
+                if agent_fn is not None and agent_id not in self.failed_agents:
+                    # Agent fn available but task failed catastrophically — still mark
+                    self.handle_agent_failure(agent_id, "retry_unavailable")
+                continue
+
+            logger.info("Retrying agent '%s' (attempt 2/2)", agent_id)
+            self._log_event("agent_retry", agent_id=agent_id, round=round_num)
+
+            # Publish retry start event so the dashboard shows "Retrying..."
+            self._log_event(
+                "agent_start",
+                agent_id=agent_id,
+                round=round_num,
+                model="unknown",
+                timeout=timeout,
+                agent_state="retrying",
+            )
+
+            try:
+                coro = (
+                    agent_fn(topic, shared)
+                    if shared is not None
+                    else agent_fn(topic)
+                )
+                result = await asyncio.wait_for(coro, timeout=timeout)
+                result_size = len(str(result)) if result else 0
+
+                # Check result quality again
+                is_empty = False
+                if result is None:
+                    is_empty = True
+                elif hasattr(result, "summary") and not result.summary:
+                    is_empty = True
+                elif hasattr(result, "key_points") and not result.key_points:
+                    is_empty = True
+
+                if is_empty and result_size < 200:
+                    self.handle_agent_failure(agent_id, "empty_result (retry failed)")
+                else:
+                    results[agent_id] = result
+                    self._log_event(
+                        "agent_complete",
+                        agent_id=agent_id,
+                        round=round_num,
+                        result_chars=result_size,
+                        status="success",
+                        attempt=2,
+                    )
+                    logger.info("Agent '%s' succeeded on retry", agent_id)
+            except asyncio.TimeoutError:
+                self.handle_agent_failure(agent_id, "timeout (retry failed)")
+            except Exception as e:
+                self.handle_agent_failure(agent_id, f"{e} (retry failed)")
 
         return results
 
@@ -1029,6 +1097,17 @@ class Orchestrator:
                 )
 
             round_results[round_num] = results
+
+            # ── Check if ALL agents failed — stop research ──────────
+            if not results:
+                logger.error(
+                    "ALL agents failed in round %d — stopping research",
+                    round_num,
+                )
+                self._log_event("all_agents_failed", round=round_num)
+                console.print("[red]All agents failed — stopping research[/red]")
+                break
+
             logger.info(
                 "Round %d complete — %d/%d agents succeeded",
                 round_num,
@@ -1193,10 +1272,11 @@ class Orchestrator:
             )
 
         results: dict[str, Any] = {}
+        retry_tasks: dict[str, AgentFunc | None] = {}
+
         for agent_id, task in tasks.items():
             try:
                 result = await task
-                results[agent_id] = result
                 result_size = len(str(result)) if result else 0
 
                 # Check for empty/meaningless results
@@ -1210,13 +1290,13 @@ class Orchestrator:
 
                 if is_empty and result_size < 200:
                     logger.warning(
-                        "Agent '%s' returned empty result in round %d, marking failed",
+                        "Agent '%s' returned empty result in round %d, will retry",
                         agent_id,
                         round_num,
                     )
-                    self.handle_agent_failure(agent_id, "empty_result")
-                    del results[agent_id]
+                    retry_tasks[agent_id] = agents.get(agent_id)
                 else:
+                    results[agent_id] = result
                     self._log_event(
                         "agent_complete",
                         agent_id=agent_id,
@@ -1226,14 +1306,85 @@ class Orchestrator:
                     )
             except asyncio.TimeoutError:
                 logger.warning(
-                    "Agent '%s' timed out in Round %d (timeout=%ds)",
+                    "Agent '%s' timed out in Round %d (timeout=%ds), will retry",
                     agent_id,
                     round_num,
                     timeout,
                 )
-                self.handle_agent_failure(agent_id, "timeout")
+                retry_tasks[agent_id] = agents.get(agent_id)
             except Exception as e:
-                self.handle_agent_failure(agent_id, str(e))
+                logger.warning(
+                    "Agent '%s' failed in Round %d: %s, will retry",
+                    agent_id,
+                    round_num,
+                    e,
+                )
+                retry_tasks[agent_id] = agents.get(agent_id)
+
+        # ── Retry failed agents once ────────────────────────────────
+        for agent_id in list(retry_tasks.keys()):
+            agent_fn = retry_tasks[agent_id]
+            if agent_fn is None or agent_id in self.failed_agents:
+                if agent_fn is not None and agent_id not in self.failed_agents:
+                    self.handle_agent_failure(agent_id, "retry_unavailable")
+                continue
+
+            logger.info("Retrying agent '%s' (attempt 2/2)", agent_id)
+            self._log_event("agent_retry", agent_id=agent_id, round=round_num)
+
+            prev_findings = prev_round.get(agent_id)
+            if prev_findings is None:
+                self.handle_agent_failure(agent_id, "no_previous_findings (retry)")
+                continue
+            if isinstance(prev_findings, IndividualReport):
+                prev_findings = Findings(
+                    agent_id=prev_findings.agent_id,
+                    round=round_num - 1,
+                    summary=prev_findings.perspective_summary,
+                    key_points=prev_findings.key_insights,
+                    perspective=prev_findings.analysis,
+                    confidence=0.7,
+                )
+
+            self._log_event(
+                "agent_start",
+                agent_id=agent_id,
+                round=round_num,
+                model="unknown",
+                timeout=timeout,
+                agent_state="retrying",
+            )
+
+            try:
+                coro = agent_fn(topic, shared, round_num, prev_findings)
+                result = await asyncio.wait_for(coro, timeout=timeout)
+                result_size = len(str(result)) if result else 0
+
+                is_empty = False
+                if result is None:
+                    is_empty = True
+                elif hasattr(result, "summary") and not result.summary:
+                    is_empty = True
+                elif hasattr(result, "key_points") and not result.key_points:
+                    is_empty = True
+
+                if is_empty and result_size < 200:
+                    self.handle_agent_failure(agent_id, "empty_result (retry failed)")
+                else:
+                    results[agent_id] = result
+                    self._log_event(
+                        "agent_complete",
+                        agent_id=agent_id,
+                        round=round_num,
+                        result_chars=result_size,
+                        status="success",
+                        attempt=2,
+                    )
+                    logger.info("Agent '%s' succeeded on retry", agent_id)
+            except asyncio.TimeoutError:
+                self.handle_agent_failure(agent_id, "timeout (retry failed)")
+            except Exception as e:
+                self.handle_agent_failure(agent_id, f"{e} (retry failed)")
 
         return results
 

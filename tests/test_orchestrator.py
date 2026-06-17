@@ -446,7 +446,11 @@ class TestRunRound:
 
     @pytest.mark.asyncio
     async def test_one_agent_fails_others_continue(self, profiles, model_configs):
-        """If one agent raises an exception, others should still succeed."""
+        """If one agent raises an exception, others should still succeed.
+        
+        With retry logic, the failing agent is retried once before being
+        marked as failed.
+        """
         orch = Orchestrator(profiles=profiles, model_configs=model_configs)
         topic = ResearchTopic(question="Test", time_budget="quick", model_mode="same")
 
@@ -463,14 +467,19 @@ class TestRunRound:
         }
 
         results = await orch.run_round(1, agents, topic)
-        assert "agent-a" not in results  # failed
+        assert "agent-a" not in results  # failed (after retry)
         assert "agent-b" in results  # succeeded
         assert "agent-a" in orch.failed_agents
-        assert orch.failed_agents["agent-a"] == "Agent crashed"
+        # Retry appends " (retry failed)" to the error message
+        assert "Agent crashed" in orch.failed_agents["agent-a"]
 
     @pytest.mark.asyncio
     async def test_timeout_handling(self, profiles, model_configs):
-        """Agent that times out should be handled gracefully."""
+        """Agent that times out should be handled gracefully.
+        
+        With retry logic, the slow agent is retried once before being
+        marked as failed with "timeout (retry failed)".
+        """
         orch = Orchestrator(profiles=profiles, model_configs=model_configs)
         # Override _get_timeout to return a very short timeout (0.1s).
         orch._get_timeout = lambda: 0.1  # type: ignore[method-assign]
@@ -495,7 +504,8 @@ class TestRunRound:
         assert "slow" not in results
         assert "fast" in results
         assert "slow" in orch.failed_agents
-        assert orch.failed_agents["slow"] == "timeout"
+        # Retry appends " (retry failed)" to the error message
+        assert "timeout" in orch.failed_agents["slow"]
 
     @pytest.mark.asyncio
     async def test_failed_agents_skipped_in_subsequent_rounds(
