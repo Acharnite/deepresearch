@@ -32,18 +32,23 @@ class EventBus:
             await event_bus.unsubscribe(queue)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, history: list[dict[str, Any]] | None = None) -> None:
         self._subscribers: list[asyncio.Queue[dict[str, Any]]] = []
         self._lock = asyncio.Lock()
+        self._history = history
 
     async def publish(self, event: dict[str, Any]) -> None:
         """Publish an event to all active subscribers.
 
         Each subscriber's queue receives the event dict.  A
         ``_server_timestamp`` field is added at publish time for
-        observability.
+        observability.  If a ``history`` list was provided at
+        construction time, the event is also appended to it.
         """
         event["_server_timestamp"] = datetime.now().isoformat()
+        # Auto-record to history if wired
+        if self._history is not None:
+            self._history.append(event)
         async with self._lock:
             for queue in self._subscribers:
                 try:

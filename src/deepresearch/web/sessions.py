@@ -144,7 +144,6 @@ class MultiSessionManager:
             self._cleanup_old()
 
         session_id = str(uuid.uuid4())[:8]
-        bus = EventBus()
 
         # Calculate seconds and rounds from TimeBudget (single source of truth).
         if time_budget_seconds is not None:
@@ -169,10 +168,14 @@ class MultiSessionManager:
             agent_models=agent_models,
             status="queued",
             created_at=datetime.now().isoformat(),
-            event_bus=bus,
+            # event_bus set below after EventBus construction
             max_rounds=max_rounds,
             output_language=output_language,
         )
+        # Create EventBus wired to session's event_history so all
+        # published events auto-record for re-navigation.
+        bus = EventBus(history=info.event_history)
+        info.event_bus = bus
         self._sessions[session_id] = info
 
         # ── Model connectivity check ───────────────────────────────────
@@ -230,9 +233,6 @@ class MultiSessionManager:
                     "error": info.error,
                 }
             )
-            info.event_history.append(
-                {"event_type": "session_error", "session_id": session_id, "error": info.error}
-            )
             return info
 
         # Start background task with optional concurrency semaphore.
@@ -265,14 +265,6 @@ class MultiSessionManager:
         try:
             # Publish session_start to this session's bus.
             await info.event_bus.publish(
-                {
-                    "event_type": "session_start",
-                    "session_id": session_id,
-                    "topic": info.topic,
-                    "max_rounds": info.max_rounds,
-                }
-            )
-            info.event_history.append(
                 {
                     "event_type": "session_start",
                     "session_id": session_id,
@@ -410,9 +402,6 @@ class MultiSessionManager:
                     "status": "complete",
                 }
             )
-            info.event_history.append(
-                {"event_type": "session_end", "session_id": session_id, "status": "complete"}
-            )
 
         except asyncio.CancelledError:
             info.status = "cancelled"
@@ -424,9 +413,6 @@ class MultiSessionManager:
                     "session_id": session_id,
                     "status": "cancelled",
                 }
-            )
-            info.event_history.append(
-                {"event_type": "session_end", "session_id": session_id, "status": "cancelled"}
             )
 
         except Exception as exc:
@@ -440,9 +426,6 @@ class MultiSessionManager:
                     "session_id": session_id,
                     "error": str(exc),
                 }
-            )
-            info.event_history.append(
-                {"event_type": "session_error", "session_id": session_id, "error": str(exc)}
             )
 
         finally:

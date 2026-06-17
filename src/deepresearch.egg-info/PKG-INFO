@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: deepresearch
-Version: 0.11.2
+Version: 0.12.0
 Summary: Multi-agent AI research system for multi-perspective research papers
 Author: KodeHold
 License: MIT
@@ -23,6 +23,10 @@ Requires-Dist: pytest-mock>=3.12; extra == "dev"
 Requires-Dist: ruff>=0.3.0; extra == "dev"
 Provides-Extra: ddgs
 Requires-Dist: ddgs>=8.0.0; extra == "ddgs"
+Provides-Extra: observability
+Requires-Dist: opentelemetry-api>=1.20; extra == "observability"
+Requires-Dist: opentelemetry-sdk>=1.20; extra == "observability"
+Requires-Dist: opentelemetry-exporter-otlp-proto-http>=1.20; extra == "observability"
 
 # DeepeResearch — Multi-Agent AI Research System
 
