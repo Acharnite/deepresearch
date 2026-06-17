@@ -1112,10 +1112,25 @@ class Orchestrator:
                     {aid: agents[aid] for aid in active_agents()},
                     latest_shared,
                 )
-                for agent_id, questions in followup_results.items():
-                    if isinstance(questions, FollowUpQuestions):
-                        await self.bus.publish_followup(agent_id, questions.questions)
-                self._log_event("followup_complete", results=len(followup_results))
+                # Build questions + targets dicts for the SSE event.
+                # Replace None targets with "All" so the frontend never
+                # sees raw JSON null values.
+                questions_dict: dict[str, list[str]] = {}
+                targets_dict: dict[str, list[str | None]] = {}
+                for agent_id, fu in followup_results.items():
+                    if isinstance(fu, FollowUpQuestions):
+                        await self.bus.publish_followup(agent_id, fu.questions)
+                        questions_dict[agent_id] = fu.questions
+                        raw_targets = fu.target_agent_ids or [None] * len(fu.questions)
+                        targets_dict[agent_id] = [
+                            t if t is not None else "All" for t in raw_targets
+                        ]
+                self._log_event(
+                    "followup_complete",
+                    results=len(followup_results),
+                    questions=questions_dict,
+                    targets=targets_dict,
+                )
 
                 # Refinement phase
                 self.state = "REFINING"

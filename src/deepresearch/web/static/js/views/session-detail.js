@@ -477,11 +477,11 @@ export function processEvent(data) {
       if (Array.isArray(questions)) {
         var qTargets = targets[agentId] || [];
         questions.forEach(function(q, idx) {
-          var toAgent = qTargets[idx] || 'All Agents';
+          var toAgent = (!qTargets[idx] || qTargets[idx] === 'null' || qTargets[idx] === null) ? 'All' : qTargets[idx];
           addQA(agentId, q, toAgent);
           // Add to visual graph: agent asked a question
           if (window.addQAInteraction) {
-            window.addQAInteraction(agentId, toAgent === 'All Agents' ? 'scribe' : toAgent, 'question', q);
+            window.addQAInteraction(agentId, toAgent === 'All' ? 'scribe' : toAgent, 'question', q);
           }
         });
       }
