@@ -588,7 +588,7 @@ class MultiSessionManager:
         self._remove_session(oldest.session_id)
 
     def _remove_session(self, session_id: str, delete_files: bool = False) -> None:
-        """Remove a session from internal state.
+        """Remove a session from internal state and persistent DB.
 
         Args:
             session_id: The session to remove.
@@ -597,6 +597,17 @@ class MultiSessionManager:
         self._sessions.pop(session_id, None)
         self._tasks.pop(session_id, None)
         self._cancel_events.pop(session_id, None)
+        # Also remove from persistent DB so deleted sessions don't reappear on restart
+        try:
+            db = _load_session_db()
+            if session_id in db:
+                del db[session_id]
+                SESSION_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+                SESSION_DB_PATH.write_text(
+                    _json.dumps(db, indent=2, default=str), encoding='utf-8'
+                )
+        except Exception:
+            pass
         # Only delete files if explicitly requested
         if delete_files:
             output_dir = SESSION_DB_PATH.parent / session_id

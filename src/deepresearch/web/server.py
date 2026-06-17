@@ -232,7 +232,9 @@ async def get_version() -> JSONResponse:
 @app.get("/api/agents")
 async def get_agents() -> JSONResponse:
     """Return agent profile metadata."""
-    return JSONResponse(_ws._current_agents)
+    from deepresearch.config import load_agent_profiles
+    profiles = load_agent_profiles()
+    return JSONResponse([{"id": p.id, "name": p.name, "emoji": p.emoji} for p in profiles])
 
 
 # ── Multi-session Management Endpoints ─────────────────────────────────
