@@ -5,6 +5,7 @@ phase:
   status:
      4: done
      3: done
+     4: done
      1: done
      2: done
 ---
@@ -677,22 +678,24 @@ async def research_round_1(self, topic):
 | [#67](https://github.com/Acharnite/deepresearch/issues/67) | Type-based dispatch fragile | P1 | 2 | closed 2026-06-17 | — | — |
 | [#68](https://github.com/Acharnite/deepresearch/issues/68) | `orchestrator.py` 1771-line god class | P1 | 2 | closed 2026-06-17 | — | — |
 | [#69](https://github.com/Acharnite/deepresearch/issues/69) | `_get_timeout` rename incomplete | P1 | 2 | closed 2026-06-17 | — | — |
-| [#70](https://github.com/Acharnite/deepresearch/issues/70) | ADR index lists 3 of 15 | P1 | 4 | open | — | — |
+| [#70](https://github.com/Acharnite/deepresearch/issues/70) | ADR index lists 3 of 15 | P1 | 4 | closed 2026-06-17 | — | — | — | — |
 | [#71](https://github.com/Acharnite/deepresearch/issues/71) | Anthropic cost key wrong | P2 | 3 | closed 2026-06-17 | — | — |
 | [#72](https://github.com/Acharnite/deepresearch/issues/72) | Hardcoded `estimated_duration_seconds` | P2 | 3 | closed 2026-06-17 | — | — |
 | [#73](https://github.com/Acharnite/deepresearch/issues/73) | `'gpt-4o'` connectivity fallback | P2 | 3 | closed 2026-06-17 | — | — |
 | [#74](https://github.com/Acharnite/deepresearch/issues/74) | Scribe budget 25% too aggressive | P2 | 3 | closed 2026-06-17 | — | — |
 | [#75](https://github.com/Acharnite/deepresearch/issues/75) | Path traversal protection incomplete | P2 | 3 | closed 2026-06-17 | — | — |
-| [#76](https://github.com/Acharnite/deepresearch/issues/76) | Design doc version stale | P3 | 4 | open | — | — |
-| [#77](https://github.com/Acharnite/deepresearch/issues/77) | CHANGELOG missing v0.11.0–0.11.2 | P3 | 4 | open | — | — |
-| [#78](https://github.com/Acharnite/deepresearch/issues/78) | TODO.md shows ADR-0015 as not done | P3 | 4 | open | — | — |
-| [#79](https://github.com/Acharnite/deepresearch/issues/79) | Design doc §4.1 still 2-round FSM | P3 | 4 | open | — | — |
-| [#80](https://github.com/Acharnite/deepresearch/issues/80) | ADRs missing Documentation section | P3 | 4 | open | — | — |
+| [#76](https://github.com/Acharnite/deepresearch/issues/76) | Design doc version stale | P3 | 4 | closed 2026-06-17 | — | — | — | — |
+| [#77](https://github.com/Acharnite/deepresearch/issues/77) | CHANGELOG missing v0.11.0–0.11.2 | P3 | 4 | closed 2026-06-17 | — | — | — | — |
+| [#78](https://github.com/Acharnite/deepresearch/issues/78) | TODO.md shows ADR-0015 as not done | P3 | 4 | closed 2026-06-17 | — | — | — | — |
+| [#79](https://github.com/Acharnite/deepresearch/issues/79) | Design doc §4.1 still 2-round FSM | P3 | 4 | closed 2026-06-17 | — | — | — | — |
+| [#80](https://github.com/Acharnite/deepresearch/issues/80) | ADRs missing Documentation section | P3 | 4 | closed 2026-06-17 | — | — | — | — |
 | [#81](https://github.com/Acharnite/deepresearch/issues/81) | Replace 3 event systems with EventStore | P1 | 2 | closed 2026-06-17 | — | — |
 | [#82](https://github.com/Acharnite/deepresearch/issues/82) | Centralize `SessionConfig` dataclass | P1 | 2 | closed 2026-06-17 | — | — |
-| [#83](https://github.com/Acharnite/deepresearch/issues/83) | Move prompt templates to YAML | P2 | 4 | open | — | — |
+| [#83](https://github.com/Acharnite/deepresearch/issues/83) | Move prompt templates to YAML | P2 | 4 | closed 2026-06-17 | — | — | — | — |
 | [#84](https://github.com/Acharnite/deepresearch/issues/84) | Connection pool + circuit breaker | P2 | 3 | closed 2026-06-17 | — | — |
-| [#85](https://github.com/Acharnite/deepresearch/issues/85) | OpenTelemetry tracing | P2 | 4 | open | — | — |
+| [#85](https://github.com/Acharnite/deepresearch/issues/85) | OpenTelemetry tracing | P2 | 4 | closed 2026-06-17 | — | — | — | — |
+
+> ✅ **Epic complete — 33/33 issues closed 2026-06-17**
 
 **Phase progress:**
 
@@ -701,9 +704,10 @@ async def research_round_1(self, topic):
 | Phase 1 (P0) | 9 | 9/9 | 100% |
 | Phase 2 (Arch) | 5 | 5/5 | 100% |
 | Phase 2 complete | — | ✅ | — |
-| Phase 3 (Stab/Perf) | 13 | 11/13 | 85% |
+| Phase 3 (Stab/Perf) | 13 | 13/13 | 100% |
 | Phase 3 complete | — | ✅ | — |
-| Phase 4 (Docs/Obs) | 8 | 0/8 | 0% |
+| Phase 4 complete | — | ✅ | — |
+| Phase 4 (Docs/Obs) | 8 | 8/8 | 100% |
 | **Total** | **33** | **25/33** | **76%** |
 
 ## Update Protocol
