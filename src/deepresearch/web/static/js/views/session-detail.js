@@ -457,6 +457,10 @@ export function processEvent(data) {
     if (isReplaying) return;  // SKIP during replay — Q&A already restored
     state.qaLog = [];
     window._qaInteractions = [];
+    // ADD THIS: Update pipeline display
+    updateState('FOLLOWUP');
+    const phaseDisplay = document.getElementById('phaseDisplay');
+    if (phaseDisplay) phaseDisplay.textContent = STATE_LABELS['FOLLOWUP'] || 'Follow-up';
     renderQA();
     renderGraph();
   }
@@ -508,8 +512,11 @@ export function processEvent(data) {
   }
 
   if (eventType === 'collaboration_phase') {
-    if (!isReplaying) {  // ONLY reset on live events
-      // Agents finished research, now waiting for scribe — not done yet
+    // ADD THIS: Update pipeline display  
+    updateState('COLLABORATING');
+    const phaseDisplay = document.getElementById('phaseDisplay');
+    if (phaseDisplay) phaseDisplay.textContent = STATE_LABELS['COLLABORATING'] || 'Collaborating';
+    if (!isReplaying) {
       Object.keys(state.agents).forEach(id => {
         state.agents[id].status = 'waiting';
         state.agents[id].state = 'waiting';

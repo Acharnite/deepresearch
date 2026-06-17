@@ -59,8 +59,9 @@
         <a href="#section-{{ loop.index }}">{{ section.heading }}</a>
         {% if section.subsections %}
         <ul>
+          {% set outer_loop = loop %}
           {% for sub in section.subsections %}
-          <li><a href="#subsection-{{ loop.index }}">{{ sub.heading }}</a></li>
+          <li><a href="#subsection-{{ outer_loop.index }}-{{ loop.index }}">{{ sub.heading }}</a></li>
           {% endfor %}
         </ul>
         {% endif %}
@@ -90,8 +91,9 @@
     {% endif %}
     <div class="content">{{ section.content }}</div>
 
+    {% set outer_loop = loop %}
     {% for subsection in section.subsections %}
-    <div class="subsection" id="subsection-{{ loop.index }}">
+    <div class="subsection" id="subsection-{{ outer_loop.index }}-{{ loop.index }}">
       <h3>{{ subsection.heading }}</h3>
       {% if subsection.source_agent_id %}
       <p class="source-note">Perspective: <strong>{{ subsection.source_agent_id }}</strong></p>

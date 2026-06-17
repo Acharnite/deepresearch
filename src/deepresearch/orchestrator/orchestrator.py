@@ -670,6 +670,7 @@ class Orchestrator:
         self,
         reports: dict[str, IndividualReport],
         scribe: AgentFunc,
+        topic: str = "",
     ) -> ResearchPaper:
         """Call the scribe agent with all reports to produce the final paper.
 
@@ -680,6 +681,11 @@ class Orchestrator:
             ``scribe(reports)`` directly.
 
         Falls back to a minimal paper if the scribe fails.
+
+        Args:
+            reports: Mapping of agent_id → IndividualReport from every agent.
+            scribe: The scribe agent callable or ScribeAgent instance.
+            topic: The original research topic string (optional).
         """
         # Determine output language from session config.
         output_language = "English"
@@ -698,6 +704,7 @@ class Orchestrator:
 
                     paper = await scribe.compile(
                         reports,
+                        topic=topic,
                         clarification_fn=self._handle_clarification,
                         status_callback=_scribe_status,
                         language=output_language,
@@ -1124,7 +1131,7 @@ class Orchestrator:
             total_reports_chars=sum(len(str(r)) for r in all_reports.values()),
             model="unknown",
         )
-        paper = await self.compile(all_reports, scribe)
+        paper = await self.compile(all_reports, scribe, topic=config.topic.question)
         self._current_paper = paper
 
     async def _run_round_n(

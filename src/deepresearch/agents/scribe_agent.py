@@ -115,6 +115,7 @@ class ScribeAgent(BaseAgent):
     async def compile(
         self,
         reports: dict[str, IndividualReport],
+        topic: str = "",
         clarification_fn: Callable[
             [ClarificationQuery], Coroutine[Any, Any, ClarificationResponse]
         ]
@@ -133,6 +134,8 @@ class ScribeAgent(BaseAgent):
         Args:
             reports: Mapping of ``agent_id → IndividualReport`` from every
                 agent that completed the research lifecycle.
+            topic: The original research topic string, used to keep the paper focused
+                during clarification revisions.
             clarification_fn: An async callable that accepts a
                 ``ClarificationQuery`` and returns a
                 ``ClarificationResponse``. Typically wired to the
@@ -140,6 +143,7 @@ class ScribeAgent(BaseAgent):
             status_callback: Optional async callable that receives status
                 update strings (e.g. "identifying_claims", "asking_agent",
                 "recompiling") during the clarification protocol.
+            language: The language for the final paper (default "English").
 
         Returns:
             A structured ``ResearchPaper`` with all required sections.
@@ -252,7 +256,7 @@ class ScribeAgent(BaseAgent):
         # ── Clarification Protocol ──────────────────────────────────
         if clarification_fn is not None:
             paper = await self._run_clarification_protocol(
-                paper, reports, clarification_fn, status_callback
+                paper, reports, clarification_fn, status_callback, topic, language
             )
 
         return paper
@@ -265,6 +269,8 @@ class ScribeAgent(BaseAgent):
             [ClarificationQuery], Coroutine[Any, Any, ClarificationResponse]
         ],
         status_callback: Callable[[str], Coroutine[Any, Any, None]] | None = None,
+        topic: str = "",
+        language: str = "English",
     ) -> ResearchPaper:
         """Run the clarification protocol on a draft paper.
 
@@ -364,7 +370,8 @@ class ScribeAgent(BaseAgent):
             pending.append((claim, agent_id, task))
             total_rounds += 1
 
-        # Wait for all pending clarifications and apply them.
+        # Collect all non-empty clarifications first.
+        collected: list[tuple[str, str, str]] = []  # (agent_id, claim, response)
         for claim, agent_id, task in pending:
             try:
                 response = await task
@@ -374,7 +381,7 @@ class ScribeAgent(BaseAgent):
                 )
                 continue
 
-            # Skip empty responses — don't waste time recompiling.
+            # Skip empty responses.
             if response is None or not response.strip():
                 _consecutive_empties += 1
                 logger.info(
@@ -395,19 +402,20 @@ class ScribeAgent(BaseAgent):
             clarifications_per_agent[agent_id] = (
                 clarifications_per_agent.get(agent_id, 0) + 1
             )
+            collected.append((agent_id, claim, response))
 
-            # Incorporate the clarification into the paper.
+        # Single recompile with all collected clarifications.
+        if collected:
             if status_callback:
                 await status_callback("recompiling")
             try:
-                paper = await self._recompile_with_clarification(
-                    paper, agent_id, claim, response
+                paper = await self._recompile_all_clarifications(
+                    paper, collected, topic, language
                 )
             except LLMError as _exc:
                 logger.warning(
-                    "Recompilation with clarification failed, stopping: %s", _exc
+                    "Recompilation with clarifications failed, stopping: %s", _exc
                 )
-                break
 
         # Log why the clarification protocol stopped.
         elapsed = time.monotonic() - start_time
@@ -555,17 +563,45 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
         agent_id: str,
         claim: str,
         clarification: str,
+        topic: str = "",
+        language: str = "English",
     ) -> ResearchPaper:
         """Re-compile the paper incorporating a clarification response.
 
         Sends the existing draft plus the new clarification back to the
         LLM for a targeted revision.
+
+        Args:
+            paper: Current draft paper.
+            agent_id: Agent that provided clarification.
+            claim: The claim being clarified.
+            clarification: The clarification response.
+            topic: Original research topic to keep revisions focused.
+            language: Language for the paper (default "English").
         """
+        # Build language-aware system prompt.
+        system_prompt = self._system_prompt
+        if language and language.lower() != "english":
+            system_prompt += (
+                f"\n\n**IMPORTANT: The ENTIRE paper must be written in {language}.** "
+                f"All section headings, abstract, synthesis, key takeaways, "
+                f"conclusion, and content must be written in {language}. "
+                f"Agent names may remain in their original form."
+            )
+
         prompt = (
             "# Revise Paper with Clarification\n\n"
             "Below is the current draft paper and a clarification "
             "received from one of the research agents. Revise the paper "
             "to incorporate this new information where relevant.\n\n"
+        )
+        if topic:
+            prompt += (
+                f"**IMPORTANT: The paper is about '{topic}'. Keep all revisions "
+                f"focused on this topic. Do NOT shift focus to the clarification "
+                f"process itself.**\n\n"
+            )
+        prompt += (
             f"## Clarification From Agent '{agent_id}'\n"
             f'On claim: "{claim}"\n'
             f'Response: "{clarification}"\n\n'
@@ -579,7 +615,7 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
 
         try:
             response = await self.llm.generate_stream(
-                system_prompt=self._system_prompt,
+                system_prompt=system_prompt,
                 user_prompt=prompt,
                 temperature=0.3,
             )
@@ -590,6 +626,84 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
             return paper
 
         data = self._try_parse_json(response, "recompile")
+        if not data:
+            return paper
+
+        return ResearchPaper(
+            title=data.get("title", paper.title),
+            abstract=data.get("abstract", paper.abstract),
+            methodology_note=data.get("methodology_note", paper.methodology_note),
+            sections=self._parse_sections(
+                data.get("sections", [s.model_dump() for s in paper.sections])
+            ),
+            synthesis=data.get("synthesis", paper.synthesis),
+            key_takeaways=data.get("key_takeaways", paper.key_takeaways),
+            conclusion=data.get("conclusion", paper.conclusion),
+            appendices=self._parse_sections(
+                data.get("appendices", [s.model_dump() for s in paper.appendices])
+            ),
+        )
+
+    async def _recompile_all_clarifications(
+        self,
+        paper: ResearchPaper,
+        collected: list[tuple[str, str, str]],  # (agent_id, claim, response)
+        topic: str = "",
+        language: str = "English",
+    ) -> ResearchPaper:
+        """Re-compile the paper incorporating multiple clarification responses.
+
+        Sends the existing draft plus all collected clarifications back to the
+        LLM for a single targeted revision.
+        """
+        # Build language-aware system prompt.
+        system_prompt = self._system_prompt
+        if language and language.lower() != "english":
+            system_prompt += (
+                f"\n\n**IMPORTANT: The ENTIRE paper must be written in {language}.** "
+                f"All section headings, abstract, synthesis, key takeaways, "
+                f"conclusion, and content must be written in {language}. "
+                f"Agent names may remain in their original form."
+            )
+
+        prompt = (
+            "# Revise Paper with Clarifications\n\n"
+            "Below is the current draft paper and multiple clarifications "
+            "received from research agents. Revise the paper "
+            "to incorporate all this new information where relevant.\n\n"
+        )
+        if topic:
+            prompt += (
+                f"**IMPORTANT: The paper is about '{topic}'. Keep all revisions "
+                f"focused on this topic. Do NOT shift focus to the clarification "
+                f"process itself.**\n\n"
+            )
+        prompt += "## Clarifications\n\n"
+        for agent_id, claim, response in collected:
+            prompt += f"### Agent '{agent_id}' on claim: \"{claim}\"\n"
+            prompt += f"Response: \"{response}\"\n\n"
+        prompt += (
+            f"## Current Draft\n"
+            f"Title: {paper.title}\n"
+            f"Abstract: {paper.abstract}\n"
+            f"Synthesis: {paper.synthesis}\n"
+            f"Conclusion: {paper.conclusion}\n"
+        )
+        prompt += _COMPILE_FORMAT
+
+        try:
+            response = await self.llm.generate_stream(
+                system_prompt=system_prompt,
+                user_prompt=prompt,
+                temperature=0.3,
+            )
+        except LLMError:
+            logger.warning(
+                "Re-compilation after clarifications failed — keeping current draft"
+            )
+            return paper
+
+        data = self._try_parse_json(response, "recompile_all")
         if not data:
             return paper
 
