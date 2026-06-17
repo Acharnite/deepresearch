@@ -443,6 +443,18 @@ async def get_session_state(session_id: str) -> JSONResponse:
     )
 
 
+@app.get("/api/sessions/{session_id}/cost")
+async def get_session_cost(session_id: str) -> JSONResponse:
+    """Return token usage and cost for a session."""
+    info = multi_session_manager.get_session(session_id)
+    if info is None:
+        return JSONResponse({"error": "Session not found"}, status_code=404)
+    tracker = getattr(info, "token_tracker", None)
+    if tracker is None:
+        return JSONResponse({"total_cost": 0, "total_tokens": 0, "per_model": {}})
+    return JSONResponse(tracker.to_dict())
+
+
 @app.get("/api/sessions/{session_id}/events")
 async def session_event_stream(
     session_id: str, request: Request

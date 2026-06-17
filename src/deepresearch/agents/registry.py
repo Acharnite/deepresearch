@@ -22,6 +22,7 @@ from typing import Any, Callable
 from deepresearch.agents.research_agent import ResearchAgent
 from deepresearch.agents.scribe_agent import ScribeAgent
 from deepresearch.llm.client import LLMClient
+from deepresearch.llm.tracker import TokenTracker
 from deepresearch.models import (
     AgentProfile,
     ClarificationQuery,
@@ -78,8 +79,13 @@ class AgentRegistry:
             )
         return handler(self, **kwargs)
 
-    def __init__(self, llm_client: LLMClient) -> None:
+    def __init__(
+        self,
+        llm_client: LLMClient,
+        token_tracker: TokenTracker | None = None,
+    ) -> None:
         self.llm = llm_client
+        self.token_tracker = token_tracker
 
     # ------------------------------------------------------------------
     # Agent constructors
@@ -106,6 +112,7 @@ class AgentRegistry:
             timeout=self.llm.timeout,
             event_callback=event_callback,
             max_tokens=settings_manager.get_max_tokens(),
+            tracker=self.token_tracker,
         )
         return ResearchAgent(profile=profile, llm_client=llm)
 
@@ -127,7 +134,10 @@ class AgentRegistry:
         if model_name:
             # Scribe needs longer timeout — it processes all reports in one prompt.
             llm = LLMClient(
-                model=model_name, timeout=300, event_callback=event_callback
+                model=model_name,
+                timeout=300,
+                event_callback=event_callback,
+                tracker=self.token_tracker,
             )
             return ScribeAgent(llm_client=llm)
         return ScribeAgent(llm_client=self.llm)

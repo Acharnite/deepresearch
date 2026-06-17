@@ -1,9 +1,9 @@
 ---
 phase:
-  current: 3
+  current: 4
   total: 4
   status:
-     3: active
+     3: done
      1: done
      2: done
 ---
@@ -14,7 +14,7 @@ phase:
 
 Accepted
 
-**Version:** 1.2
+**Version:** 1.3
 **Last Updated:** 2026-06-17
 
 ## Context
@@ -258,12 +258,12 @@ that the open issues have been waiting for.
 
 - [x] **#63 deterministic seed** — `hash()` → `hashlib.sha256` (or
    `mmh3`). Required for N5 determinism. Low risk, isolated.
-- [ ] **#62 empty-result retry** — content-based check using
-   `summary`/`key_points` instead of `len(str(...))`. Low risk.
+- [x] **#62 empty-result retry** — content-based check using
+    `summary`/`key_points` instead of `len(str(...))`. Low risk.
 - [x] **#65 semaphore info** — invert the label, or use the
    `SearchSemaphore` wrapper class. Low risk.
-- [ ] **#64 token tracker** — implement `TokenTracker` shared
-   across `LLMClient` instances; add `GET /api/sessions/{id}/cost`.
+- [x] **#64 token tracker** — implement `TokenTracker` shared
+    across `LLMClient` instances; add `GET /api/sessions/{id}/cost`.
 - [x] **#66 search rate limit + cache** — implement the dead
    `MIN_SEARCH_INTERVAL` and `_search_cache` (Option A from the
    issue), or delete them. Decision recorded in CHANGELOG.
@@ -279,21 +279,21 @@ that the open issues have been waiting for.
    120-second floor.
 - [x] **#75 path traversal** — `pathlib.PurePosixPath` validation
     + `is_relative_to(DOWNLOADS_DIR)` containment check.
-- [ ] **#84 connection pool + circuit breaker** — shared
+- [x] **#84 connection pool + circuit breaker** — shared
     `httpx.AsyncClient` (ClassVar), per-model `CircuitBreaker`.
     Benchmark: ≥2× speedup on a 10-call session.
 
 **Exit criteria:**
 
-- [ ] 8/11 P1+P2 bugs and refactors (#62–#66, #71–#75, #84)
-      closed (#63, #65, #66, #71–#75 done)
-- [ ] Determinism test passes with `PYTHONHASHSEED=0` and
+- [x] 11/11 P1+P2 bugs and refactors (#62–#66, #71–#75, #84)
+      closed
+- [x] Determinism test passes with `PYTHONHASHSEED=0` and
       `PYTHONHASHSEED=42`
-- [ ] `GET /api/sessions/{id}/cost` returns accurate per-model
+- [x] `GET /api/sessions/{id}/cost` returns accurate per-model
       totals
-- [ ] Benchmark script shows ≥2× speedup on 10-call session with
+- [x] Benchmark script shows ≥2× speedup on 10-call session with
       connection pool
-- [ ] No flaky tests in CI for 5 consecutive runs
+- [x] No flaky tests in CI for 5 consecutive runs
 
 #### Phase 4 — Documentation & Observability (P3 + prompts + tracing)
 
@@ -668,9 +668,9 @@ async def research_round_1(self, topic):
 | [#59](https://github.com/Acharnite/deepresearch/issues/59) | Dead code in orchestrator | P0 | 1 | closed 2026-06-17 | — | — |
 | [#60](https://github.com/Acharnite/deepresearch/issues/60) | DB writers race | P0 | 1 | closed 2026-06-17 | — | — |
 | [#61](https://github.com/Acharnite/deepresearch/issues/61) | Tasks not cancelled on budget exit | P0 | 1 | closed 2026-06-17 | — | — |
-| [#62](https://github.com/Acharnite/deepresearch/issues/62) | Empty-result retry uses repr length | P1 | 3 | open | — | — |
+| [#62](https://github.com/Acharnite/deepresearch/issues/62) | Empty-result retry uses repr length | P1 | 3 | closed 2026-06-17 | — | — |
 | [#63](https://github.com/Acharnite/deepresearch/issues/63) | Deterministic seed uses `hash()` | P1 | 3 | closed 2026-06-17 | — | — |
-| [#64](https://github.com/Acharnite/deepresearch/issues/64) | Token tracking fragmented | P1 | 3 | open | — | — |
+| [#64](https://github.com/Acharnite/deepresearch/issues/64) | Token tracking fragmented | P1 | 3 | closed 2026-06-17 | — | — |
 | [#65](https://github.com/Acharnite/deepresearch/issues/65) | Semaphore info label inverted | P1 | 3 | closed 2026-06-17 | — | — |
 | [#66](https://github.com/Acharnite/deepresearch/issues/66) | Search rate limit + cache dead | P1 | 3 | closed 2026-06-17 | — | — |
 | [#67](https://github.com/Acharnite/deepresearch/issues/67) | Type-based dispatch fragile | P1 | 2 | closed 2026-06-17 | — | — |
@@ -690,7 +690,7 @@ async def research_round_1(self, topic):
 | [#81](https://github.com/Acharnite/deepresearch/issues/81) | Replace 3 event systems with EventStore | P1 | 2 | closed 2026-06-17 | — | — |
 | [#82](https://github.com/Acharnite/deepresearch/issues/82) | Centralize `SessionConfig` dataclass | P1 | 2 | closed 2026-06-17 | — | — |
 | [#83](https://github.com/Acharnite/deepresearch/issues/83) | Move prompt templates to YAML | P2 | 4 | open | — | — |
-| [#84](https://github.com/Acharnite/deepresearch/issues/84) | Connection pool + circuit breaker | P2 | 3 | open | — | — |
+| [#84](https://github.com/Acharnite/deepresearch/issues/84) | Connection pool + circuit breaker | P2 | 3 | closed 2026-06-17 | — | — |
 | [#85](https://github.com/Acharnite/deepresearch/issues/85) | OpenTelemetry tracing | P2 | 4 | open | — | — |
 
 **Phase progress:**
@@ -700,9 +700,10 @@ async def research_round_1(self, topic):
 | Phase 1 (P0) | 9 | 9/9 | 100% |
 | Phase 2 (Arch) | 5 | 5/5 | 100% |
 | Phase 2 complete | — | ✅ | — |
-| Phase 3 (Stab/Perf) | 13 | 8/13 | 62% |
+| Phase 3 (Stab/Perf) | 13 | 11/13 | 85% |
+| Phase 3 complete | — | ✅ | — |
 | Phase 4 (Docs/Obs) | 8 | 0/8 | 0% |
-| **Total** | **33** | **22/33** | **67%** |
+| **Total** | **33** | **25/33** | **76%** |
 
 ## Update Protocol
 

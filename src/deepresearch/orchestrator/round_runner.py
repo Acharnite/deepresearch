@@ -174,16 +174,7 @@ class RoundRunner:
                 result = await task
                 result_size = len(str(result)) if result else 0
 
-                # Check for empty/meaningless results
-                is_empty = False
-                if result is None:
-                    is_empty = True
-                elif hasattr(result, "summary") and not result.summary:
-                    is_empty = True
-                elif hasattr(result, "key_points") and not result.key_points:
-                    is_empty = True
-
-                if is_empty and result_size < 200:
+                if self._is_empty_result(result):
                     logger.warning(
                         "Agent '%s' returned empty/meaningless result (%d chars), will retry",
                         agent_id,
@@ -289,16 +280,7 @@ class RoundRunner:
                 result = await asyncio.wait_for(coro, timeout=timeout)
                 result_size = len(str(result)) if result else 0
 
-                # Check result quality again
-                is_empty = False
-                if result is None:
-                    is_empty = True
-                elif hasattr(result, "summary") and not result.summary:
-                    is_empty = True
-                elif hasattr(result, "key_points") and not result.key_points:
-                    is_empty = True
-
-                if is_empty and result_size < 200:
+                if self._is_empty_result(result):
                     await self.handle_agent_failure(agent_id, "empty_result (retry failed)")
                 else:
                     results[agent_id] = result
@@ -320,6 +302,36 @@ class RoundRunner:
                 await self.handle_agent_failure(agent_id, f"{e} (retry failed)")
 
         return results
+
+    @staticmethod
+    def _is_empty_result(result: Any) -> bool:
+        """Check if a research result is effectively empty (no substantive content).
+
+        Returns ``True`` when the result should trigger a retry — handles
+        ``Findings`` (summary/key_points) and ``IndividualReport``
+        (perspective_summary/key_insights).
+        """
+        if result is None:
+            return True
+        # Findings model
+        if hasattr(result, "key_points") and result.key_points:
+            return False
+        if (
+            hasattr(result, "summary")
+            and result.summary
+            and len(result.summary.strip()) > 20
+        ):
+            return False
+        # IndividualReport model
+        if hasattr(result, "key_insights") and result.key_insights:
+            return False
+        if (
+            hasattr(result, "perspective_summary")
+            and result.perspective_summary
+            and len(result.perspective_summary.strip()) > 20
+        ):
+            return False
+        return True
 
     async def _run_round_n(
         self,
@@ -393,16 +405,7 @@ class RoundRunner:
                 result = await task
                 result_size = len(str(result)) if result else 0
 
-                # Check for empty/meaningless results
-                is_empty = False
-                if result is None:
-                    is_empty = True
-                elif hasattr(result, "summary") and not result.summary:
-                    is_empty = True
-                elif hasattr(result, "key_points") and not result.key_points:
-                    is_empty = True
-
-                if is_empty and result_size < 200:
+                if self._is_empty_result(result):
                     logger.warning(
                         "Agent '%s' returned empty result in round %d, will retry",
                         agent_id,
@@ -520,15 +523,7 @@ class RoundRunner:
                 result = await asyncio.wait_for(coro, timeout=timeout)
                 result_size = len(str(result)) if result else 0
 
-                is_empty = False
-                if result is None:
-                    is_empty = True
-                elif hasattr(result, "summary") and not result.summary:
-                    is_empty = True
-                elif hasattr(result, "key_points") and not result.key_points:
-                    is_empty = True
-
-                if is_empty and result_size < 200:
+                if self._is_empty_result(result):
                     await self.handle_agent_failure(agent_id, "empty_result (retry failed)")
                 else:
                     results[agent_id] = result

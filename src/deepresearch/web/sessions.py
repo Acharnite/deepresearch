@@ -22,6 +22,7 @@ from typing import Any, Callable
 
 import json as _json
 from deepresearch.config.session import SessionConfig, TimeBudget
+from deepresearch.llm.tracker import TokenTracker
 from deepresearch.constants import MAX_ROUNDS_BY_BUDGET, PDF_MIN_HEALTHY_BYTES, TIME_BUDGET_SECONDS
 from deepresearch.web.event_bus import EventBus
 from deepresearch.web.settings_manager import settings_manager
@@ -89,6 +90,7 @@ class SessionInfo:
     event_history: list[dict[str, Any]] = field(default_factory=list)
     max_rounds: int = 4  # Default matches SessionConfig
     output_language: str = "English"  # Output language for the compiled paper
+    token_tracker: TokenTracker | None = None  # Shared session-level token aggregation
 
 
 class MultiSessionManager:
@@ -279,8 +281,10 @@ class MultiSessionManager:
                 }
             )
 
-            llm = LLMClient(max_tokens=settings_manager.get_max_tokens())
-            registry = AgentRegistry(llm)
+            token_tracker = TokenTracker()
+            info.token_tracker = token_tracker
+            llm = LLMClient(max_tokens=settings_manager.get_max_tokens(), tracker=token_tracker)
+            registry = AgentRegistry(llm, token_tracker=token_tracker)
 
             # Pick the scribe model: passed scribe_model > selected_model > first agent_models > None
             scribe_model = scribe_model or info.selected_model

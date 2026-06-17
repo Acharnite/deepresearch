@@ -1,17 +1,22 @@
 """LiteLLM client wrapper for async LLM interactions.
 
 Provides retry logic, timeout enforcement, token tracking,
-cost estimation, and structured output parsing.
+cost estimation, structured output parsing, circuit breaker,
+and a shared connection pool.
 """
 
 import asyncio
 import json
 import logging
 import re
+import time
 from collections.abc import Awaitable
-from typing import Any, Callable
+from typing import Any, Callable, ClassVar
 
+import httpx
 import litellm
+
+from deepresearch.llm.tracker import TokenTracker
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +114,45 @@ class LLMError(Exception):
     """Raised when an LLM call fails after all retries or times out."""
 
 
+class CircuitBreakerOpenError(LLMError):
+    """Raised when the circuit breaker is open for a model."""
+
+
+class CircuitBreaker:
+    """Per-model circuit breaker to avoid hammering failing APIs.
+
+    Tracks consecutive failures. Once ``failure_threshold`` is reached
+    the breaker opens and refuses requests for ``reset_timeout`` seconds.
+    After the timeout a single request is allowed through (half-open) to
+    probe whether the service has recovered.
+    """
+
+    def __init__(self, failure_threshold: int = 3, reset_timeout: float = 60.0) -> None:
+        self._failure_threshold = failure_threshold
+        self._reset_timeout = reset_timeout
+        self._failures = 0
+        self._opened_at: float | None = None
+
+    @property
+    def is_open(self) -> bool:
+        if self._opened_at is None:
+            return False
+        if time.monotonic() - self._opened_at > self._reset_timeout:
+            self._opened_at = None
+            self._failures = 0
+            return False  # Half-open — allow one request through
+        return True
+
+    def record_failure(self) -> None:
+        self._failures += 1
+        if self._failures >= self._failure_threshold:
+            self._opened_at = time.monotonic()
+
+    def record_success(self) -> None:
+        self._failures = 0
+        self._opened_at = None
+
+
 class LLMClient:
     """Async wrapper around LiteLLM's acompletion.
 
@@ -166,6 +210,32 @@ class LLMClient:
         client = LLMClient(model="my-model", api_base="https://my-proxy.example.com/v1")
     """
 
+    # ── Shared connection pool (class-level, reused across instances) ──
+    _pool: ClassVar[httpx.AsyncClient | None] = None
+    _breakers: ClassVar[dict[str, CircuitBreaker]] = {}
+    _pool_lock: ClassVar[asyncio.Lock | None] = None
+
+    @classmethod
+    def _get_pool(cls) -> httpx.AsyncClient:
+        """Return the shared ``httpx.AsyncClient`` pool (lazy-initialised)."""
+        if cls._pool is None:
+            cls._pool = httpx.AsyncClient(
+                timeout=httpx.Timeout(300.0),
+                limits=httpx.Limits(
+                    max_connections=50,
+                    max_keepalive_connections=20,
+                ),
+            )
+        return cls._pool
+
+    def _get_breaker(self) -> CircuitBreaker:
+        """Return the per-model circuit breaker for ``self.model``."""
+        if self.model not in self._breakers:
+            self._breakers[self.model] = CircuitBreaker(
+                failure_threshold=3, reset_timeout=60.0,
+            )
+        return self._breakers[self.model]
+
     def __init__(
         self,
         model: str = "gpt-4o",
@@ -174,6 +244,7 @@ class LLMClient:
         api_base: str | None = None,
         event_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         max_tokens: int | None = None,
+        tracker: TokenTracker | None = None,
     ) -> None:
         """Initialize the LLM client.
 
@@ -225,6 +296,7 @@ class LLMClient:
 
         self.api_key = self._resolve_api_key(self.provider) if self.provider else None
         self.max_tokens: int | None = max_tokens
+        self.tracker: TokenTracker | None = tracker
         self.total_input_tokens: int = 0
         self.total_output_tokens: int = 0
         self.total_cost: float = 0.0
@@ -315,6 +387,13 @@ class LLMClient:
             if _cancel and _cancel.is_set():
                 raise LLMError("Session cancelled")
 
+            # Circuit breaker check — fast-fail if the model is on cooldown.
+            breaker = self._get_breaker()
+            if breaker.is_open:
+                raise CircuitBreakerOpenError(
+                    f"Circuit breaker open for {self.model}"
+                )
+
             try:
                 response = await asyncio.wait_for(
                     self._acompletion(messages, temperature, effective_max_tokens),
@@ -322,9 +401,11 @@ class LLMClient:
                 )
                 self.call_count += 1
                 self._track_usage(response)
+                breaker.record_success()
                 return self._extract_content(response)
 
             except asyncio.TimeoutError:
+                breaker.record_failure()
                 last_exception = LLMError(
                     f"LLM request timed out after {self.timeout}s "
                     f"(model={self.model}, attempt={attempt + 1})"
@@ -337,11 +418,17 @@ class LLMClient:
                 litellm.RateLimitError,
             ) as e:
                 # Token/rate errors are NOT retryable — fail immediately
+                breaker.record_failure()
                 raise LLMError(
                     f"LLM resource exhausted (model={self.model}): {e}"
                 ) from e
 
+            except CircuitBreakerOpenError:
+                # Already checked above; re-raise without recording again.
+                raise
+
             except Exception as e:
+                breaker.record_failure()
                 last_exception = e
                 logger.warning(
                     "LLM request failed (model=%s, attempt=%d): %s",
@@ -450,6 +537,13 @@ class LLMClient:
         full_text = ""
         _stream_buffer: list[str] = []
 
+        # Circuit breaker check — fast-fail if the model is on cooldown.
+        breaker = self._get_breaker()
+        if breaker.is_open:
+            raise CircuitBreakerOpenError(
+                f"Circuit breaker open for {self.model}"
+            )
+
         try:
             from litellm import acompletion
 
@@ -474,7 +568,11 @@ class LLMClient:
                             {"type": "stream", "text": chunk_text}
                         )
 
+        except CircuitBreakerOpenError:
+            raise
+
         except Exception as e:
+            breaker.record_failure()
             # Flush remaining buffer before falling back.
             if _stream_buffer and self.event_callback:
                 chunk_text = "".join(_stream_buffer)
@@ -498,6 +596,7 @@ class LLMClient:
             _stream_buffer.clear()
             await self.event_callback({"type": "stream", "text": chunk_text})
 
+        breaker.record_success()
         return full_text
 
     async def generate_with_tools(
@@ -727,13 +826,19 @@ class LLMClient:
                 usage = response.usage
                 prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
                 completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+                cost = _lookup_cost(
+                    self.actual_model, prompt_tokens, completion_tokens
+                )
                 self.total_input_tokens += prompt_tokens
                 self.total_output_tokens += completion_tokens
-                self.total_cost += _lookup_cost(
-                    self.actual_model,
-                    prompt_tokens,
-                    completion_tokens,
-                )
+                self.total_cost += cost
+                if self.tracker is not None:
+                    self.tracker.record(
+                        model=self.actual_model,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        cost=cost,
+                    )
         except Exception:
             logger.debug("Failed to track token usage", exc_info=True)
 
