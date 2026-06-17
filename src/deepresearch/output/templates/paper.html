@@ -5,12 +5,12 @@
   <title>{{ paper.title }} — DeepResearch</title>
   <style>
     :root {
-      --font-family: {{ font_family | default("'Helvetica Neue', Helvetica, Arial, sans-serif") }};
+      --font-family: {{ font_family | safe | default("'Helvetica Neue', Helvetica, Arial, sans-serif") }};
     }
   </style>
   {% if css_content %}
   <style>
-    {{ css_content }}
+    {{ css_content | safe }}
   </style>
   {% else %}
   <link rel="stylesheet" href="styles.css">

@@ -280,7 +280,6 @@ a::after {
   padding: 0.8em;
   margin: 0.8em 0;
   line-height: 1.4;
-  overflow-x: auto;
   page-break-inside: avoid;
 }
 
