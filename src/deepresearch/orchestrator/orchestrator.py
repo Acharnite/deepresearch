@@ -681,6 +681,11 @@ class Orchestrator:
 
         Falls back to a minimal paper if the scribe fails.
         """
+        # Determine output language from session config.
+        output_language = "English"
+        if self.session_config:
+            output_language = getattr(self.session_config, "output_language", "English")
+
         try:
             # Detect if scribe supports the clarification protocol.
             if hasattr(scribe, "compile"):
@@ -695,6 +700,7 @@ class Orchestrator:
                         reports,
                         clarification_fn=self._handle_clarification,
                         status_callback=_scribe_status,
+                        language=output_language,
                     )
                 else:
                     # Generic object with .compile method.
@@ -1351,9 +1357,13 @@ class Orchestrator:
 
         self.state = "OUTPUT"
         paper = self._current_paper
+        # Determine output language for PDF font selection.
+        output_language = "English"
+        if self.session_config:
+            output_language = getattr(self.session_config, "output_language", "English")
         try:
             generator = PDFGenerator()
-            pdf_path = generator.generate_pdf(paper, output_path)
+            pdf_path = generator.generate_pdf(paper, output_path, language=output_language)
             self._log_event("pdf_generated", path=str(pdf_path))
             console.print(f"\n[bold green]✓ PDF generated: {pdf_path}[/bold green]")
             # Verify PDF size — mark as underweight if < 12KB
@@ -1380,7 +1390,7 @@ class Orchestrator:
             try:
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 generator = PDFGenerator()
-                html = generator.generate_html_only(paper)
+                html = generator.generate_html_only(paper, language=output_language)
                 html_path = output_path.with_suffix(".html")
                 html_path.write_text(html, encoding="utf-8")
                 pdf_path = html_path

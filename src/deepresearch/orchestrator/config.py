@@ -104,12 +104,15 @@ async def configure(
         time_budget, 4
     )
 
+    output_language: str = overrides.get("output_language", "English")
+
     config = SessionConfig(
         topic=topic,
         agent_profiles=profiles,
         agent_models=agent_models,
         time_budget_seconds=budget_seconds,
         max_rounds=max_rounds,
+        output_language=output_language,
     )
     orchestrator.session_config = config
     orchestrator._log_event("models_assigned", assignments=agent_models)

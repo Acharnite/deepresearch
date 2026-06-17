@@ -1,13 +1,13 @@
 /* ══════════════════════════════════════════════════════════════════
-   DeepResearch — Academic PDF Stylesheet
-   Designed for WeasyPrint PDF generation with professional
-   academic typesetting.
+   DeepResearch — Professional PDF Stylesheet
+   Designed for WeasyPrint PDF generation with modern,
+   clean typography and visual hierarchy.
    ══════════════════════════════════════════════════════════════════ */
 
 /* ── Page Setup ─────────────────────────────────────────────────── */
 @page {
   size: A4;
-  margin: 2.5cm 2cm 2.5cm 2cm;
+  margin: 2cm;
   @bottom-center {
     content: counter(page);
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -24,7 +24,7 @@
 
 /* ── Base Typography ────────────────────────────────────────────── */
 body {
-  font-family: "Georgia", "Times New Roman", Times, serif;
+  font-family: var(--font-family, "Helvetica Neue", Helvetica, Arial, sans-serif);
   font-size: 11pt;
   line-height: 1.6;
   color: #1a1a1a;
@@ -35,27 +35,27 @@ body {
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  font-weight: 600;
+  font-family: var(--font-family, "Helvetica Neue", Helvetica, Arial, sans-serif);
+  font-weight: 700;
   color: #111;
   page-break-after: avoid;
   margin-top: 1.5em;
   margin-bottom: 0.5em;
 }
 
-h1 { font-size: 18pt; }
-h2 { font-size: 14pt; border-bottom: 1px solid #ccc; padding-bottom: 0.3em; }
-h3 { font-size: 12pt; }
-h4 { font-size: 11pt; font-style: italic; }
+h1 { font-size: 24pt; }
+h2 { font-size: 18pt; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.3em; }
+h3 { font-size: 14pt; }
+h4 { font-size: 11pt; font-weight: 600; }
 
 p {
-  text-align: justify;
+  text-align: left;
   margin: 0.5em 0;
 }
 
 /* ── Links ──────────────────────────────────────────────────────── */
 a {
-  color: #1a1a1a;
+  color: #58a6ff;
   text-decoration: none;
 }
 a::after {
@@ -65,26 +65,28 @@ a::after {
 /* ── Cover Page ─────────────────────────────────────────────────── */
 .cover-page {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
   page-break-after: always;
-  padding-top: 8cm;
+  padding-top: 6cm;
 }
 
 .cover-title {
-  font-size: 26pt;
+  font-size: 28pt;
   font-weight: 700;
   line-height: 1.2;
-  margin-bottom: 1cm;
+  margin-bottom: 0.5cm;
   color: #000;
+  max-width: 90%;
 }
 
 .cover-date {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 11pt;
   color: #555;
-  margin-top: 1cm;
+  margin-top: 0.8cm;
 }
 
 .cover-methodology {
@@ -98,11 +100,68 @@ a::after {
   margin-right: auto;
 }
 
+.cover-meta {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 9pt;
+  color: #777;
+  margin-top: 0.3cm;
+  max-width: 80%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.cover-agents {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 10pt;
+  color: #444;
+  margin-top: 1cm;
+  max-width: 70%;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.cover-agents-title {
+  font-weight: 600;
+  margin-bottom: 0.3cm;
+  color: #333;
+}
+
+.cover-agents-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.3cm 0.8cm;
+}
+
+.cover-agents-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.2cm;
+}
+
+.cover-agent-dot {
+  width: 8pt;
+  height: 8pt;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.cover-separator {
+  width: 60%;
+  border: none;
+  border-top: 2px solid #e0e0e0;
+  margin-top: 1cm;
+}
+
 .cover-source {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 9pt;
   color: #888;
-  margin-top: 2cm;
+  margin-top: 1cm;
 }
 
 /* ── Abstract ───────────────────────────────────────────────────── */
@@ -131,17 +190,19 @@ a::after {
   margin: 0.4em 0;
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   font-size: 10pt;
+  padding-left: 0;
+  border-bottom: 1px dotted #ddd;
+  padding-bottom: 0.3em;
 }
 
 .toc ul {
   list-style: none;
   padding-left: 1.5em;
+  border-bottom: none;
 }
 
 .toc a::after {
-  content: leader(".") target-counter(attr(href), page);
-  font-size: 10pt;
-  color: #555;
+  content: none;
 }
 
 /* ── Sections ───────────────────────────────────────────────────── */
@@ -151,6 +212,33 @@ a::after {
 
 .section:first-of-type {
   page-break-before: avoid;
+}
+
+/* ── Agent Section Styling ──────────────────────────────────────── */
+.agent-section {
+  page-break-before: always;
+  border-left: 4px solid #ddd;
+  padding-left: 1em;
+  margin-left: 0;
+}
+
+.agent-section.agent-analyst { border-left-color: #58a6ff; }
+.agent-section.agent-researcher { border-left-color: #3fb950; }
+.agent-section.agent-data-analyst { border-left-color: #f0883e; }
+.agent-section.agent-fact-checker { border-left-color: #f85149; }
+.agent-section.agent-writer { border-left-color: #bc8cff; }
+.agent-section.agent-reviewer { border-left-color: #39d2c0; }
+
+/* Fallback colors for unknown agent IDs (cycling) */
+.agent-section.agent-color-0 { border-left-color: #58a6ff; }
+.agent-section.agent-color-1 { border-left-color: #3fb950; }
+.agent-section.agent-color-2 { border-left-color: #f0883e; }
+.agent-section.agent-color-3 { border-left-color: #f85149; }
+.agent-section.agent-color-4 { border-left-color: #bc8cff; }
+.agent-section.agent-color-5 { border-left-color: #39d2c0; }
+
+.agent-section h2 {
+  margin-top: 0.5em;
 }
 
 .subsection {
@@ -234,14 +322,41 @@ a::after {
   page-break-before: always;
 }
 
+.takeaways-box {
+  background: #f0f6ff;
+  border: 1px solid #58a6ff;
+  border-radius: 6px;
+  padding: 1.2em;
+  margin: 1em 0;
+}
+
+.takeaways-box h2 {
+  margin-top: 0;
+  color: #1a5276;
+  border-bottom: 1px solid #b8d4f0;
+  padding-bottom: 0.3em;
+}
+
 .takeaways {
-  list-style: disc;
-  padding-left: 1.5em;
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
 }
 
 .takeaways li {
-  margin: 0.6em 0;
+  margin: 0.5em 0;
   font-size: 11pt;
+  font-weight: 500;
+  padding-left: 1.2em;
+  position: relative;
+}
+
+.takeaways li::before {
+  content: "\2022";
+  color: #58a6ff;
+  font-weight: bold;
+  position: absolute;
+  left: 0;
 }
 
 /* ── Synthesis / Conclusion ─────────────────────────────────────── */

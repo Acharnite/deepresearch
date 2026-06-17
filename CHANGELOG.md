@@ -14,6 +14,15 @@ All notable changes to DeepeResearch will be documented in this file.
 - `--rounds` CLI flag for session round count
 - Dynamic pipeline rendering (ROUND3-5 support in dashboard)
 - Academic search engines: arXiv, PubMed, Semantic Scholar, Wikipedia
+- PDF cover page with topic, date, methodology, and agent perspectives
+- Table of contents in PDF output
+- Colored agent section borders matching dashboard colors (Issue #19)
+- Key takeaways highlighted box styling
+- Multi-language PDF output — 9 languages (Issue #20)
+  - Language selector in dashboard settings
+  - `--language` CLI flag
+  - Font selection per language (CJK, RTL, Western)
+  - Scribe compiles paper in target language
 
 ### Changed
 - PDF minimum healthy threshold: 12KB → 20KB

@@ -120,6 +120,7 @@ class ScribeAgent(BaseAgent):
         ]
         | None = None,  # noqa: E501
         status_callback: Callable[[str], Coroutine[Any, Any, None]] | None = None,
+        language: str = "English",
     ) -> ResearchPaper:
         """Synthesise all agent reports into a final research paper.
 
@@ -144,13 +145,25 @@ class ScribeAgent(BaseAgent):
             A structured ``ResearchPaper`` with all required sections.
         """
         logger.info(
-            "Scribe compile starting — %d reports, ~%d chars",
+            "Scribe compile starting — %d reports, ~%d chars, language=%s",
             len(reports),
             sum(len(str(r)) for r in reports.values()),
+            language,
         )
         reports_text = self._format_reports(reports)
         logger.debug("Scribe formatted reports: %d chars in prompt", len(reports_text))
         agent_names = list(reports.keys())
+
+        # Build system prompt with language instruction.
+        system_prompt = self._system_prompt
+        if language and language.lower() != "english":
+            system_prompt += (
+                f"\n\n**IMPORTANT: Compile the ENTIRE paper in {language}.** "
+                f"All section headings, abstract, synthesis, key takeaways, "
+                f"conclusion, and content must be written in {language}. "
+                f"Agent names may remain in their original form."
+            )
+
         user_prompt = (
             "# Compile Research Paper\n\n"
             f"The following are individual reports from {len(reports)} "
@@ -170,7 +183,7 @@ class ScribeAgent(BaseAgent):
                 hasattr(self.llm, "generate_stream"),
             )
             response = await self.llm.generate_stream(
-                system_prompt=self._system_prompt,
+                system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 temperature=0.3,
             )
@@ -204,7 +217,7 @@ class ScribeAgent(BaseAgent):
             logger.warning("Scribe compilation returned empty, retrying once...")
             try:
                 response = await self.llm.generate_stream(
-                    system_prompt=self._system_prompt,
+                    system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     temperature=0.3,
                 )

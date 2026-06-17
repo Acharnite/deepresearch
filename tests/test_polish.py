@@ -719,6 +719,7 @@ class TestKeyboardInterrupt:
             model = None
             web = False
             rounds = None  # max rounds override (ADR-0010)
+            language = "English"  # output language
 
         args = FakeArgs()
 

@@ -133,3 +133,4 @@ class SessionConfig(BaseModel):
     agent_models: dict[str, str]  # agent_id -> model_name
     time_budget_seconds: int = Field(default=30, ge=1, le=3600)  # Up to 1 hour
     max_rounds: int = Field(default=4, ge=1, le=10)  # Max research rounds
+    output_language: str = "English"  # Output language for the compiled paper

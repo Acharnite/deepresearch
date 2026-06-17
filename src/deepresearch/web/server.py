@@ -135,6 +135,7 @@ class RunRequest(BaseModel):
         None  # NEW: for "manual" mode — per-agent model mapping
     )
     max_rounds: int | None = None  # Override max rounds (1-10)
+    output_language: str = "English"  # Output language for the compiled paper
 
 
 class RunResponse(BaseModel):
@@ -267,6 +268,7 @@ async def start_research(req: RunRequest) -> JSONResponse:
             agent_models=req.agent_models,
             scribe_model=scribe_model,
             max_rounds=req.max_rounds,
+            output_language=req.output_language,
             semaphore=_session_semaphore,
         )
         return JSONResponse(

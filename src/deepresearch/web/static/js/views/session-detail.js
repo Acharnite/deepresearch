@@ -604,6 +604,12 @@ window.startResearch = async function() {
     body.time_budget_seconds = Math.max(60, Math.min(minutes * 60, 3600));
   }
 
+  // Add output language
+  const languageSelect = document.getElementById('languageSelect');
+  if (languageSelect) {
+    body.output_language = languageSelect.value;
+  }
+
   try {
     const response = await startResearchAPI(body);
 

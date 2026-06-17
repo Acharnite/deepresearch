@@ -93,6 +93,7 @@ class SessionInfo:
     agent_models: dict[str, str] | None = None
     event_history: list[dict[str, Any]] = field(default_factory=list)
     max_rounds: int = 4  # Default matches SessionConfig
+    output_language: str = "English"  # Output language for the compiled paper
 
 
 class MultiSessionManager:
@@ -137,6 +138,7 @@ class MultiSessionManager:
         agent_models: dict[str, str] | None = None,
         scribe_model: str | None = None,
         max_rounds: int | None = None,
+        output_language: str = "English",
         semaphore: asyncio.Semaphore | None = None,
     ) -> SessionInfo:
         """Create and start a new research session. Returns immediately."""
@@ -172,6 +174,7 @@ class MultiSessionManager:
             created_at=datetime.now().isoformat(),
             event_bus=bus,
             max_rounds=max_rounds,
+            output_language=output_language,
         )
         self._sessions[session_id] = info
 
@@ -206,6 +209,7 @@ class MultiSessionManager:
                 "completed_at": info.completed_at,
                 "result": info.result,
                 "error": info.error,
+                "output_language": info.output_language,
             }
             await _save_session_db_async(db)
             await info.event_bus.publish(
@@ -300,6 +304,7 @@ class MultiSessionManager:
                 "time_budget_seconds": info.time_budget_seconds,
                 "model_mode": info.model_mode,
                 "output_path": str(output_path),
+                "output_language": info.output_language,
             }
             if info.selected_model is not None:
                 run_overrides["selected_model"] = info.selected_model
@@ -384,6 +389,7 @@ class MultiSessionManager:
                 "completed_at": info.completed_at,
                 "result": info.result,
                 "error": info.error,
+                "output_language": info.output_language,
             }
             await _save_session_db_async(db)
             info.output_path = str(output_path)
@@ -528,6 +534,7 @@ class MultiSessionManager:
                 completed_at=data.get("completed_at"),
                 result=data.get("result"),
                 error=data.get("error"),
+                output_language=data.get("output_language", "English"),
             )
             # Fallback: if result wasn't persisted (legacy sessions), derive from filesystem
             if not info.result:

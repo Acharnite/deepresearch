@@ -121,6 +121,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output directory path (default: ./output)",
     )
     run_parser.add_argument(
+        "--language",
+        type=str,
+        default="English",
+        help="Output language for the compiled paper (default: English)",
+    )
+    run_parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Validate configuration without executing LLM calls",
@@ -314,6 +320,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 dry_run=True,
                 output_path=output_path,
                 max_rounds=args.rounds,
+                output_language=args.language,
             )
             if args.model:
                 run_kwargs["selected_model"] = args.model
@@ -363,6 +370,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 model_mode=model_mode,
                 output_path=output_path,
                 max_rounds=args.rounds,
+                output_language=args.language,
             )
             if args.model:
                 run_kwargs["selected_model"] = args.model
