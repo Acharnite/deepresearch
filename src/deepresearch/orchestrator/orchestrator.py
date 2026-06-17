@@ -430,7 +430,7 @@ class Orchestrator:
         m = self.session_config.max_rounds
         scribe_budget = max(60, int(b * 0.25))
         agent_budget = b - scribe_budget
-        per_round = max(60, int(agent_budget / m))
+        per_round = max(90, int(agent_budget / m))
         return per_round
 
     # ------------------------------------------------------------------

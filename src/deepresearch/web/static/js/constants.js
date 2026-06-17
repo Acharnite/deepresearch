@@ -1,6 +1,6 @@
 /* ── Constants ─────────────────────────────────────── */
 
-export const STATE_ORDER = ['IDLE','CONFIGURING','ROUND1','COLLABORATING','FOLLOWUP','REFINING','ROUND2','CLARIFYING','COMPILING','OUTPUT','COMPLETE'];
+export const STATE_ORDER = ['IDLE','CONFIGURING','ROUND1','ROUND2','CLARIFYING','COMPILING','OUTPUT','COMPLETE'];
 
 export const STATE_LABELS = {
   IDLE: 'Idle', CONFIGURING: 'Configuring', ROUND1: 'Round 1',

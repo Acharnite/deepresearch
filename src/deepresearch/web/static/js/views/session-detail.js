@@ -22,9 +22,6 @@ function buildPipelineStates(maxRoundCount) {
   const states = ['IDLE', 'CONFIGURING'];
   for (let i = 1; i <= maxRoundCount; i++) {
     states.push(`ROUND${i}`);
-    if (i < maxRoundCount) {
-      states.push('COLLABORATING', 'FOLLOWUP', 'REFINING');
-    }
   }
   states.push('CLARIFYING', 'COMPILING', 'OUTPUT', 'COMPLETE');
   

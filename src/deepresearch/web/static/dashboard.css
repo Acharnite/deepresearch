@@ -526,7 +526,7 @@ a:hover { text-decoration: underline; }
 .empty-state h3 { font-size: 16px; margin-bottom: 8px; }
 .empty-state p { font-size: 13px; }
 .progress-grid { display: grid; grid-template-columns: 1fr 360px; gap: 12px; align-items: start; }
-.agent-column { min-width: 0; max-height: calc(100vh - 200px); overflow-y: auto; }
+.agent-column { min-width: 0; }
 .event-column { min-width: 0; }
 
 /* ── State Badges ──────────────────────────── */
