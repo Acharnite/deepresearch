@@ -135,6 +135,11 @@ export function updateState(stateName) {
     else if (idx === curIdx) el.classList.add('current');
     // Future steps: no special class (unstyled) — NOT "active"
   });
+
+  const phaseDisplay = document.getElementById('phaseDisplay');
+  if (phaseDisplay) {
+    phaseDisplay.textContent = STATE_LABELS[state.currentState] || state.currentState;
+  }
 }
 
 // ── Show detail ─────────────────────────────────────
@@ -242,11 +247,12 @@ async function fetchSessionDetail(sessionId) {
   if (stateData && stateData.status === 'running') {
     const state = getState();
 
-    // Restore max_rounds from session state
-    if (stateData.max_rounds) {
-      state.sessionConfig.max_rounds = stateData.max_rounds;
-      buildPipelineStates(stateData.max_rounds);
+    // Restore max_rounds from session state — default to 4 if not set
+    if (!stateData.max_rounds) {
+      stateData.max_rounds = 4;
     }
+    state.sessionConfig.max_rounds = stateData.max_rounds;
+    buildPipelineStates(stateData.max_rounds);
 
     // Restore agent states
     if (stateData.agent_states) {

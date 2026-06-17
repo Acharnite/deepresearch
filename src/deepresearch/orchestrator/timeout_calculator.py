@@ -31,5 +31,5 @@ class TimeoutCalculator:
             m = self._config.max_rounds
         scribe_budget = max(120, int(b * 0.40))
         agent_budget = b - scribe_budget
-        per_round = max(90, int(agent_budget / m))
+        per_round = max(300, int(agent_budget / m))
         return per_round
