@@ -616,7 +616,7 @@ class LLMClient:
                 response = await acompletion(**kwargs)
 
                 text_content = response.choices[0].message.content or ""
-                full_text += text_content
+                _round_text = text_content
                 if text_content:
                     if self.event_callback:
                         await self.event_callback(
@@ -744,6 +744,25 @@ class LLMClient:
         except (AttributeError, IndexError, KeyError) as e:
             raise LLMError(f"Failed to extract content from response: {e}") from e
 
+    @staticmethod
+    def _strip_tool_output(response: str) -> str:
+        """Remove tool-related prefixes and output from LLM response text.
+
+        Strips patterns like [🔍 Web Search], [Tool], bullet-point tool
+        results, and query/result lines that may leak into the response.
+        """
+        import re
+
+        # Remove [🔍 Web Search], [Tool], etc. block patterns
+        cleaned = re.sub(
+            r'\[[^\]]*\]\s*Query:.*?(?=\n\n|\n[^ []|$)', '', response, flags=re.DOTALL
+        )
+        # Remove bullet-point tool result lines
+        cleaned = re.sub(r'^\s*[•\-]\s+.*$', '', cleaned, flags=re.MULTILINE)
+        # Collapse multiple blank lines
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        return cleaned.strip()
+
     def parse_json_response(self, response: str) -> dict[str, Any]:
         """Parse a JSON response from the LLM.
 
@@ -759,6 +778,9 @@ class LLMClient:
         Raises:
             LLMError: If the response cannot be parsed as JSON.
         """
+        # Strip tool output that may pollute the response
+        response = self._strip_tool_output(response)
+
         # Try direct parsing first
         try:
             return json.loads(response)

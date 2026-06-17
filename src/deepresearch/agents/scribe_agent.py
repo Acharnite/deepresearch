@@ -167,11 +167,20 @@ class ScribeAgent(BaseAgent):
                 f"conclusion, and content must be written in {language}. "
                 f"Agent names may remain in their original form."
             )
+        if topic:
+            system_prompt += (
+                f"\n\n**The paper you are compiling is about: {topic}**"
+                f"\nAll content must stay strictly on this topic."
+            )
 
         user_prompt = (
-            "# Compile Research Paper\n\n"
+            f"# Compile Research Paper\n\n"
+            f"**Research Topic: {topic}**\n\n"
             f"The following are individual reports from {len(reports)} "
-            f"research agents. Synthesise them into a coherent paper.\n\n"
+            f"research agents on the topic above. Synthesise them into a coherent paper "
+            f"about this specific topic.\n\n"
+            f"**CRITICAL: The paper MUST be about \"{topic}\". All content — abstract, "
+            f"synthesis, key takeaways, conclusion — must directly address this topic.**\n\n"
             f"**IMPORTANT: Use EXACTLY these agent names for section headings: {agent_names}**\n"
             f"**Do NOT invent new agent names, titles, or perspective names.**\n\n"
             f"{reports_text}\n\n"
