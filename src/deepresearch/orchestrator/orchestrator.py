@@ -558,7 +558,7 @@ class Orchestrator:
 
         Priority order:
         1. Cancel event — user-initiated cancellation
-        2. Time budget — reserve 10% for compilation
+        2. Emergency timeout (30 min absolute max — safety net only)
         3. Max rounds — hard safety cap
         4. Trend convergence — gaps no longer decreasing
         5. Diminishing returns — 2 consecutive non-decreasing gap deltas
@@ -569,15 +569,10 @@ class Orchestrator:
             logger.info("Cancel event set — stopping rounds")
             return False
 
-        # 2. Time budget — HARD cap
-        if self.session_config is not None:
-            session_timeout = min(
-                MAX_SESSION_DURATION,
-                self.session_config.time_budget_seconds,
-            )
-            if time.monotonic() - start_time > session_timeout:
-                logger.info("Time budget exceeded (%ds) — stopping rounds", session_timeout)
-                return False
+        # 2. Emergency timeout (30 min absolute max — safety net only)
+        if time.monotonic() - start_time > MAX_SESSION_DURATION:
+            logger.warning("Emergency timeout (30 min) reached — stopping")
+            return False
 
         # 3. Max rounds — hard safety cap
         if self.session_config is not None:
@@ -980,43 +975,19 @@ class Orchestrator:
         def active_agents() -> list[str]:
             return [aid for aid in agents if aid not in self.failed_agents]
 
-        # ── Session-level timeout ──────────────────────────────────────
-        session_timeout = min(
-            MAX_SESSION_DURATION,
-            config.time_budget_seconds,
-        )
-
-        # ── Session-level timeout wrapper ────────────────────────────
+        # ── Session start ────────────────────────────────────────────────
         logger.info(
-            "Starting _run_session — session_timeout=%ds, agents=%d",
-            session_timeout,
+            "Starting _run_session — agents=%d",
             len(agents),
         )
-        try:
-            await asyncio.wait_for(
-                self._run_session(
-                    agents=agents,
-                    scribe=scribe,
-                    active_agents=active_agents,
-                    config=config,
-                    output_path=output_path,
-                    agent_factory=agent_factory,
-                ),
-                timeout=session_timeout,
-            )
-        except asyncio.TimeoutError:
-            self.state = "OUTPUT"
-            console.print(
-                f"\n[yellow]⚠ Session timed out after {session_timeout}s "
-                f"— partial results available[/yellow]"
-            )
-            live_agents = [aid for aid in agents if aid not in self.failed_agents]
-            self._log_event(
-                "session_timeout",
-                timeout=session_timeout,
-                running_agents=live_agents,
-                failed_agents=list(self.failed_agents.keys()),
-            )
+        await self._run_session(
+            agents=agents,
+            scribe=scribe,
+            active_agents=active_agents,
+            config=config,
+            output_path=output_path,
+            agent_factory=agent_factory,
+        )
 
         # ── Generate final output ──────────────────────────────────────
         pdf_path = await self._finalize_output(output_path)

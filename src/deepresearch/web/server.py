@@ -336,6 +336,11 @@ async def get_session(session_id: str) -> JSONResponse:
             "status": info.status,
             "time_budget": info.time_budget,
             "time_budget_seconds": info.time_budget_seconds,
+            "estimated_duration_seconds": {
+                "quick": 360,
+                "medium": 600,
+                "deep": 900,
+            }.get(info.time_budget, 600),
             "model_mode": info.model_mode,
             "created_at": info.created_at,
             "completed_at": info.completed_at,

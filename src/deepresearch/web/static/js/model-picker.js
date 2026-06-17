@@ -329,5 +329,13 @@ document.querySelectorAll('input[name="time_budget"]').forEach(radio => {
   radio.addEventListener('change', function() {
     const row = document.getElementById('customMinutesRow');
     if (row) row.classList.toggle('hidden', this.value !== 'custom');
+
+    const estimates = { quick: '~6 min', medium: '~10 min', deep: '~15 min', custom: 'Custom' };
+    const el = document.getElementById('estimatedTime');
+    const container = document.getElementById('estimatedDuration');
+    if (el && estimates[this.value]) {
+      el.textContent = estimates[this.value];
+      container.style.display = 'block';
+    }
   });
 });
