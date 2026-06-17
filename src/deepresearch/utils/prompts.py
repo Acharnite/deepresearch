@@ -49,14 +49,18 @@ def build_round_1_prompt(topic: str, time_budget: str) -> str:
     return (
         f"# Research Topic\n{topic}\n\n"
         f"# Time Budget\n{time_budget}\n\n"
-        "## Instructions\n"
-        "Research the above topic independently. **Use the web_search tool "
+        "## CRITICAL INSTRUCTIONS\n\n"
+        "**STAY STRICTLY ON TOPIC.** Your entire analysis must be directly about "
+        f"the topic above: \"{topic}\". Do NOT wander into tangential, related, "
+        "or loosely connected subjects. Every finding, insight, and point you "
+        "make must clearly relate to this specific topic.\n\n"
+        "Research this topic using web_search. **Use the web_search tool "
         "to find current information** — do not rely solely on your training "
         "data.\n\n"
         "Provide:\n"
-        "1. A concise summary of your findings\n"
-        "2. 3-5 key points or insights\n"
-        "3. Your unique perspective on this topic\n"
+        "1. A concise summary of your findings on this SPECIFIC topic\n"
+        "2. 3-5 key points or insights about this SPECIFIC topic\n"
+        "3. Your unique perspective on this SPECIFIC topic\n"
         "4. Your confidence level in these findings (0.0–1.0)\n\n"
         "Be thorough but efficient — respect the time budget.\n"
         "Cite your sources where possible."
@@ -164,6 +168,9 @@ def build_round_2_prompt(
 
     return (
         f"# Research Topic\n{topic}\n\n"
+        "## CRITICAL INSTRUCTIONS\n\n"
+        "**STAY STRICTLY ON TOPIC.** Everything you produce must be directly "
+        f"about the topic: \"{topic}\". Do NOT drift into tangential subjects.\n\n"
         "## Shared Context\n"
         f"Key themes identified:\n{themes}\n\n"
         f"Areas of disagreement to address:\n{disagreements}\n\n"
@@ -253,6 +260,9 @@ def build_round_n_prompt(
 
     return (
         f"# Research Topic\n{topic}\n\n"
+        "## CRITICAL INSTRUCTIONS\n\n"
+        "**STAY STRICTLY ON TOPIC.** Everything you produce must be directly "
+        f"about the topic: \"{topic}\". Do NOT drift into tangential subjects.\n\n"
         f"## Round {round_num} of {max_rounds}\n\n"
         f"## Your Previous Findings (Round {round_num - 1})\n"
         f"Summary: {prev_findings.summary}\n\n"

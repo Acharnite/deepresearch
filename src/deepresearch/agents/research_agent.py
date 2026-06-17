@@ -120,39 +120,59 @@ class ResearchAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     async def research_round_1(self, topic: ResearchTopic) -> Findings:
-        """Initial research pass — with web search capability."""
+        """Initial research pass — with web search capability.
+
+        At most 2 LLM calls total: one with tools, one fallback without.
+        """
         await self._log_agent_state("researching")
         user_prompt = build_round_1_prompt(topic.question, topic.time_budget)
         user_prompt += _ROUND_1_FORMAT
 
         from deepresearch.tools.web_search import WEB_SEARCH_TOOL
 
+        response = None
         try:
             response = await self.llm.generate_with_tools(
                 system_prompt=self._system_prompt,
                 user_prompt=user_prompt,
                 tools=[WEB_SEARCH_TOOL],
                 temperature=self.profile.temperature,
-                max_tokens=getattr(self.llm, 'max_tokens', None) or 4096,  # Configurable max tokens
+                max_tokens=getattr(self.llm, 'max_tokens', None) or 4096,
             )
         except LLMError:
             logger.warning(
                 "LLM call with tools failed for agent '%s', retrying without tools",
                 self.profile.id,
             )
-            response = await self._generate_with_retry(user_prompt)
+
+        # One fallback without tools if first attempt failed or produced empty
+        if response is None:
+            try:
+                response = await self._generate_with_retry(user_prompt)
+            except LLMError:
+                logger.error(
+                    "All LLM attempts failed for agent '%s'", self.profile.id
+                )
+                response = ""
 
         data = self._try_parse_json(response, "research_round_1")
-        # If web search + tools produced empty content, retry without tools
+
+        # One retry for empty/invalid JSON (max 2 total LLM calls per round)
         if not data.get("summary") and not data.get("key_points"):
             logger.warning(
-                "Empty response from agent '%s' with tools, retrying without",
+                "Empty/invalid response from agent '%s', retrying once",
                 self.profile.id,
             )
-            response2 = await self._generate_with_retry(user_prompt)
-            data2 = self._try_parse_json(response2, "research_round_1")
-            if data2.get("summary") or data2.get("key_points"):
-                data = data2
+            try:
+                response2 = await self._generate_with_retry(user_prompt)
+                data2 = self._try_parse_json(response2, "research_round_1")
+                if data2.get("summary") or data2.get("key_points"):
+                    data = data2
+            except LLMError:
+                logger.error(
+                    "Retry also failed for agent '%s'", self.profile.id
+                )
+
         return Findings(
             agent_id=self.profile.id,
             round=1,
@@ -160,7 +180,7 @@ class ResearchAgent(BaseAgent):
             key_points=data.get("key_points", []),
             perspective=data.get("perspective", ""),
             confidence=float(data.get("confidence", 0.5)),
-            raw_response=response,
+            raw_response=response or "",
         )
 
     async def review_findings(
