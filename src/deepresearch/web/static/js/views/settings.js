@@ -638,6 +638,12 @@ window.downloadModel = async function(modelName, repoName) {
   logContainer.classList.remove('hidden');
   logOutput.innerHTML = '';
 
+  // Create progress bar
+  const progressContainer = document.createElement('div');
+  progressContainer.className = 'download-progress';
+  progressContainer.innerHTML = '<div class="progress-bar-bg"><div class="progress-bar-fill" id="dlProgressFill" style="width:0%"></div></div><span class="progress-label" id="dlProgressLabel">0%</span>';
+  logOutput.appendChild(progressContainer);
+
   // Add initial log line
   const initLine = document.createElement('div');
   initLine.className = 'log-line';
@@ -690,10 +696,14 @@ window.downloadModel = async function(modelName, repoName) {
             const payload = JSON.parse(lineText.slice(6));
 
             if (currentEvent === 'install_log') {
+              // Update progress bar
+              const pct = payload.progress || 0;
+              const fill = document.getElementById('dlProgressFill');
+              const label = document.getElementById('dlProgressLabel');
+              if (fill) fill.style.width = pct + '%';
+              if (label) label.textContent = Math.round(pct) + '%';
               const logLine = document.createElement('div');
               logLine.className = 'log-line';
-              const pct = payload.progress || 0;
-              const icon = pct >= 80 ? '\u2705' : pct >= 50 ? '\u23F3' : '\u2B07';
               logLine.innerHTML = '<span class="log-icon">' + icon + '</span> <span class="log-msg">' + esc(payload.message || '') + '</span>';
               logOutput.appendChild(logLine);
               logContainer.scrollTop = logContainer.scrollHeight;

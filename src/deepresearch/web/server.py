@@ -2340,17 +2340,24 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                 )
 
                 assert process.stdout is not None
-                llmfit_lines = 0
+                import re as _re
                 async for line in process.stdout:
-                    line_str = line.decode("utf-8", errors="replace").rstrip()
-                    if not line_str:
+                    line_str = line.decode("utf-8", errors="replace").strip()
+                    # Strip ANSI escape codes (ESC[K) and carriage returns
+                    clean = _re.sub('\[K|\r', '', line_str).strip()
+                    if not clean:
                         continue
-                    llmfit_lines += 1
-                    # Simple heuristic progress based on lines count
-                    pct = min(10 + llmfit_lines * 2, 90)
+                    # Parse percentage from llmfit output: "100.0% - message"
+                    pct_match = _re.match(r'\s*(\d+\.?\d*)\s*%', clean)
+                    pct = 50  # default mid-point
+                    msg = clean
+                    if pct_match:
+                        pct = min(float(pct_match.group(1)), 99)
+                        # Strip leading percentage for cleaner message
+                        msg = _re.sub(r'^\s*\d+\.?\d*\s*%\s*-\s*', '', clean)
                     yield {"event": "install_log", "data": json.dumps({
                         "step": "download",
-                        "message": line_str,
+                        "message": msg,
                         "progress": pct,
                     })}
                     if await request.is_disconnected():
