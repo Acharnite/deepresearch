@@ -38,7 +38,9 @@ def mock_searxng():
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client):
+    with patch(
+        "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
+    ):
         yield
 
 

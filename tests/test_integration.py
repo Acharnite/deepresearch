@@ -25,8 +25,6 @@ from deepresearch.models import (
     FollowUpQuestions,
     IndividualReport,
     ResearchPaper,
-    ResearchTopic,
-    SharedKnowledge,
 )
 from deepresearch.web.event_bus import EventBus
 from deepresearch.orchestrator import Orchestrator
@@ -602,6 +600,7 @@ class TestCollaborationBusIntegration:
         shared = await orch.bus.get_shared_knowledge()
         assert shared is not None
         assert "agent-alpha" not in shared.all_summaries
+
 
 class TestPDFIntegration:
     """Full pipeline integration — PDF output generation."""

@@ -189,7 +189,7 @@ def test_get_agents(client: TestClient) -> None:
     resp = client.get("/api/agents")
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data) == 2
+    assert len(data) == 6
     assert data[0]["id"] == "alpha"
     assert data[1]["name"] == "Beta"
 

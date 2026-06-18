@@ -275,9 +275,9 @@ class TestCSS:
         gen = PDFGenerator()
         html = gen.render_html(sample_paper)
         # CSS is now inlined via <style> tag — WeasyPrint cannot resolve relative <link> paths
-        assert '<style>' in html
+        assert "<style>" in html
         # Should contain actual CSS rules from styles.css
-        assert 'page-break' in html or '@page' in html
+        assert "page-break" in html or "@page" in html
 
 
 class TestGeneratePDF:

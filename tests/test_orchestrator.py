@@ -434,7 +434,7 @@ class TestRunRound:
     @pytest.mark.asyncio
     async def test_one_agent_fails_others_continue(self, profiles, model_configs):
         """If one agent raises an exception, others should still succeed.
-        
+
         With retry logic, the failing agent is retried once before being
         marked as failed.
         """
@@ -463,7 +463,7 @@ class TestRunRound:
     @pytest.mark.asyncio
     async def test_timeout_handling(self, profiles, model_configs):
         """Agent that times out should be handled gracefully.
-        
+
         With retry logic, the slow agent is retried once before being
         marked as failed with "timeout (retry failed)".
         """

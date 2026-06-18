@@ -11,7 +11,6 @@ Covers:
 
 from __future__ import annotations
 
-import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -67,8 +66,16 @@ class TestWebSearchSearxng:
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {
             "results": [
-                {"title": "Result 1", "content": "Snippet 1", "url": "https://example.com/1"},
-                {"title": "Result 2", "content": "Snippet 2", "url": "https://example.com/2"},
+                {
+                    "title": "Result 1",
+                    "content": "Snippet 1",
+                    "url": "https://example.com/1",
+                },
+                {
+                    "title": "Result 2",
+                    "content": "Snippet 2",
+                    "url": "https://example.com/2",
+                },
             ]
         }
 
@@ -77,7 +84,9 @@ class TestWebSearchSearxng:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
+        ):
             results = await web_search("test query", max_results=2)
 
         assert isinstance(results, list)
@@ -97,7 +106,11 @@ class TestWebSearchSearxng:
         mock_response.raise_for_status = MagicMock()
         mock_response.json.return_value = {
             "results": [
-                {"title": f"Result {i}", "content": f"Snippet {i}", "url": f"https://example.com/{i}"}
+                {
+                    "title": f"Result {i}",
+                    "content": f"Snippet {i}",
+                    "url": f"https://example.com/{i}",
+                }
                 for i in range(20)
             ]
         }
@@ -107,7 +120,9 @@ class TestWebSearchSearxng:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
+        ):
             results = await web_search("test", max_results=3)
 
         assert len(results) <= 3
@@ -125,7 +140,9 @@ class TestWebSearchSearxng:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
+        ):
             results = await web_search("obscure_xyz_query_12345")
 
         assert isinstance(results, list)
@@ -139,7 +156,9 @@ class TestWebSearchSearxng:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
+        ):
             results = await web_search("failing query")
 
         assert isinstance(results, list)
@@ -163,7 +182,9 @@ class TestWebSearchSearxng:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
+        ):
             results = await web_search("sparse data", max_results=2)
 
         assert len(results) == 2
@@ -193,7 +214,9 @@ class TestWebSearchSearxng:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client):
+        with patch(
+            "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
+        ):
             results = await web_search("truncate test", max_results=1)
 
         assert len(results) == 1
@@ -219,6 +242,7 @@ class TestWebSearchDDGS:
         mock_ddgs.return_value.__enter__.return_value = mock_instance
 
         import deepresearch.tools.web_search as ws
+
         old_engine = ws._search_engine
         try:
             ws._search_engine = "ddgs"
@@ -243,6 +267,7 @@ class TestWebSearchDDGS:
         mock_ddgs.return_value.__enter__.return_value = mock_instance
 
         import deepresearch.tools.web_search as ws
+
         old_engine = ws._search_engine
         try:
             ws._search_engine = "ddgs"
@@ -265,6 +290,7 @@ class TestFeatureFlag:
     async def test_default_engine_is_searxng(self) -> None:
         """Default search engine should be 'searxng'."""
         import deepresearch.tools.web_search as ws
+
         # Reset to default
         ws._search_engine = "searxng"
         assert ws._search_engine == "searxng"
@@ -273,6 +299,7 @@ class TestFeatureFlag:
     async def test_flag_switches_to_ddgs(self) -> None:
         """Setting _search_engine to 'ddgs' should use ddgs backend."""
         import deepresearch.tools.web_search as ws
+
         old = ws._search_engine
         try:
             ws._search_engine = "ddgs"
@@ -299,7 +326,7 @@ class TestSearchHealthInfo:
 
     def test_health_values(self) -> None:
         """Health status should be one of the expected values."""
-        from deepresearch.tools.web_search import get_search_health_info, _search_health
+        from deepresearch.tools.web_search import get_search_health_info
 
         info = get_search_health_info()
         assert info["status"] in ("unknown", "healthy", "degraded", "unhealthy")

@@ -24,7 +24,6 @@ from deepresearch.config import (
     validate_profiles,
 )
 from deepresearch.llm.client import LLMClient, _lookup_cost
-from deepresearch.agents.registry import Phase
 from deepresearch.models import (
     AgentProfile,
     Findings,
