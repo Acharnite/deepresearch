@@ -33,6 +33,7 @@ from deepresearch.models import (
     ResearchPaper,
     ResearchTopic,
     SharedKnowledge,
+    SourceReference,
 )
 
 
@@ -540,6 +541,162 @@ class TestResearchAgent:
         assert "creative" in creative_prompt.lower()
         assert "data" in analytical_prompt.lower()
 
+    # ── refine_findings ────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_refine_findings_with_tools(
+        self, profile, round_1_findings, mock_llm_client
+    ):
+        """refine_findings with tools should return populated Findings."""
+        mock_llm_client.generate_with_tools = _make_mock_generate_with_tools(
+            {
+                "summary": "Refined analysis confirms initial findings.",
+                "key_points": ["New insight 1", "New insight 2"],
+                "perspective": "Refined perspective after cross-agent review.",
+                "confidence": 0.85,
+            }
+        )
+        agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
+        questions = FollowUpQuestions(
+            agent_id="test-agent",
+            questions=["What about X?", "How does Y affect Z?"],
+        )
+        result = await agent.refine_findings(questions, round_1_findings)
+
+        assert isinstance(result, Findings)
+        assert result.agent_id == "test-agent"
+        assert "Refined" in result.summary
+        assert len(result.key_points) == 2
+        assert result.confidence == 0.85
+
+    @pytest.mark.asyncio
+    async def test_refine_findings_empty_questions(
+        self, profile, round_1_findings, mock_llm_client
+    ):
+        """Empty questions list returns current findings unchanged."""
+        agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
+        questions = FollowUpQuestions(agent_id="test-agent", questions=[])
+        result = await agent.refine_findings(questions, round_1_findings)
+
+        assert result == round_1_findings
+        mock_llm_client.generate_with_tools.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_refine_findings_empty_questions_no_current(
+        self, profile, mock_llm_client
+    ):
+        """Empty questions with no current findings returns default empty Findings."""
+        agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
+        questions = FollowUpQuestions(agent_id="test-agent", questions=[])
+        result = await agent.refine_findings(questions, None)
+
+        assert isinstance(result, Findings)
+        assert result.summary == ""
+        assert result.key_points == []
+        mock_llm_client.generate_with_tools.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_refine_findings_fallback(
+        self, profile, round_1_findings, mock_llm_client
+    ):
+        """When generate_with_tools raises LLMError, falls back to retry."""
+        mock_llm_client.generate_with_tools = AsyncMock(
+            side_effect=LLMError("Tools unavailable")
+        )
+        mock_llm_client.generate_stream = _make_mock_generate(
+            {
+                "summary": "Fallback analysis without tools.",
+                "key_points": ["Fallback point"],
+                "perspective": "Fallback perspective.",
+                "confidence": 0.6,
+            }
+        )
+        agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
+        questions = FollowUpQuestions(
+            agent_id="test-agent",
+            questions=["What about X?"],
+        )
+        result = await agent.refine_findings(questions, round_1_findings)
+
+        assert isinstance(result, Findings)
+        assert "Fallback" in result.summary
+        assert mock_llm_client.generate_with_tools.call_count == 1
+        assert mock_llm_client.generate_stream.call_count >= 1
+
+    # ── research_round_n ────────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_research_round_n_basic(
+        self, profile, topic, shared, round_1_findings, mock_llm_client
+    ):
+        """research_round_n with tools returns Findings for round 3."""
+        mock_llm_client.generate_with_tools = _make_mock_generate_with_tools(
+            {
+                "summary": "New round 3 insights discovered.",
+                "key_points": ["Novel finding 1", "Novel finding 2"],
+                "perspective": "Evolving perspective in later round.",
+                "confidence": 0.75,
+            }
+        )
+        agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
+        result = await agent.research_round_n(
+            topic, shared, round_num=3, prev_findings=round_1_findings
+        )
+
+        assert isinstance(result, Findings)
+        assert result.round == 3
+        assert "round 3" in result.summary.lower()
+        assert len(result.key_points) == 2
+        assert result.confidence == 0.75
+
+    @pytest.mark.asyncio
+    async def test_research_round_n_empty_response(
+        self, profile, topic, shared, round_1_findings, mock_llm_client
+    ):
+        """Empty response from research_round_n returns previous findings."""
+        mock_llm_client.generate_with_tools = _make_mock_generate_with_tools(
+            {
+                "summary": "",
+                "key_points": [],
+                "perspective": "",
+                "confidence": 0.5,
+            }
+        )
+        agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
+        result = await agent.research_round_n(
+            topic, shared, round_num=3, prev_findings=round_1_findings
+        )
+
+        assert isinstance(result, Findings)
+        assert result.summary == round_1_findings.summary
+        assert result.key_points == round_1_findings.key_points
+        assert result.round == 3
+
+    # ── clarify (tools path) ────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_clarify_with_tools(
+        self, profile, mock_llm_client
+    ):
+        """clarify with tools returns ClarificationResponse with web search."""
+        mock_llm_client.generate_with_tools = _make_mock_generate_with_tools(
+            {
+                "response": "Based on web sources, recent studies confirm the claim.",
+            }
+        )
+        agent = ResearchAgent(profile=profile, llm_client=mock_llm_client)
+        query = ClarificationQuery(
+            agent_id="test-agent",
+            question="What evidence supports your claim?",
+        )
+        result = await agent.clarify(query)
+
+        assert isinstance(result, ClarificationResponse)
+        assert result.agent_id == "test-agent"
+        assert "web sources" in result.response
+        # Should NOT have hit the fallback path
+        assert mock_llm_client.generate_stream.call_count == 0
+
 
 # ─── Tests: ScribeAgent ──────────────────────────────────────────────────────
 
@@ -705,6 +862,147 @@ class TestScribeAgent:
         assert isinstance(result, ClarificationResponse)
         assert result.agent_id == "scribe"
         assert "prioritised" in result.response
+
+    # ── Compile with sources ────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_compile_report_with_sources(
+        self, reports, mock_llm_client
+    ):
+        """compile includes sources in paper references."""
+        mock_llm_client.generate_stream = _make_mock_generate(
+            {
+                "title": "Paper with Sources",
+                "abstract": "Abstract text.",
+                "methodology_note": "Methodology.",
+                "sections": [
+                    {
+                        "heading": "Introduction",
+                        "source_agent_id": None,
+                        "content": "Content.",
+                        "subsections": [],
+                    }
+                ],
+                "synthesis": "Synthesis text.",
+                "key_takeaways": ["Takeaway 1"],
+                "conclusion": "Conclusion text.",
+                "appendices": [],
+            }
+        )
+        sources = [
+            SourceReference(url="https://example.com/1", title="Source 1"),
+            SourceReference(url="https://example.com/2", title="Source 2"),
+        ]
+        source_map = {"https://example.com/1": 1, "https://example.com/2": 2}
+        agent = ScribeAgent(llm_client=mock_llm_client)
+        paper = await agent.compile(
+            reports, sources=sources, source_map=source_map
+        )
+
+        assert len(paper.references) == 2
+        assert paper.references[0].url == "https://example.com/1"
+        assert paper.references[1].url == "https://example.com/2"
+        # Verify sources appeared in the prompt
+        call_kwargs = mock_llm_client.generate_stream.call_args[1]
+        user_prompt = call_kwargs["user_prompt"]
+        assert "Available Sources" in user_prompt
+        assert "example.com/1" in user_prompt
+
+    @pytest.mark.asyncio
+    async def test_compile_report_deduplicates_sources(
+        self, reports, mock_llm_client
+    ):
+        """compile deduplicates sources by URL in fallback path."""
+        # Make LLM fail so _fallback_paper handles dedup
+        mock_llm_client.generate_stream = AsyncMock(
+            side_effect=LLMError("LLM down")
+        )
+        # Create reports where two agents share a source URL
+        shared_src = SourceReference(
+            url="https://example.com/shared",
+            title="Shared Source",
+        )
+        unique_src = SourceReference(
+            url="https://example.com/unique",
+            title="Unique Source",
+        )
+        reports_with_sources = {
+            "agent-a": IndividualReport(
+                agent_id="agent-a",
+                title="Report A",
+                perspective_summary="Summary A",
+                key_insights=["Insight A"],
+                analysis="Analysis A",
+                full_text="Full text A",
+                sources=[shared_src, unique_src],
+            ),
+            "agent-b": IndividualReport(
+                agent_id="agent-b",
+                title="Report B",
+                perspective_summary="Summary B",
+                key_insights=["Insight B"],
+                analysis="Analysis B",
+                full_text="Full text B",
+                sources=[shared_src],  # Same URL as agent-a
+            ),
+        }
+        agent = ScribeAgent(llm_client=mock_llm_client)
+        paper = await agent.compile(reports_with_sources)
+
+        assert isinstance(paper, ResearchPaper)
+        # Should have both unique URLs (shared_src deduplicated)
+        urls = [r.url for r in paper.references]
+        assert len(urls) == 2
+        assert "https://example.com/shared" in urls
+        assert "https://example.com/unique" in urls
+
+    @pytest.mark.asyncio
+    async def test_compile_report_empty_retry_then_fallback(
+        self, reports, mock_llm_client
+    ):
+        """compile returns minimal paper when both attempts produce empty sections."""
+        empty_json = json.dumps(
+            {
+                "title": "Paper",
+                "abstract": "",
+                "methodology_note": "",
+                "sections": [],
+                "synthesis": "",
+                "key_takeaways": [],
+                "conclusion": "",
+                "appendices": [],
+            }
+        )
+        mock_llm_client.generate_stream = AsyncMock(
+            side_effect=[empty_json, empty_json]
+        )
+        agent = ScribeAgent(llm_client=mock_llm_client)
+        paper = await agent.compile(reports)
+
+        assert isinstance(paper, ResearchPaper)
+        assert paper.sections == []
+        assert paper.key_takeaways == []
+        assert "Compilation failed" in paper.abstract
+        assert paper.title == "Research Paper"
+
+    @pytest.mark.asyncio
+    async def test_scribe_clarify_fallback(
+        self, mock_llm_client
+    ):
+        """ScribeAgent.clarify returns fallback response on LLM failure."""
+        mock_llm_client.generate_stream = AsyncMock(
+            side_effect=LLMError("LLM unavailable")
+        )
+        agent = ScribeAgent(llm_client=mock_llm_client)
+        query = ClarificationQuery(
+            agent_id="scribe",
+            question="Why did you exclude certain sources?",
+        )
+        result = await agent.clarify(query)
+
+        assert isinstance(result, ClarificationResponse)
+        assert result.agent_id == "scribe"
+        assert "Unable to answer" in result.response
 
 
 # ─── Tests: AgentRegistry ────────────────────────────────────────────────────

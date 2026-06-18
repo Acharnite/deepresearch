@@ -214,6 +214,24 @@ def test_all_routes_registered(client: TestClient) -> None:
         "/api/settings/local-endpoints",
         "/api/settings/local-endpoints/{name}",
         "/api/settings/local-endpoints/{name}/test",
+        # Local backend discovery & management
+        "/api/local-backends",
+        "/api/local-backends/{name}/address",
+        "/api/local-backends/{name}/test",
+        "/api/local-backends/models/download",
+        "/api/local-backends/models/download/progress",
+        "/api/local-backends/ollama/status",
+        "/api/local-backends/ollama/install",
+        "/api/local-backends/ollama/start",
+        "/api/local-backends/ollama/stop",
+        "/api/local-backends/ollama/uninstall",
+        "/api/local-backends/ollama/pull",
+        "/api/local-backends/llmfit/install",
+        "/api/local-backends/llmfit/uninstall",
+        # Tools & hardware
+        "/api/tools/status",
+        "/api/tools/recommendations",
+        "/api/hardware",
     ]
     for route in expected:
         assert route in routes, f"Missing route: {route}"
