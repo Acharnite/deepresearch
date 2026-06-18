@@ -934,8 +934,8 @@ class LLMClient:
     def parse_json_response(self, response: str) -> dict[str, Any]:
         """Parse a JSON response from the LLM.
 
-        Attempts direct JSON parsing first. Falls back to extracting
-        JSON from code blocks (```json ... ```).
+        Tries extracting from markdown code blocks first, then direct
+        parsing, then strips tool output as a last resort.
 
         Args:
             response: The raw text response from the LLM.
@@ -946,17 +946,9 @@ class LLMClient:
         Raises:
             LLMError: If the response cannot be parsed as JSON.
         """
-        # Strip tool output that may pollute the response
-        response = self._strip_tool_output(response)
-
-        # Try direct parsing first
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            pass
-
-        # Try extracting from markdown code block
         json_pattern = r"```(?:json)?\s*\n?(.*?)```"
+
+        # 1. Try extracting from markdown code block FIRST (preserves JSON)
         match = re.search(json_pattern, response, re.DOTALL)
         if match:
             try:
@@ -964,11 +956,32 @@ class LLMClient:
             except json.JSONDecodeError:
                 pass
 
-        # Try stripping non-JSON text before first { and after last }
+        # 2. Try direct parsing
         try:
-            start = response.index("{")
-            end = response.rindex("}")
-            return json.loads(response[start : end + 1])
+            return json.loads(response)
+        except json.JSONDecodeError:
+            pass
+
+        # 3. Last resort: strip tool output and try again
+        cleaned = self._strip_tool_output(response)
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        # 4. Try extracting from cleaned response
+        match = re.search(json_pattern, cleaned, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+
+        # 5. Try stripping non-JSON text before first { and after last }
+        try:
+            start = cleaned.index("{")
+            end = cleaned.rindex("}")
+            return json.loads(cleaned[start : end + 1])
         except (ValueError, json.JSONDecodeError):
             pass
 
