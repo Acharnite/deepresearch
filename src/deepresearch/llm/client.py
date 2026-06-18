@@ -763,75 +763,12 @@ class LLMClient:
             # Reset full_text for each round — only keep final non-tool output
             _round_text = ""
 
-            try:
-                kwargs["stream"] = True
-                response = await acompletion(**kwargs)
-
-                async for chunk in response:
-                    delta = chunk.choices[0].delta if chunk.choices else None
-                    if not delta:
-                        continue
-
-                    # Text content
-                    if delta.content:
-                        _round_text += delta.content
-                        if self.event_callback:
-                            await self.event_callback(
-                                {"type": "stream", "text": delta.content}
-                            )
-
-                    # Tool calls
-                    if delta.tool_calls:
-                        for tc in delta.tool_calls:
-                            idx = tc.index if tc.index is not None else 0
-                            while len(tool_calls) <= idx:
-                                tool_calls.append(("", "", ""))
-
-                            tid, tname, targs = tool_calls[idx]
-                            if tc.id:
-                                tid = tc.id
-                            if tc.function and tc.function.name:
-                                tname = tc.function.name
-                            if tc.function and tc.function.arguments:
-                                targs += tc.function.arguments
-                            tool_calls[idx] = (tid, tname, targs)
-
-            except (
-                litellm.BudgetExceededError,
-                litellm.ContextWindowExceededError,
-                litellm.RateLimitError,
-            ) as e:
-                raise LLMError(
-                    f"LLM resource exhausted (model={self.model}): {e}"
-                ) from e
-
-            except Exception as e:
-                logger.warning(
-                    "Tool calling with streaming failed (tool_round=%d, tools=%s): %s. "
-                    "Retrying without stream.",
-                    tool_round,
-                    [t.get("function", {}).get("name", "?") for t in (tools or [])],
-                    e,
-                    exc_info=True,
-                )
-                # Fallback: non-streaming
+            # ── Ollama models don't support streaming tool calls ────────
+            # (they hang silently with no output). Skip straight to
+            # non-streaming for known local-backend providers.
+            if self.provider and PROVIDER_ROUTES.get(self.provider, {}).get("local_backend"):
                 kwargs["stream"] = False
-                try:
-                    response = await acompletion(**kwargs)
-                except Exception as e2:
-                    logger.warning(
-                        "Non-streaming tool call also failed (model=%s): %s. "
-                        "Retrying without tools.",
-                        self.model, e2,
-                    )
-                    # Remove tools and fall back to plain generate_stream
-                    return await self.generate_stream(
-                        system_prompt=system_prompt,
-                        user_prompt=user_prompt,
-                        temperature=temperature,
-                        max_tokens=effective_max_tokens,
-                        cancel_event=_cancel,
-                    )
+                response = await acompletion(**kwargs)
 
                 text_content = response.choices[0].message.content or ""
                 _round_text = text_content
@@ -852,8 +789,99 @@ class LLMClient:
                         args_str,
                     )
 
-                # Track usage from non-streaming response
                 self._track_usage(response)
+            else:
+                try:
+                    kwargs["stream"] = True
+                    response = await acompletion(**kwargs)
+
+                    async for chunk in response:
+                        delta = chunk.choices[0].delta if chunk.choices else None
+                        if not delta:
+                            continue
+
+                        # Text content
+                        if delta.content:
+                            _round_text += delta.content
+                            if self.event_callback:
+                                await self.event_callback(
+                                    {"type": "stream", "text": delta.content}
+                                )
+
+                        # Tool calls
+                        if delta.tool_calls:
+                            for tc in delta.tool_calls:
+                                idx = tc.index if tc.index is not None else 0
+                                while len(tool_calls) <= idx:
+                                    tool_calls.append(("", "", ""))
+
+                                tid, tname, targs = tool_calls[idx]
+                                if tc.id:
+                                    tid = tc.id
+                                if tc.function and tc.function.name:
+                                    tname = tc.function.name
+                                if tc.function and tc.function.arguments:
+                                    targs += tc.function.arguments
+                                tool_calls[idx] = (tid, tname, targs)
+
+                except (
+                    litellm.BudgetExceededError,
+                    litellm.ContextWindowExceededError,
+                    litellm.RateLimitError,
+                ) as e:
+                    raise LLMError(
+                        f"LLM resource exhausted (model={self.model}): {e}"
+                    ) from e
+
+                except Exception as e:
+                    logger.warning(
+                        "Tool calling with streaming failed (tool_round=%d, tools=%s): %s. "
+                        "Retrying without stream.",
+                        tool_round,
+                        [t.get("function", {}).get("name", "?") for t in (tools or [])],
+                        e,
+                        exc_info=True,
+                    )
+                    # Fallback: non-streaming
+                    kwargs["stream"] = False
+                    try:
+                        response = await acompletion(**kwargs)
+                    except Exception as e2:
+                        logger.warning(
+                            "Non-streaming tool call also failed (model=%s): %s. "
+                            "Retrying without tools.",
+                            self.model, e2,
+                        )
+                        # Remove tools and fall back to plain generate_stream
+                        return await self.generate_stream(
+                            system_prompt=system_prompt,
+                            user_prompt=user_prompt,
+                            temperature=temperature,
+                            max_tokens=effective_max_tokens,
+                            cancel_event=_cancel,
+                        )
+
+                    text_content = response.choices[0].message.content or ""
+                    _round_text = text_content
+                    if text_content:
+                        if self.event_callback:
+                            await self.event_callback(
+                                {"type": "stream", "text": text_content}
+                            )
+
+                    raw_tool_calls = response.choices[0].message.tool_calls or []
+                    for idx, tc in enumerate(raw_tool_calls):
+                        while len(tool_calls) <= idx:
+                            tool_calls.append(("", "", ""))
+                        args_str = tc.function.arguments if tc.function else ""
+                        tool_calls[idx] = (
+                            tc.id,
+                            tc.function.name if tc.function else "",
+                            args_str,
+                        )
+
+                    # Track usage from non-streaming response
+                    self._track_usage(response)
 
             # Handle models that output tool calls as text content
             # (e.g. local models without native function calling support)

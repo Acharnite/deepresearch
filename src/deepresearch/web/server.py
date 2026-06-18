@@ -1449,6 +1449,8 @@ async def get_model_recommendations() -> JSONResponse:
                         f"Requires {required_ram}GB RAM, "
                         f"only {usable_memory_gb:.0f}GB available"
                     )
+                # Annotate with capability info for frontend filtering
+                m["supports_tool_use"] = "tool_use" in (m.get("capability_ids") or [])
                 filtered_models.append(m)
 
             return JSONResponse({
