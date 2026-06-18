@@ -476,12 +476,20 @@ class LLMClient:
         messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int | None,
+        *,
+        response_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Build the keyword-arguments dict for ``litellm.acompletion``.
 
         Shared by :meth:`_acompletion` (non-streaming) and
         :meth:`generate_stream` (streaming) so that both paths use the
         same provider routing and model prefix logic.
+
+        Args:
+            response_schema: Optional JSON schema for structured output.
+                When provided and the model supports ``structured_outputs``,
+                uses ``response_format: json_schema`` instead of prompt-based
+                JSON instructions.
         """
         # OpenAI-compatible providers (e.g., opencode.ai) need "openai/" prefix
         if self.openai_compatible:
@@ -500,6 +508,25 @@ class LLMClient:
             kwargs["api_base"] = self.api_base
         if self.api_key:
             kwargs["api_key"] = self.api_key
+
+        # Disable thinking/reasoning for DeepSeek models — JSON output goes
+        # into reasoning field instead of content when reasoning is enabled
+        # (vllm #41132).  Always disable for JSON output tasks.
+        if "deepseek" in self.model:
+            kwargs["reasoning"] = {"effort": "none"}
+
+        # Structured output mode: when a response_schema is provided and the
+        # model is known to support structured_outputs, use json_schema format.
+        if response_schema is not None:
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "response",
+                    "strict": True,
+                    "schema": response_schema,
+                },
+            }
+
         return kwargs
 
     async def _acompletion(
@@ -628,6 +655,7 @@ class LLMClient:
         temperature: float = 0.7,
         max_tokens: int | None = None,
         cancel_event: asyncio.Event | None = None,
+        response_schema: dict[str, Any] | None = None,
     ) -> str:
         """Generate a response with tool calling support.
 
@@ -645,6 +673,7 @@ class LLMClient:
             max_tokens: Max output tokens.
             cancel_event: Optional cancellation event — checked before each
                 tool round.  Falls back to ``self.cancel_event`` if None.
+            response_schema: Optional JSON schema for structured output mode.
 
         Returns:
             Final response text.
@@ -671,7 +700,10 @@ class LLMClient:
             if _cancel and _cancel.is_set():
                 raise LLMError("Session cancelled")
 
-            kwargs = self._build_acompletion_kwargs(messages, temperature, effective_max_tokens)
+            kwargs = self._build_acompletion_kwargs(
+                messages, temperature, effective_max_tokens,
+                response_schema=response_schema,
+            )
             kwargs["tools"] = tools
 
             from litellm import acompletion
@@ -880,7 +912,8 @@ class LLMClient:
         """Remove tool-related prefixes and output from LLM response text.
 
         Strips patterns like [🔍 Web Search], [Tool], bullet-point tool
-        results, and query/result lines that may leak into the response.
+        results, numbered list items, and non-JSON lines that may leak
+        into the response from generate_with_tools().
         """
         import re
 
@@ -890,6 +923,10 @@ class LLMClient:
         )
         # Remove bullet-point tool result lines
         cleaned = re.sub(r'^\s*[•\-]\s+.*$', '', cleaned, flags=re.MULTILINE)
+        # Remove numbered list items from search results (e.g. "1. Some title")
+        cleaned = re.sub(r'^\s*\d+\.\s+.*$', '', cleaned, flags=re.MULTILINE)
+        # Remove lines that don't contain any JSON (non-JSON noise lines)
+        cleaned = re.sub(r'^(?!.*\{).*$', '', cleaned, flags=re.MULTILINE)
         # Collapse multiple blank lines
         cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
         return cleaned.strip()
