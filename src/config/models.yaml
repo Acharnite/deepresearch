@@ -5,7 +5,6 @@ models:
   - id: gpt-4o
     provider: openai
     display_name: GPT-4o
-    default: true
     context_window: 128000
 
   - id: gpt-4o-mini
@@ -32,3 +31,34 @@ models:
     provider: ollama
     display_name: Mixtral (Ollama)
     context_window: 32000
+
+  # OpenRouter models
+  - id: deepseek/deepseek-v4-flash
+    provider: openrouter
+    display_name: DeepSeek V4 Flash
+    context_window: 1048576
+    supports_tools: true
+    supports_structured: true
+    cost_per_m_input: 0.09
+    cost_per_m_output: 0.18
+    default: true  # Default for quick/medium sessions
+
+  - id: google/gemini-3-flash-preview
+    provider: openrouter
+    display_name: Gemini 3 Flash Preview
+    context_window: 1048576
+    supports_tools: true
+    supports_structured: true
+    cost_per_m_input: 0.50
+    cost_per_m_output: 3.00
+    recommended_for: deep
+
+  - id: xiaomi/mimo-v2.5
+    provider: openrouter
+    display_name: Xiaomi MiMo V2.5
+    context_window: 1048576
+    supports_tools: true
+    supports_structured: true
+    cost_per_m_input: 0.14
+    cost_per_m_output: 0.28
+    recommended_for: medium
