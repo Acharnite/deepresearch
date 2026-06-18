@@ -676,11 +676,21 @@ window.downloadModel = async function(modelName, repoName) {
     const decoder = new TextDecoder();
     let buffer = '';
 
+    const MAX_BUF = 65536; // 64KB max buffer
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
+      // Safety: force-split if buffer exceeds limit
+      if (buffer.length > MAX_BUF) {
+        var idx = buffer.indexOf('\n');
+        if (idx === -1 || idx > MAX_BUF) {
+          // No newline or too far — discard and hope next chunk has one
+          buffer = buffer.slice(-2000);
+          continue;
+        }
+      }
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
