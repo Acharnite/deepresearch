@@ -1,8 +1,8 @@
-# ADR-0014: Enforce Time Budget and Correct UI Labels
+# ADR-0014: Time Budget as Estimate
 
 ## Status
 
-**Proposed**
+**Accepted**
 
 ## Version
 
@@ -10,7 +10,7 @@
 
 ## Last Updated
 
-2026-06-17
+2026-06-18
 
 ## Context
 
@@ -35,6 +35,32 @@ _MAX_ROUNDS_BY_BUDGET = {"quick": 3, "medium": 4, "deep": 5}
 - SearXNG search delays (3-8s per search) + LLM inference time + clarification rounds easily exceed 5 minutes
 - 6 agents × 3+ rounds × multiple searches = minimum ~6 minutes even in best case
 
+## Superseded Decision (2026-06-18)
+
+The original ADR-0014 proposed hard time caps for sessions. This has been **superseded** by a softer approach:
+
+**Time budgets are estimates, not hard limits.** The budget (quick=240s, medium=420s, deep=660s) tells the user approximately how long a session will take, but does NOT forcibly kill the session when the budget expires. The session runs until it naturally converges (via `should_continue()` gap analysis) or reaches `max_rounds`.
+
+### What changed
+
+- Removed hard `budget_secs` cutoff in `orchestrator._run_session()` (was: `time.monotonic() > budget_secs → break`)
+- Removed `budget_secs` cutoff in `round_runner.py` (3 locations)
+- Kept `MAX_SESSION_DURATION` (30 min) as a safety net to prevent truly infinite loops
+- Kept per-agent round timeout (300s floor) — this is per-LLM-call, not per-session
+
+### Rationale
+
+- LLM response times vary wildly (5s to 60s+ per call)
+- Web search latency is unpredictable (SearXNG can take 3-8s per query)
+- Scribe compilation time depends on report complexity
+- Hard cutoffs cause incomplete research papers and wasted tokens
+- Users prefer a longer session that completes over a fast one that gets truncated
+
+### Impact on existing ADRs
+
+- **ADR-0010** (Dynamic Research Rounds): `should_continue()` convergence check still applies. Max rounds enforced.
+- **ADR-0001** (Multi-Agent Architecture): Session timeout `budget × 4 + 300` removed. Only `MAX_SESSION_DURATION` (30 min) safety net remains.
+
 ## Decision
 
 ### 1. Correct time budgets to match reality
@@ -48,6 +74,8 @@ Given SearXNG search delays + LLM inference, realistic minimum times:
 | deep | 660 | 5 | 8-12 min | "Deep (~10 min)" |
 
 ### 2. Enforce hard time cap
+
+> **Note (2026-06-18):** The hard time cap approach was superseded. Budgets are now estimates only. See "Superseded Decision" section above.
 
 Change `_should_continue()` to use the actual budget directly:
 
@@ -131,6 +159,7 @@ Existing tests use hardcoded budget values that will need updating:
 - Users who want thorough research must pick medium or deep
 - Existing session data may have mismatched budget labels
 - Existing tests require updating to match new budget values and hard-cap behavior
+- Budget is displayed as "~3 min" / "~6 min" / "~10 min" but sessions may take longer
 
 ## Deliverables
 
