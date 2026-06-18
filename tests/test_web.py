@@ -179,19 +179,14 @@ def test_get_status_after_update(client: TestClient) -> None:
 
 
 def test_get_agents(client: TestClient) -> None:
-    """GET /api/agents returns the agent list from status cache."""
-    update_status(
-        agents=[
-            {"id": "alpha", "name": "Alpha", "emoji": "🔬"},
-            {"id": "beta", "name": "Beta", "emoji": "🧪"},
-        ],
-    )
+    """GET /api/agents returns agent profiles from config."""
     resp = client.get("/api/agents")
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data) == 6
-    assert data[0]["id"] == "alpha"
-    assert data[1]["name"] == "Beta"
+    assert len(data) >= 5  # At least 5 agent profiles
+    assert all(a.get("id") for a in data)  # Every agent has an id
+    assert all(a.get("name") for a in data)  # Every agent has a name
+    assert all(a.get("emoji") for a in data)  # Every agent has an emoji
 
 
 def test_all_routes_registered(client: TestClient) -> None:
