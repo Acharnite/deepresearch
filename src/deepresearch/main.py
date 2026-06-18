@@ -194,6 +194,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     models_sub.add_parser("list", help="List available LLM models")
 
+    # --- service subcommand ---
+    service_parser = subparsers.add_parser("service", help="Manage system service (install/start/stop)")
+    service_sub = service_parser.add_subparsers(dest="service_command", help="Service commands")
+
+    service_sub.add_parser("install", help="Install deepresearch as a system service")
+    service_sub.add_parser("start", help="Start the service")
+    service_sub.add_parser("stop", help="Stop the service")
+    service_sub.add_parser("restart", help="Restart the service")
+    service_sub.add_parser("status", help="Show service status")
+    service_sub.add_parser("logs", help="Show service logs (follow)")
+    service_sub.add_parser("uninstall", help="Remove the service")
+
     return parser
 
 
@@ -489,6 +501,31 @@ def cmd_serve(args: argparse.Namespace) -> int:
         return 0
 
 
+def cmd_service(args: argparse.Namespace) -> int:
+    """Handle service management commands."""
+    from deepresearch.service_manager import (
+        cmd_install, cmd_uninstall, cmd_status,
+        cmd_start, cmd_stop, cmd_restart, cmd_logs,
+    )
+
+    dispatch = {
+        "install": cmd_install,
+        "uninstall": cmd_uninstall,
+        "start": cmd_start,
+        "stop": cmd_stop,
+        "restart": cmd_restart,
+        "status": cmd_status,
+        "logs": cmd_logs,
+    }
+
+    handler = dispatch.get(args.service_command)
+    if handler:
+        return handler()
+    else:
+        print("Unknown service command. Use: install|start|stop|restart|status|logs|uninstall")
+        return 1
+
+
 def main() -> int:
     """Main entry point."""
     parser = build_parser()
@@ -510,6 +547,8 @@ def main() -> int:
         else:
             parser.parse_args(["models", "--help"])
             return 1
+    elif args.command == "service":
+        return cmd_service(args)
     else:
         parser.print_help()
         return 1
