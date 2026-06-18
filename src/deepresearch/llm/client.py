@@ -816,7 +816,22 @@ class LLMClient:
                 )
                 # Fallback: non-streaming
                 kwargs["stream"] = False
-                response = await acompletion(**kwargs)
+                try:
+                    response = await acompletion(**kwargs)
+                except Exception as e2:
+                    logger.warning(
+                        "Non-streaming tool call also failed (model=%s): %s. "
+                        "Retrying without tools.",
+                        self.model, e2,
+                    )
+                    # Remove tools and fall back to plain generate_stream
+                    return await self.generate_stream(
+                        system_prompt=system_prompt,
+                        user_prompt=user_prompt,
+                        temperature=temperature,
+                        max_tokens=effective_max_tokens,
+                        cancel_event=_cancel,
+                    )
 
                 text_content = response.choices[0].message.content or ""
                 _round_text = text_content
@@ -839,6 +854,27 @@ class LLMClient:
 
                 # Track usage from non-streaming response
                 self._track_usage(response)
+
+            # Handle models that output tool calls as text content
+            # (e.g. local models without native function calling support)
+            if not tool_calls and _round_text:
+                import re
+                tool_json_match = re.search(
+                    r'\{\s*"name"\s*:\s*"(\w+)"\s*,\s*"arguments"\s*:\s*(\{.*?\})\s*\}',
+                    _round_text.strip(),
+                    re.DOTALL,
+                )
+                if tool_json_match:
+                    tc_name = tool_json_match.group(1)
+                    tc_args = tool_json_match.group(2)
+                    # Only match known tools
+                    if tc_name in ("web_search",):
+                        logger.debug(
+                            "Detected text-embedded tool call '%s' for model without native function calling",
+                            tc_name,
+                        )
+                        tool_calls.append(("content_detected", tc_name, tc_args))
+                        _round_text = ""  # Not the final response — execute tool
 
             if not tool_calls:
                 # No tool calls — this is the final response, keep the text
