@@ -82,6 +82,18 @@ for _noisy in (
 ):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
+# ── Persistent download state (survives page refresh) ──────────────────
+_download_state: dict[str, Any] = {
+    "active": False,
+    "model": "",
+    "progress": 0,
+    "message": "",
+    "status": "idle",  # idle | downloading | complete | error
+    "log": [],  # last 50 log lines
+}
+_download_process: asyncio.subprocess.Process | None = None
+_download_task: asyncio.Task | None = None
+
 # ── Load .env keys into os.environ at startup ──────────────────────────
 # This ensures LLMClient (which reads from os.environ) can find API keys
 # that were persisted to .env via dashboard settings across server restarts.
@@ -2212,12 +2224,33 @@ async def pull_ollama_model(req: PullModelRequest, request: Request) -> EventSou
     return EventSourceResponse(generate())
 
 
+@app.get("/api/local-backends/models/download/progress")
+async def get_download_progress() -> JSONResponse:
+    """Return current download state (survives page refresh)."""
+    return JSONResponse(_download_state)
+
+
 @app.post("/api/local-backends/models/download")
 async def download_model(req: DownloadModelRequest, request: Request) -> EventSourceResponse:
     """Smart model download via Ollama pull or llmfit download with SSE log streaming."""
     import shutil
 
     async def generate() -> AsyncGenerator[str, None]:
+        # ── Persistent download state ──
+        _download_state["active"] = True
+        _download_state["model"] = req.name
+        _download_state["status"] = "downloading"
+        _download_state["progress"] = 0
+        _download_state["message"] = "Starting download..."
+        _download_state["log"] = []
+
+        def _update_state(progress: float, message: str) -> None:
+            _download_state["progress"] = progress
+            _download_state["message"] = message
+            _download_state["log"].append(message)
+            if len(_download_state["log"]) > 50:
+                _download_state["log"] = _download_state["log"][-50:]
+
         try:
             # Decide download method
             use_ollama = False
@@ -2255,6 +2288,8 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                             "progress": 5,
                         })}
                     else:
+                        _download_state["status"] = "error"
+                        _download_state["message"] = "Ollama is not running."
                         yield {"event": "install_error", "data": json.dumps({
                             "status": "error",
                             "message": "Ollama is not running. Start it first or install llmfit for GGUF downloads.",
@@ -2263,6 +2298,7 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                         return
 
                 if use_ollama:
+                    _update_state(5, f"Pulling model {req.name}. This may take a while...")
                     yield {"event": "install_log", "data": json.dumps({
                         "step": "pull",
                         "message": f"Pulling model {req.name}. This may take a while...",
@@ -2274,6 +2310,7 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.STDOUT,
                     )
+                    _download_process = process
 
                     assert process.stdout is not None
                     line_count = 0
@@ -2283,35 +2320,41 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                             continue
                         line_count += 1
                         progress = min(10 + line_count * 2, 95)
+                        _update_state(progress, line_str)
                         yield {"event": "install_log", "data": json.dumps({
                             "step": "pull",
                             "message": line_str,
                             "progress": progress,
                         })}
 
-                        if await request.is_disconnected():
-                            process.terminate()
-                            return
-
                     await process.wait()
 
                     if process.returncode == 0:
+                        _download_state["status"] = "complete"
+                        _download_state["message"] = f"Pull completed: {req.name}"
+                        _download_state["progress"] = 100
                         yield {"event": "install_complete", "data": json.dumps({
                             "status": "success",
                             "model": req.name,
                         })}
                     else:
+                        _download_state["status"] = "error"
+                        _download_state["message"] = f"Pull failed with exit code {process.returncode}"
                         yield {"event": "install_error", "data": json.dumps({
                             "status": "error",
                             "message": f"Pull failed with exit code {process.returncode}",
                             "code": "PULL_FAILED",
                         })}
+                    _download_state["active"] = False
+                    _download_process = None
                     return
 
             # ── llmfit path ──────────────────────────────────────────────
             if use_llmfit:
                 # Pre-check: llmfit installed
                 if not shutil.which("llmfit"):
+                    _download_state["status"] = "error"
+                    _download_state["message"] = "llmfit is not installed."
                     yield {"event": "install_error", "data": json.dumps({
                         "status": "error",
                         "message": "llmfit is not installed. Install it first to download GGUF models.",
@@ -2324,6 +2367,7 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                 output_dir = os.path.expanduser("~/.cache/llmfit/models/")
                 os.makedirs(output_dir, exist_ok=True)
 
+                _update_state(5, f"Starting download of {model_display} from {repo}...")
                 yield {"event": "install_log", "data": json.dumps({
                     "step": "download",
                     "message": f"Starting download of {model_display} from {repo}...",
@@ -2338,6 +2382,7 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT,
                 )
+                _download_process = process
 
                 assert process.stdout is not None
                 import re as _re
@@ -2357,6 +2402,7 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                         last_pct = min(pct_val, 99)
                         # Strip leading percentage for cleaner message
                         msg = _re.sub(r'^\s*\d+\.?\d*\s*%\s*-\s*', '', clean)
+                        _update_state(last_pct, msg)
                         yield {"event": "install_log", "data": json.dumps({
                             "step": "download",
                             "message": msg,
@@ -2365,24 +2411,27 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                     else:
                         # Non-percentage line: show incremental pre-progress
                         pre_pct = min(pre_pct + 1, 3)
+                        _update_state(pre_pct, msg)
                         yield {"event": "install_log", "data": json.dumps({
                             "step": "download",
                             "message": msg,
                             "progress": pre_pct,
                         })}
-                    if await request.is_disconnected():
-                        process.terminate()
-                        return
 
                 await process.wait()
 
                 if process.returncode == 0:
+                    _download_state["status"] = "complete"
+                    _download_state["message"] = f"Download completed: {model_display}"
+                    _download_state["progress"] = 100
                     yield {"event": "install_complete", "data": json.dumps({
                         "status": "success",
                         "message": f"Download completed: {model_display}",
                         "model": req.name,
                     })}
                 else:
+                    _download_state["status"] = "error"
+                    _download_state["message"] = f"llmfit download failed with exit code {process.returncode}"
                     yield {"event": "install_error", "data": json.dumps({
                         "status": "error",
                         "message": f"llmfit download failed with exit code {process.returncode}",
@@ -2390,11 +2439,16 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                     })}
 
         except Exception as e:
+            _download_state["status"] = "error"
+            _download_state["message"] = str(e)
             yield {"event": "install_error", "data": json.dumps({
                 "status": "error",
                 "message": str(e),
                 "code": "UNEXPECTED_ERROR",
             })}
+        finally:
+            _download_state["active"] = False
+            _download_process = None
 
     return EventSourceResponse(generate())
 

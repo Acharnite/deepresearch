@@ -1115,6 +1115,85 @@ window.saveBackendAddressAction = async function(name) {
   }
 };
 
+// ── Persistent download progress polling (survives page refresh) ──
+let progressPollInterval = null;
+
+async function checkDownloadProgress() {
+  try {
+    const resp = await fetch('/api/local-backends/models/download/progress');
+    if (!resp.ok) return;
+    const state = await resp.json();
+    if (state.active && state.status === 'downloading') {
+      showDownloadLog(state.model, state);
+    }
+  } catch (e) {
+    // Silent
+  }
+}
+
+function showDownloadLog(modelName, state) {
+  const logContainer = document.getElementById('ollamaInstallLog');
+  const logOutput = document.getElementById('ollamaInstallOutput');
+  if (!logContainer || !logOutput) return;
+
+  logContainer.classList.remove('hidden');
+  logOutput.innerHTML = '';
+
+  // Add progress bar
+  const progressContainer = document.createElement('div');
+  progressContainer.className = 'download-progress';
+  progressContainer.innerHTML = '<div class="progress-bar-bg"><div class="progress-bar-fill" id="dlProgressFill" style="width:' + state.progress + '%"></div></div><span class="progress-label" id="dlProgressLabel">' + Math.round(state.progress) + '%</span>';
+  logOutput.appendChild(progressContainer);
+
+  // Add stored log lines
+  for (const msg of (state.log || [])) {
+    const logLine = document.createElement('div');
+    logLine.className = 'log-line';
+    logLine.innerHTML = '<span class="log-icon">\u2B07</span> <span class="log-msg">' + esc(msg) + '</span>';
+    logOutput.appendChild(logLine);
+  }
+  logContainer.scrollTop = logContainer.scrollHeight;
+
+  // Start polling for updates
+  startProgressPolling();
+}
+
+function startProgressPolling() {
+  if (progressPollInterval) clearInterval(progressPollInterval);
+  progressPollInterval = setInterval(async () => {
+    try {
+      const resp = await fetch('/api/local-backends/models/download/progress');
+      if (!resp.ok) { stopProgressPolling(); return; }
+      const state = await resp.json();
+
+      // Update progress bar
+      const fill = document.getElementById('dlProgressFill');
+      const label = document.getElementById('dlProgressLabel');
+      if (fill) fill.style.width = state.progress + '%';
+      if (label) label.textContent = Math.round(state.progress) + '%';
+
+      // Update status
+      if (state.status === 'complete') {
+        showToast('Download complete: ' + (state.model || ''), 'success');
+        stopProgressPolling();
+        loadDiscoveredModels();
+      } else if (state.status === 'error') {
+        showToast('Download failed: ' + (state.message || ''), 'error');
+        stopProgressPolling();
+      }
+    } catch (e) {
+      stopProgressPolling();
+    }
+  }, 2000);
+}
+
+function stopProgressPolling() {
+  if (progressPollInterval) {
+    clearInterval(progressPollInterval);
+    progressPollInterval = null;
+  }
+}
+
 // ── Exports for index.js ────────────────────────────
 export function loadSettingsView() {
   loadProviderList();
@@ -1127,4 +1206,5 @@ export function loadSettingsView() {
   loadContextWindows();
   checkOllamaStatus();
   loadLocalBackends();
+  checkDownloadProgress();
 }
