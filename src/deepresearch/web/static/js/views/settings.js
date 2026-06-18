@@ -1073,6 +1073,8 @@ window.testLocalBackendAction = async function(name) {
     showToast(name + ': Network error', 'error');
   }
   if (btn) { btn.disabled = false; btn.textContent = 'Test Connection'; }
+  // Refresh backend list to update status dots after test
+  loadLocalBackends();
 };
 
 // ── Save Backend Address action ────────────────────
