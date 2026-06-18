@@ -12,8 +12,12 @@ phase:
 
 Proposed
 
-**Version:** 2.0
-**Last Updated:** 2026-06-16
+**Version:** 2.1
+**Last Updated:** 2026-06-18
+
+> **⚠️ Valgfrit:** Local LLM installation er **ikke påkrævet** for at bruge DeepeResearch.
+> Systemet fungerer fuldt ud med cloud-baserede modeller (OpenAI, Anthropic, OpenRouter).
+> Local LLM er kun nødvendigt hvis du vil køre modeller lokalt uden API-omkostninger.
 
 ## Context
 
@@ -42,14 +46,14 @@ DeepeResearch currently supports cloud-based LLM providers (OpenAI, Anthropic, O
 6. Safety — auto-install should not overwrite existing installations
 
 ### Existing Solutions
-- **llmfit** (28.1k stars, Rust, MIT) — hardware detection, model scoring, recommendations, download management
-- **llmserve** (281 stars, Rust, MIT) — backend detection, model serving, TUI for managing servers
+- **fitllm** (28.1k stars, Rust, MIT) — hardware detection, model scoring, recommendations, download management
+- **llm-serve** (281 stars, Rust, MIT) — backend detection, model serving, TUI for managing servers
 
 Both are well-maintained, cross-platform Rust binaries that solve hardware detection and backend management better than custom code.
 
 ## Decision
 
-### Approach: Integrate llmfit + llmserve
+### Approach: Integrate fitllm + llm-serve
 
 Replace custom auto-install logic with integration of existing open-source tools. This reduces ~470 lines of custom code to integration with mature, community-maintained binaries.
 
@@ -57,42 +61,42 @@ Replace custom auto-install logic with integration of existing open-source tools
 
 | Phase | Scope | Timeline |
 |-------|-------|----------|
-| Phase 1 | llmfit/llmserve detection + install UI + custom addresses | Week 1 |
+| Phase 1 | fitllm/llm-serve detection + install UI + custom addresses | Week 1 |
 | Phase 2 | Hardware-aware model recommendations | Week 2 |
-| Phase 3 | Backend management via llmserve | Week 3 |
+| Phase 3 | Backend management via llm-serve | Week 3 |
 | Phase 4 | Model selection integration + polish | Week 4 |
 
 Each phase is independently testable and deployable.
 
 ### Tool Integration
 
-#### llmfit — Hardware Detection & Model Recommendations
+#### fitllm — Hardware Detection & Model Recommendations
 
 ```bash
 # Detect hardware
-llmfit system --json
+fitllm system --json
 # Returns: GPU type, VRAM, CPU cores, RAM, platform
 
 # Get model recommendations
-llmfit recommend --json --use-case coding
+fitllm recommend --json --use-case coding
 # Returns: model list with hardware fit scores
 
 # Download a model
-llmfit download <model-name>
+fitllm download <model-name>
 # Manages download with progress
 ```
 
-#### llmserve — Backend Management
+#### llm-serve — Backend Management
 
 ```bash
 # List running backends
-llmserve list --json
+llm-serve list --json
 
 # Start a backend
-llmserve start --model <model-name> --backend ollama
+llm-serve start --model <model-name> --backend ollama
 
 # Stop a backend
-llmserve stop <server-id>
+llm-serve stop <server-id>
 ```
 
 ### Web UI Integration
@@ -103,14 +107,14 @@ llmserve stop <server-id>
 ┌──────────────────────────────────────────────────────┐
 │ Local LLM                                            │
 │                                                      │
-│ Hardware Summary (from llmfit)                       │
+│ Hardware Summary (from fitllm)                       │
 │ ┌──────────────────────────────────────────────────┐ │
 │ │ GPU: NVIDIA RTX 3080 (10GB VRAM)                 │ │
 │ │ CPU: 12 cores, 64GB RAM                         │ │
 │ │ Platform: Linux x86_64                          │ │
 │ └──────────────────────────────────────────────────┘ │
 │                                                      │
-│ Recommended Models (from llmfit recommend)           │
+│ Recommended Models (from fitllm recommend)           │
 │ ┌──────────────────────────────────────────────────┐ │
 │ │ Model                │ Fit  │ Size  │ Backend    │ │
 │ │ codellama-7b         │ 95%  │ 4.1GB │ ollama     │ │
@@ -119,7 +123,7 @@ llmserve stop <server-id>
 │ │ [Show more...]                                      │ │
 │ └──────────────────────────────────────────────────┘ │
 │                                                      │
-│ Running Backends (from llmserve / port probing)      │
+│ Running Backends (from llm-serve / port probing)      │
 │ ┌──────────────────────────────────────────────────┐ │
 │ │ 🟢 Ollama — localhost:11434 — 3 models loaded    │ │
 │ │ 🟡 llama.cpp — localhost:8080 — idle             │ │
@@ -128,32 +132,59 @@ llmserve stop <server-id>
 │                                                      │
 │ Tool Status                                          │
 │ ┌──────────────────────────────────────────────────┐ │
-│ │ llmfit: ✅ Installed (v0.3.2)                   │ │
-│ │ llmserve: ❌ Not installed [Install Instructions]│ │
+│ │ fitllm: ✅ Installed (v0.3.2)                   │ │
+│ │ llm-serve: ❌ Not installed [Install Instructions]│ │
 │ └──────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────┘
 ```
 
-#### Install Instructions Modal
+### Web UI Installation (live log tail)
 
-If llmfit/llmserve are not detected, show platform-specific instructions:
+Når en bruger klikker "Install" i Settings → Local LLM, sker følgende:
 
+1. **POST /api/local-backends/{name}/install** startes
+2. Serveren streamer live log output via SSE (Server-Sent Events)
+3. Frontend viser en terminal-lignende log viewer:
+   ```
+   ┌──────────────────────────────────────────────────────┐
+   │ Installing fitllm...                                 │
+   │                                                      │
+   │ $ curl -fsSL https://fitllm.dev/install.sh | bash    │
+   │ ✓ Detected platform: linux-x86_64                    │
+   │ ✓ Downloading fitllm v0.4.1...                       │
+   │ ████████████████████░░░░░░░░░░ 65%                   │
+   │ ✓ Extracting binary...                               │
+   │ ✓ Installing to /usr/local/bin/fitllm                │
+   │                                                      │
+   │ ✅ Installation complete! (v0.4.1)                   │
+   │ [Continue] [View Details]                            │
+   └──────────────────────────────────────────────────────┘
+   ```
+4. Hvert trin vises med ikon: ⏳ (venter), ✅ (succes), ❌ (fejl)
+5. **Hvis fejl:** Vis fejlbesked med "Retry" knap og mulighed for at kopiere loggen
+6. Efter installation: Vis hardware-dashboard + "Test" knap
+
+#### SSE Event Format
+```javascript
+// Server → Frontend via SSE
+event: install_log
+data: {"step": "download", "message": "Downloading fitllm v0.4.1...", "progress": 65}
+
+event: install_log
+data: {"step": "extract", "message": "Extracting binary...", "progress": 80}
+
+event: install_complete
+data: {"status": "success", "version": "0.4.1", "path": "/usr/local/bin/fitllm"}
+
+event: install_error
+data: {"status": "error", "message": "Disk space insufficient: need 500MB, have 200MB", "code": "ENOSPC"}
 ```
-┌──────────────────────────────────────────────────────┐
-│ Install Local LLM Tools                              │
-│                                                      │
-│ macOS:                                               │
-│   brew install llmfit llmserve                       │
-│                                                      │
-│ Linux:                                               │
-│   curl -fsSL https://llmfit.dev/install.sh | sh      │
-│   curl -fsSL https://llmserve.dev/install.sh | sh    │
-│                                                      │
-│ Python (pip):                                        │
-│   pip install llmfit llmserve                        │
-│                                                      │
-│ [Copy to Clipboard] [I've installed these tools]     │
-└──────────────────────────────────────────────────────┘
+
+#### Frontend State Machine
+```
+IDLE → INSTALLING → [SUCCESS | ERROR] → IDLE
+  ↑                       ↓
+  └───── RETRY ───────────┘
 ```
 
 ### Custom Address Configuration
@@ -174,7 +205,7 @@ class LocalBackendConfig(BaseModel):
 
 Address resolution order:
 1. User-configured `address` (from Settings tab or config file)
-2. Auto-discovered address (from llmserve or port probing)
+2. Auto-discovered address (from llm-serve or port probing)
 3. Default address (`localhost:<default-port>`)
 
 #### Remote Backend Support
@@ -193,7 +224,7 @@ Address resolution order:
 On startup and on-demand, the server detects backends in this order:
 
 1. **Custom addresses** — Check each backend's saved custom address first
-2. **llmserve** — Query `llmserve list --json` for managed backends
+2. **llm-serve** — Query `llm-serve list --json` for managed backends
 3. **Default ports** — Probe `localhost:<default-port>` for each backend
 
 | Backend | Default Port | Probe Endpoint | Response |
@@ -207,13 +238,13 @@ If a custom address is configured, it takes priority. The probe is a lightweight
 
 ### Hardware-Aware Model Recommendations
 
-The server calls llmfit to get hardware info and model suggestions:
+The server calls fitllm to get hardware info and model suggestions:
 
 ```python
 async def get_hardware_info() -> HardwareInfo:
-    """Get hardware info from llmfit."""
+    """Get hardware info from fitllm."""
     result = await asyncio.create_subprocess_exec(
-        "llmfit", "system", "--json",
+        "fitllm", "system", "--json",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -221,9 +252,9 @@ async def get_hardware_info() -> HardwareInfo:
     return json.loads(stdout)
 
 async def get_model_recommendations(use_case: str = "coding") -> list[ModelRecommendation]:
-    """Get model recommendations from llmfit."""
+    """Get model recommendations from fitllm."""
     result = await asyncio.create_subprocess_exec(
-        "llmfit", "recommend", "--json", "--use-case", use_case,
+        "fitllm", "recommend", "--json", "--use-case", use_case,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -244,20 +275,20 @@ GET    /api/local-backends/{name}/logs      — Stream installation/runtime logs
 PUT    /api/local-backends/{name}/address   — Update custom address
 POST   /api/local-backends/{name}/test      — Test connectivity to address
 DELETE /api/local-backends/{name}           — Uninstall a backend
-GET    /api/hardware                        — Hardware info (from llmfit)
-GET    /api/recommendations                 — Model recommendations (from llmfit)
-GET    /api/tools/status                    — llmfit/llmserve installation status
+GET    /api/hardware                        — Hardware info (from fitllm)
+GET    /api/recommendations                 — Model recommendations (from fitllm)
+GET    /api/tools/status                    — fitllm/llm-serve installation status
 ```
 
 ## Consequences
 
 ### Security Considerations
 
-1. **Tool installation**: llmfit and llmserve are installed via standard package managers (brew, pip, curl script). Users are shown instructions and must install manually — no silent background installation.
+1. **Tool installation**: fitllm and llm-serve are installed via standard package managers (brew, pip, curl script). Users are shown instructions and must install manually — no silent background installation.
 
-2. **HTTPS-only downloads**: llmfit's model downloads use HTTPS with checksum verification. We do not implement custom download logic.
+2. **HTTPS-only downloads**: fitllm's model downloads use HTTPS with checksum verification. We do not implement custom download logic.
 
-3. **No arbitrary code execution**: Only pre-approved tools (llmfit, llmserve) are invoked. Users cannot provide custom scripts or binaries.
+3. **No arbitrary code execution**: Only pre-approved tools (fitllm, llm-serve) are invoked. Users cannot provide custom scripts or binaries.
 
 4. **Input sanitization**: Custom addresses are validated (host:port format, port range 1-65535, no URL schemes). Prevents command injection.
 
@@ -267,7 +298,7 @@ GET    /api/tools/status                    — llmfit/llmserve installation sta
 
 ### Positive
 - Dramatically less custom code (~300 lines vs ~470) — leverage community-maintained tools
-- Hardware detection is battle-tested (llmfit has 28.1k stars)
+- Hardware detection is battle-tested (fitllm has 28.1k stars)
 - Model recommendations based on real hardware benchmarks
 - Custom address support retained for remote/Docker deployments
 - Clear install instructions — users choose their installation method
@@ -275,13 +306,13 @@ GET    /api/tools/status                    — llmfit/llmserve installation sta
 - Hardware fit scores help users pick the right model
 
 ### Negative
-- Users must install llmfit/llmserve separately (extra step vs fully automatic)
-- Two external tool dependencies (llmfit, llmserve) must be maintained
-- If llmfit/llmserve change their CLI interface, integration must be updated
+- Users must install fitllm/llm-serve separately (extra step vs fully automatic)
+- Two external tool dependencies (fitllm, llm-serve) must be maintained
+- If fitllm/llm-serve change their CLI interface, integration must be updated
 - Port probing fallback is still custom code
 
 ### Risks
-- llmfit/llmserve may not be available on all platforms (Rust binaries)
+- fitllm/llm-serve may not be available on all platforms (Rust binaries)
 - CLI interface changes in upstream tools could break integration
 - Port conflicts if user already has something running on default ports
 - Remote backends may have higher latency affecting research speed
@@ -347,13 +378,14 @@ curl "http://localhost:8888/search?q=test&format=json" | python -m json.tool
 SearXNG runs on port 8888 by default and is auto-discovered by the same port-probing protocol used for LLM backends.
 
 ## Related Issues
-- #36 (llmfit/llmserve Integration): ADR-0005 v2.0 replaces 5 custom auto-installers with llmfit (hardware detection) + llmserve (model serving). SearXNG install instructions also included.
+- #36 (fitllm/llm-serve Integration): ADR-0005 v2.1 replaces custom auto-installers with fitllm (hardware detection) + llm-serve (model serving). Includes web UI installation with live log tail (SSE) and frontend state machine.
 - #37 (Deployment — systemd/launchd/NSSM): Natural companion — users who install local LLMs also want persistent service deployment.
 - #50 (Server Crash — no graceful shutdown): Resolved by #37 deployment as a systemd/launchd service with auto-restart.
+- #94 (Epic: ADR-0017 — Deployment & Resiliency, v0.13.0): Parent epic that includes #36 as Phase 4.
 
 ## References
 - ADR-0001: Multi-Agent Research Architecture (backend integration point)
 - ADR-0003: Web Frontend and Multi-Session (Settings tab extension)
 - ADR-0004: Test Findings (DuckDuckGo timeout → local model alternative)
-- llmfit: https://github.com/llmfit/llmfit
-- llmserve: https://github.com/llmserve/llmserve
+- fitllm: https://github.com/fitllm/fitllm
+- llm-serve: https://github.com/llm-serve/llm-serve
