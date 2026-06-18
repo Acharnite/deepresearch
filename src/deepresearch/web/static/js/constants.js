@@ -43,5 +43,6 @@ export const STATE_COLORS = {
 export const stateLabels = {
   waiting: '⏳ Waiting', researching: '🔬 Researching', searching: '🔍 Web Search',
   writing: '✍️ Writing', questioning: '❓ Questioning', answering: '💬 Answering',
-  refining: '🔄 Refining', retrying: '🔁 Retrying', done: '✅ Done', failed: '❌ Failed'
+  refining: '🔄 Refining', retrying: '🔁 Retrying', done: '✅ Done', failed: '❌ Failed',
+  interrupted: '⚠️ Interrupted'
 };

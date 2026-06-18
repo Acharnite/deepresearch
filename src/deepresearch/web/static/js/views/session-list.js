@@ -62,7 +62,7 @@ export async function refreshSessionList() {
   if (_sortBy === 'oldest') {
     filtered.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
   } else if (_sortBy === 'status') {
-    const order = { running: 0, queued: 1, error: 2, cancelled: 3, complete: 4 };
+    const order = { running: 0, queued: 1, error: 2, interrupted: 3, cancelled: 4, complete: 5 };
     filtered.sort((a, b) => (order[a.status] ?? 5) - (order[b.status] ?? 5));
   } else {
     // newest (default) — already sorted from API
@@ -131,6 +131,7 @@ function renderToolbar(totalCount) {
       renderFilterChip('complete', 'Complete', statusCounts.complete) +
       renderFilterChip('error', 'Error', statusCounts.error) +
       renderFilterChip('cancelled', 'Cancelled', statusCounts.cancelled) +
+      renderFilterChip('interrupted', 'Interrupted', statusCounts.interrupted) +
     '</div>' +
     renderBulkBar() +
   '</div>';
@@ -169,13 +170,13 @@ function renderSessionRow(s) {
     actionsHtml += '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteSession(\'' + s.session_id + '\')">🗑 Delete</button>';
   } else if (s.status === 'running') {
     actionsHtml = '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();cancelSessionId(\'' + s.session_id + '\')">✕ Cancel</button>';
-  } else if (s.status === 'error' || s.status === 'cancelled') {
+  } else if (s.status === 'error' || s.status === 'cancelled' || s.status === 'interrupted') {
     actionsHtml = '<button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();showDetail(\'' + s.session_id + '\')">👁 View</button>' +
       '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteSession(\'' + s.session_id + '\')">🗑 Delete</button>';
   }
 
   // Bulk checkbox only for deletable sessions
-  const canBulk = s.status === 'complete' || s.status === 'error' || s.status === 'cancelled';
+  const canBulk = s.status === 'complete' || s.status === 'error' || s.status === 'cancelled' || s.status === 'interrupted';
   const checkboxHtml = canBulk
     ? '<input type="checkbox" class="bulk-checkbox" data-sid="' + s.session_id + '">'
     : '';
@@ -387,7 +388,7 @@ window.cancelSessionId = async function(sessionId) {
 };
 
 window.clearAllSessions = async function() {
-  if (!confirm('Remove all completed/error/cancelled sessions?')) return;
+  if (!confirm('Remove all completed/error/cancelled/interrupted sessions?')) return;
   try {
     const resp = await clearAllSessionsAPI();
     if (resp.ok) {

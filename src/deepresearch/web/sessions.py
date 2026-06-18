@@ -625,6 +625,42 @@ class MultiSessionManager:
             self._remove_session(sid, delete_files=False)  # Keep files!
         return len(to_remove)
 
+    async def save_all_sessions(self) -> None:
+        """Save ALL sessions to persistent DB before shutdown.
+        
+        Running/interrupted sessions get their current state preserved.
+        Completed sessions are re-saved with latest data.
+        """
+        from datetime import datetime
+        for session_id, info in list(self._sessions.items()):
+            try:
+                if info.status == "running":
+                    info.status = "interrupted"
+                    task = self._tasks.get(session_id)
+                    if task and not task.done():
+                        task.cancel()
+                    logger.info("Marked session %s as interrupted", session_id)
+                
+                entry = {
+                    "session_id": info.session_id,
+                    "topic": info.topic,
+                    "status": info.status or "unknown",
+                    "model": info.model,
+                    "max_rounds": info.max_rounds,
+                    "time_budget_seconds": info.time_budget_seconds,
+                    "source": info.source,
+                    "output_file": getattr(info, "output_file", None),
+                    "created_at": str(info.created_at),
+                    "updated_at": str(datetime.now()),
+                    "event_history": (info.event_history or [])[-100:],
+                    "agent_states": getattr(info, "agent_states", {}),
+                }
+                await _atomic_update_session_db(
+                    lambda db: db.__setitem__(session_id, entry)
+                )
+            except Exception as e:
+                logger.error("Failed to save session %s: %s", session_id, e)
+
 
 # Module-level singleton used by the web server endpoints.
 multi_session_manager = MultiSessionManager()

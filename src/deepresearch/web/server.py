@@ -15,6 +15,7 @@ import time
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, AsyncGenerator
+from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request
@@ -98,7 +99,21 @@ if _settings_env_path.exists():
         logger.info("Loaded %d API key(s) from .env into environment", _loaded)
 
 VERSION = f"v{_deepresearch_version}"
-app = FastAPI(title="DeepeResearch Dashboard")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Lifespan handler — saves session state on shutdown."""
+    yield
+    # Shutdown: save all sessions to persistent DB
+    logger.warning("Server shutting down — saving session state...")
+    try:
+        from deepresearch.web.sessions import multi_session_manager
+        await multi_session_manager.save_all_sessions()
+        logger.warning("Session state saved successfully")
+    except Exception as e:
+        logger.error("Failed to save sessions during shutdown: %s", e)
+
+app = FastAPI(title="DeepeResearch Dashboard", lifespan=_lifespan)
 
 # ── Serve static files (CSS, JS modules) ────────────────────────────────
 HERE = Path(__file__).resolve().parent
