@@ -675,9 +675,7 @@ class TestResearchAgent:
     # ── clarify (tools path) ────────────────────────────────────────────
 
     @pytest.mark.asyncio
-    async def test_clarify_with_tools(
-        self, profile, mock_llm_client
-    ):
+    async def test_clarify_with_tools(self, profile, mock_llm_client):
         """clarify with tools returns ClarificationResponse with web search."""
         mock_llm_client.generate_with_tools = _make_mock_generate_with_tools(
             {
@@ -866,9 +864,7 @@ class TestScribeAgent:
     # ── Compile with sources ────────────────────────────────────────────
 
     @pytest.mark.asyncio
-    async def test_compile_report_with_sources(
-        self, reports, mock_llm_client
-    ):
+    async def test_compile_report_with_sources(self, reports, mock_llm_client):
         """compile includes sources in paper references."""
         mock_llm_client.generate_stream = _make_mock_generate(
             {
@@ -895,9 +891,7 @@ class TestScribeAgent:
         ]
         source_map = {"https://example.com/1": 1, "https://example.com/2": 2}
         agent = ScribeAgent(llm_client=mock_llm_client)
-        paper = await agent.compile(
-            reports, sources=sources, source_map=source_map
-        )
+        paper = await agent.compile(reports, sources=sources, source_map=source_map)
 
         assert len(paper.references) == 2
         assert paper.references[0].url == "https://example.com/1"
@@ -909,14 +903,10 @@ class TestScribeAgent:
         assert "example.com/1" in user_prompt
 
     @pytest.mark.asyncio
-    async def test_compile_report_deduplicates_sources(
-        self, reports, mock_llm_client
-    ):
+    async def test_compile_report_deduplicates_sources(self, reports, mock_llm_client):
         """compile deduplicates sources by URL in fallback path."""
         # Make LLM fail so _fallback_paper handles dedup
-        mock_llm_client.generate_stream = AsyncMock(
-            side_effect=LLMError("LLM down")
-        )
+        mock_llm_client.generate_stream = AsyncMock(side_effect=LLMError("LLM down"))
         # Create reports where two agents share a source URL
         shared_src = SourceReference(
             url="https://example.com/shared",
@@ -986,9 +976,7 @@ class TestScribeAgent:
         assert paper.title == "Research Paper"
 
     @pytest.mark.asyncio
-    async def test_scribe_clarify_fallback(
-        self, mock_llm_client
-    ):
+    async def test_scribe_clarify_fallback(self, mock_llm_client):
         """ScribeAgent.clarify returns fallback response on LLM failure."""
         mock_llm_client.generate_stream = AsyncMock(
             side_effect=LLMError("LLM unavailable")

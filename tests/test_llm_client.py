@@ -59,6 +59,7 @@ def _mock_streaming_chunks(*texts: str):
     Each string in ``texts`` is returned as one chunk's
     ``choices[0].delta.content`` content.
     """
+
     async def _gen():
         for text in texts:
             delta = MagicMock()
@@ -70,6 +71,7 @@ def _mock_streaming_chunks(*texts: str):
             chunk = MagicMock()
             chunk.choices = [choice]
             yield chunk
+
     return _gen()
 
 
@@ -113,7 +115,9 @@ class TestToolCallingFallback:
     async def test_empty_tools_falls_back_to_generate_stream(self) -> None:
         """``tools=None`` → ``generate_stream`` is called directly."""
         client = LLMClient(model="test-model", timeout=5)
-        with patch.object(client, "generate_stream", new_callable=AsyncMock) as mock_stream:
+        with patch.object(
+            client, "generate_stream", new_callable=AsyncMock
+        ) as mock_stream:
             mock_stream.return_value = "stream result"
             result = await client.generate_with_tools(
                 system_prompt="test",
@@ -194,12 +198,8 @@ class TestTextEmbeddedToolCallDetection:
         """Response content with web_search JSON → detected and executed."""
         client = LLMClient(model="test-model", timeout=5)
 
-        tool_call_json = (
-            '{"name": "web_search", "arguments": {"query": "test query", "max_results": 3}}'
-        )
-        round1 = _mock_nonstreaming_response(
-            content=tool_call_json, tool_calls=None
-        )
+        tool_call_json = '{"name": "web_search", "arguments": {"query": "test query", "max_results": 3}}'
+        round1 = _mock_nonstreaming_response(content=tool_call_json, tool_calls=None)
         round2 = _mock_nonstreaming_response(
             content="Final answer after search.", tool_calls=None
         )
@@ -307,7 +307,9 @@ class TestCircuitBreaker:
         breaker._failures = 3
         breaker._opened_at = time.monotonic()
 
-        with pytest.raises(CircuitBreakerOpenError, match=f"Circuit breaker open for {model}"):
+        with pytest.raises(
+            CircuitBreakerOpenError, match=f"Circuit breaker open for {model}"
+        ):
             await client.generate_stream(
                 system_prompt="test",
                 user_prompt="test",

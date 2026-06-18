@@ -212,9 +212,7 @@ def test_download_model_returns_sse(client: TestClient) -> None:
     )
     # Should be an SSE response (EventSourceResponse)
     assert resp.status_code == 200
-    assert resp.headers.get("content-type", "").startswith(
-        "text/event-stream"
-    )
+    assert resp.headers.get("content-type", "").startswith("text/event-stream")
 
 
 def test_download_model_auto_mode_returns_sse(client: TestClient) -> None:
@@ -224,9 +222,7 @@ def test_download_model_auto_mode_returns_sse(client: TestClient) -> None:
         json={"name": "test-model", "download_type": "auto"},
     )
     assert resp.status_code == 200
-    assert resp.headers.get("content-type", "").startswith(
-        "text/event-stream"
-    )
+    assert resp.headers.get("content-type", "").startswith("text/event-stream")
 
 
 # ─── GET /api/local-backends/models/download/progress ──────────────────
