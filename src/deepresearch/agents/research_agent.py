@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 from deepresearch.agents.base_agent import BaseAgent
 from deepresearch.llm.client import LLMClient, LLMError
+from deepresearch.schemas import ROUND_1_SCHEMA, ROUND_2_SCHEMA, REVIEW_SCHEMA, REPORT_SCHEMA
 from prompts import PromptTemplate  # type: ignore[import-untyped]
 from deepresearch.models import (
     AgentProfile,
@@ -84,6 +85,7 @@ class ResearchAgent(BaseAgent):
                 tools=[WEB_SEARCH_TOOL],
                 temperature=self.profile.temperature,
                 max_tokens=getattr(self.llm, 'max_tokens', None) or 4096,
+                response_schema=ROUND_1_SCHEMA,
             )
         except LLMError:
             logger.warning(
@@ -199,6 +201,7 @@ class ResearchAgent(BaseAgent):
                 tools=[WEB_SEARCH_TOOL],
                 temperature=self.profile.temperature,
                 max_tokens=getattr(self.llm, 'max_tokens', None) or 4096,
+                response_schema=ROUND_1_SCHEMA,
             )
         except LLMError:
             logger.warning(
@@ -291,6 +294,7 @@ class ResearchAgent(BaseAgent):
                 tools=[WEB_SEARCH_TOOL],
                 temperature=self.profile.temperature,
                 max_tokens=getattr(self.llm, 'max_tokens', None) or 4096,
+                response_schema=ROUND_2_SCHEMA,
             )
         except LLMError:
             logger.warning(
