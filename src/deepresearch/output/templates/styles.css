@@ -207,7 +207,7 @@ a::after {
 
 /* ── Sections ───────────────────────────────────────────────────── */
 .section {
-  page-break-before: always;
+  page-break-before: auto;
 }
 
 .section:first-of-type {
@@ -216,7 +216,7 @@ a::after {
 
 /* ── Agent Section Styling ──────────────────────────────────────── */
 .agent-section {
-  page-break-before: always;
+  page-break-before: auto;
   border-left: 4px solid #ddd;
   padding-left: 1em;
   margin-left: 0;
