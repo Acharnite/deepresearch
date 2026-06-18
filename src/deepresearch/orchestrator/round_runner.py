@@ -224,28 +224,11 @@ class RoundRunner:
                     )
                     retry_tasks[agent_id] = agents.get(agent_id)
 
-                # ── Budget check after each agent ────────────────────────────
+                # ── Safety timeout check after each agent ────────────────────
+                # Only enforce MAX_SESSION_DURATION as safety net — budget is an estimate
                 if start_time is not None:
-                    b = MAX_SESSION_DURATION
-                    if self._config:
-                        if hasattr(self._config, 'budget'):
-                            b = self._config.budget.seconds
-                        else:
-                            b = self._config.time_budget_seconds
-                    if time.monotonic() - start_time > min(MAX_SESSION_DURATION, b):
-                        logger.warning(
-                            "Time budget exceeded during round %d — cancelling remaining agents",
-                            round_num,
-                        )
-                        if self._event_bus:
-                            await self._event_bus.publish(
-                                {"event_type": "budget_exceeded_during_round", "round": round_num}
-                            )
-                        if self._orch._cancel_event:
-                            self._orch._cancel_event.set()
-                        for t in tasks.values():
-                            if not t.done():
-                                t.cancel()
+                    if time.monotonic() - start_time > MAX_SESSION_DURATION:
+                        logger.warning("Safety timeout reached in round %d — stopping", round_num)
                         break
 
             # ── Retry failed agents once ────────────────────────────────
@@ -257,6 +240,7 @@ class RoundRunner:
                         # Agent fn available but task failed catastrophically — still mark
                         await self.handle_agent_failure(agent_id, "retry_unavailable")
                     continue
+
 
                 logger.info("Retrying agent '%s' (attempt 2/2)", agent_id)
                 if self._event_bus:
@@ -460,28 +444,11 @@ class RoundRunner:
                     )
                     retry_tasks[agent_id] = agents.get(agent_id)
 
-                # ── Budget check after each agent ────────────────────────────
+                # ── Safety timeout check after each agent ────────────────────
+                # Only enforce MAX_SESSION_DURATION as safety net — budget is an estimate
                 if start_time is not None:
-                    b = MAX_SESSION_DURATION
-                    if self._config:
-                        if hasattr(self._config, 'budget'):
-                            b = self._config.budget.seconds
-                        else:
-                            b = self._config.time_budget_seconds
-                    if time.monotonic() - start_time > min(MAX_SESSION_DURATION, b):
-                        logger.warning(
-                            "Time budget exceeded during round %d — cancelling remaining agents",
-                            round_num,
-                        )
-                        if self._event_bus:
-                            await self._event_bus.publish(
-                                {"event_type": "budget_exceeded_during_round", "round": round_num}
-                            )
-                        if self._orch._cancel_event:
-                            self._orch._cancel_event.set()
-                        for t in tasks.values():
-                            if not t.done():
-                                t.cancel()
+                    if time.monotonic() - start_time > MAX_SESSION_DURATION:
+                        logger.warning("Safety timeout reached in round %d — stopping", round_num)
                         break
 
             # ── Retry failed agents once ────────────────────────────────
@@ -702,22 +669,11 @@ class RoundRunner:
         tasks = [_refine_agent(aid, fu) for aid, fu in followup_results.items()]
         results = await asyncio.gather(*tasks)
 
-        # ── Budget check after refinement ────────────────────────────────
+        # ── Safety timeout check after refinement ──────────────────────────
+        # Only enforce MAX_SESSION_DURATION as safety net — budget is an estimate
         if start_time is not None:
-            b = MAX_SESSION_DURATION
-            if self._config:
-                if hasattr(self._config, 'budget'):
-                    b = self._config.budget.seconds
-                else:
-                    b = self._config.time_budget_seconds
-            if time.monotonic() - start_time > min(MAX_SESSION_DURATION, b):
-                logger.warning("Time budget exceeded during refinement phase")
-                if self._event_bus:
-                    await self._event_bus.publish(
-                        {"event_type": "budget_exceeded_during_round", "round": 0, "phase": "refinement"}
-                    )
-                if self._orch._cancel_event:
-                    self._orch._cancel_event.set()
+            if time.monotonic() - start_time > MAX_SESSION_DURATION:
+                logger.warning("Safety timeout reached after refinement phase — stopping")
 
         for result in results:
             if result:

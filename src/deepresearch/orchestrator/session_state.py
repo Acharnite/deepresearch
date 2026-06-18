@@ -66,9 +66,13 @@ class SessionState:
             logger.info("Cancel event set — stopping rounds")
             return False
 
-        # 2. Emergency timeout (30 min absolute max — safety net only)
-        if time.monotonic() - start_time > MAX_SESSION_DURATION:
-            logger.warning("Emergency timeout (30 min) reached — stopping")
+        # 2. Safety timeout (30 min absolute max — catches infinite loops)
+        elapsed = time.monotonic() - start_time
+        if elapsed > MAX_SESSION_DURATION:
+            logger.warning(
+                "Safety timeout (30 min) reached after %ds — session took much longer than estimated",
+                int(elapsed),
+            )
             return False
 
         # 3. Max rounds — hard safety cap

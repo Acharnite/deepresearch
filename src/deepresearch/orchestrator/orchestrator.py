@@ -284,11 +284,12 @@ class Orchestrator:
                     logger.info("Cancel event set — aborting round loop")
                     break
 
-                if time.monotonic() - start_time > min(MAX_SESSION_DURATION, budget_secs):
-                    logger.info("Time budget exceeded — stopping")
-                    if self._cancel_event:
-                        self._cancel_event.set()
-                    break
+                elapsed_so_far = time.monotonic() - start_time
+                if elapsed_so_far > budget_secs:
+                    logger.info(
+                        "Session elapsed (%ds) exceeds budget estimate (%ds) — continuing to completion",
+                        int(elapsed_so_far), budget_secs,
+                    )
 
                 self.state = f"ROUND{round_num}"
                 console.print(
