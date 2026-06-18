@@ -104,14 +104,19 @@ class BaseAgent(ABC):
         sections: list[PaperSection] = []
         for item in raw:
             subs = [
-                PaperSection(**s)
+                PaperSection(
+                    heading=s.get("heading", ""),
+                    source_agent_id=str(s.get("source_agent_id", "")) if s.get("source_agent_id") is not None else None,
+                    content=s.get("content", ""),
+                    subsections=[],
+                )
                 for s in item.get("subsections", [])
                 if isinstance(s, dict)
             ]
             sections.append(
                 PaperSection(
                     heading=item.get("heading", ""),
-                    source_agent_id=item.get("source_agent_id"),
+                    source_agent_id=str(item.get("source_agent_id", "")) if item.get("source_agent_id") is not None else None,
                     content=item.get("content", ""),
                     subsections=subs,
                 )
