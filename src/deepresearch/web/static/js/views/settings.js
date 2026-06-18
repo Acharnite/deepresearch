@@ -304,9 +304,13 @@ async function loadModelRecommendations() {
         downloadBtn = '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:2px 6px;" onclick="window.downloadModel(\'' + modelName + '\', null)">\u2B07 Try Pull</button>';
       }
 
+      const warningIcon = m._warning
+        ? '<span style="margin-left:4px;cursor:help;color:#ff9800;" title="' + esc(m._warning) + '">\u26A0\uFE0F</span>'
+        : '';
+
       html += '<tr style="border-bottom:1px solid var(--border);">' +
         '<td style="padding:6px;">' + scoreBadge + '</td>' +
-        '<td style="padding:6px;font-weight:500;">' + esc(m.name || '?') + '</td>' +
+        '<td style="padding:6px;font-weight:500;">' + esc(m.name || '?') + warningIcon + '</td>' +
         '<td style="padding:6px;color:var(--text-secondary);">' + esc(m.category || '—') + '</td>' +
         '<td style="padding:6px;">' + fitBadge + '</td>' +
         '<td style="padding:6px;text-align:right;font-variant-numeric:tabular-nums;">' + speed + '</td>' +
@@ -996,7 +1000,9 @@ async function loadLocalBackends() {
       const addrData = addressResults[i] || { address: null };
       const customAddress = addrData.address || '';
 
-      const status = b.status || 'not_available'; // running | installed | not_available
+      const isRunning = b.running === true;
+      const isInstalled = b.installed === true;
+      const status = isRunning ? 'running' : isInstalled ? 'installed' : 'not_available';
       const statusDotClass = status === 'running' ? 'running' : status === 'installed' ? 'installed' : 'not-available';
 
       let statusText = '';

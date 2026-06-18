@@ -1396,7 +1396,8 @@ async def get_hardware_info() -> JSONResponse:
 
 @app.get("/api/tools/recommendations")
 async def get_model_recommendations() -> JSONResponse:
-    """Return model recommendations via llmfit recommend --json (if installed)."""
+    """Return model recommendations via llmfit recommend --json (if installed).
+    Filters models based on available hardware (RAM/VRAM)."""
     import shutil
     import subprocess
     if not shutil.which("llmfit"):
@@ -1410,10 +1411,51 @@ async def get_model_recommendations() -> JSONResponse:
             data = json.loads(result.stdout)
             models = data.get("models", [])
             models.sort(key=lambda m: m.get("score", 0), reverse=True)
+
+            # Get hardware info for filtering
+            hw_info = {}
+            try:
+                hw_result = subprocess.run(
+                    ["llmfit", "system", "--json"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if hw_result.returncode == 0:
+                    hw_data = json.loads(hw_result.stdout)
+                    sys_info = hw_data.get("system", {})
+                    hw_info = {
+                        "total_ram_gb": sys_info.get("total_ram_gb", 0) or 0,
+                        "gpu_vram_gb": sys_info.get("gpu_vram_gb", 0) or 0,
+                    }
+            except Exception:
+                pass
+
+            # Max usable memory for a model (leave headroom for OS)
+            if hw_info:
+                usable_memory_gb = max(
+                    hw_info.get("gpu_vram_gb", 0),
+                    hw_info.get("total_ram_gb", 0) * 0.7,
+                )
+                if usable_memory_gb <= 0:
+                    usable_memory_gb = float('inf')
+            else:
+                usable_memory_gb = float('inf')
+
+            # Filter and annotate models
+            filtered_models = []
+            for m in models[:20]:
+                required_ram = m.get("required_ram_gb") or m.get("min_ram_gb") or 0
+                if hw_info and required_ram > usable_memory_gb:
+                    m["_warning"] = (
+                        f"Requires {required_ram}GB RAM, "
+                        f"only {usable_memory_gb:.0f}GB available"
+                    )
+                filtered_models.append(m)
+
             return JSONResponse({
                 "available": True,
-                "models": models[:10],
+                "models": filtered_models[:10],
                 "system": data.get("system", {}),
+                "hardware": hw_info if hw_info else None,
             })
         return JSONResponse({"available": False, "error": result.stderr.strip()})
     except FileNotFoundError:
@@ -2286,8 +2328,8 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                     "progress": 5,
                 })}
 
-                # Build command: llmfit download <repo> --json --output-dir <dir>
-                cmd = ["llmfit", "download", repo, "--json", "--output-dir", output_dir]
+                # Build command: llmfit download <repo> --output-dir <dir>  (NO --json!)
+                cmd = ["llmfit", "download", repo, "--output-dir", output_dir]
 
                 process = await asyncio.create_subprocess_exec(
                     *cmd,
@@ -2296,76 +2338,37 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                 )
 
                 assert process.stdout is not None
-                json_found = False
-                log_lines = []
+                llmfit_lines = 0
                 async for line in process.stdout:
                     line_str = line.decode("utf-8", errors="replace").rstrip()
                     if not line_str:
                         continue
-
-                    # Try to parse JSON output from llmfit
-                    if line_str.startswith("{"):
-                        try:
-                            parsed = json.loads(line_str)
-                            json_found = True
-                            if parsed.get("status") == "completed" or parsed.get("file"):
-                                yield {"event": "install_complete", "data": json.dumps({
-                                    "status": "success",
-                                    "file": parsed.get("file", ""),
-                                    "path": parsed.get("file", ""),
-                                    "size": parsed.get("size", 0),
-                                    "model": req.name,
-                                })}
-                                return
-                            elif parsed.get("status") == "error":
-                                yield {"event": "install_error", "data": json.dumps({
-                                    "status": "error",
-                                    "message": parsed.get("message", "Download failed"),
-                                    "code": "DOWNLOAD_FAILED",
-                                })}
-                                return
-                            else:
-                                # Progress line
-                                pct = parsed.get("progress", 0)
-                                yield {"event": "install_log", "data": json.dumps({
-                                    "step": "download",
-                                    "message": parsed.get("message", line_str),
-                                    "progress": pct,
-                                })}
-                        except json.JSONDecodeError:
-                            yield {"event": "install_log", "data": json.dumps({
-                                "step": "download",
-                                "message": line_str,
-                                "progress": 50,
-                            })}
-                    else:
-                        log_lines.append(line_str)
-                        pct = min(10 + len(log_lines), 90)
-                        yield {"event": "install_log", "data": json.dumps({
-                            "step": "download",
-                            "message": line_str,
-                            "progress": pct,
-                        })}
-
+                    llmfit_lines += 1
+                    # Simple heuristic progress based on lines count
+                    pct = min(10 + llmfit_lines * 2, 90)
+                    yield {"event": "install_log", "data": json.dumps({
+                        "step": "download",
+                        "message": line_str,
+                        "progress": pct,
+                    })}
                     if await request.is_disconnected():
                         process.terminate()
                         return
 
                 await process.wait()
 
-                if not json_found:
-                    if process.returncode == 0:
-                        yield {"event": "install_complete", "data": json.dumps({
-                            "status": "success",
-                            "message": f"Download completed: {model_display}",
-                            "model": req.name,
-                        })}
-                    else:
-                        yield {"event": "install_error", "data": json.dumps({
-                            "status": "error",
-                            "message": f"llmfit download failed with exit code {process.returncode}",
-                            "code": "DOWNLOAD_FAILED",
-                        })}
+                if process.returncode == 0:
+                    yield {"event": "install_complete", "data": json.dumps({
+                        "status": "success",
+                        "message": f"Download completed: {model_display}",
+                        "model": req.name,
+                    })}
+                else:
+                    yield {"event": "install_error", "data": json.dumps({
+                        "status": "error",
+                        "message": f"llmfit download failed with exit code {process.returncode}",
+                        "code": "DOWNLOAD_FAILED",
+                    })}
 
         except Exception as e:
             yield {"event": "install_error", "data": json.dumps({
