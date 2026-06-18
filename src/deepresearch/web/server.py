@@ -2342,6 +2342,7 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                 assert process.stdout is not None
                 import re as _re
                 last_pct = 0.0
+                pre_pct = 0
                 async for line in process.stdout:
                     line_str = line.decode("utf-8", errors="replace").strip()
                     # Strip ANSI escape codes (ESC[K) and carriage returns
@@ -2352,14 +2353,23 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                     pct_match = _re.match(r'\s*(\d+\.?\d*)\s*%', clean)
                     msg = clean
                     if pct_match:
-                        last_pct = min(float(pct_match.group(1)), 99)
+                        pct_val = float(pct_match.group(1))
+                        last_pct = min(pct_val, 99)
                         # Strip leading percentage for cleaner message
                         msg = _re.sub(r'^\s*\d+\.?\d*\s*%\s*-\s*', '', clean)
-                    yield {"event": "install_log", "data": json.dumps({
-                        "step": "download",
-                        "message": msg,
-                        "progress": last_pct,
-                    })}
+                        yield {"event": "install_log", "data": json.dumps({
+                            "step": "download",
+                            "message": msg,
+                            "progress": last_pct,
+                        })}
+                    else:
+                        # Non-percentage line: show incremental pre-progress
+                        pre_pct = min(pre_pct + 1, 3)
+                        yield {"event": "install_log", "data": json.dumps({
+                            "step": "download",
+                            "message": msg,
+                            "progress": pre_pct,
+                        })}
                     if await request.is_disconnected():
                         process.terminate()
                         return
