@@ -426,3 +426,27 @@ a::after {
   font-size: 9pt;
   color: #666;
 }
+
+/* ── References ──────────────────────────────────────────────────── */
+.references-section {
+  page-break-before: always;
+  margin-top: 2em;
+}
+
+.references-list {
+  font-size: 10pt;
+  line-height: 1.4;
+  padding-left: 2em;
+}
+
+.references-list li {
+  margin-bottom: 0.5em;
+}
+
+.ref-title {
+  font-style: italic;
+}
+
+.references-list a {
+  word-break: break-all;
+}

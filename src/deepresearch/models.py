@@ -6,6 +6,16 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class SourceReference(BaseModel):
+    """A web source used during research."""
+
+    url: str
+    title: str = ""
+    snippet: str = ""
+    accessed_at: str = ""
+    engine: str = ""  # "google", "arxiv", etc.
+
+
 class ResearchTopic(BaseModel):
     """The research topic and configuration provided by the user."""
 
@@ -38,6 +48,7 @@ class Findings(BaseModel):
     perspective: str
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     raw_response: str | None = None
+    sources: list[SourceReference] = []
 
 
 class SharedKnowledge(BaseModel):
@@ -87,6 +98,7 @@ class IndividualReport(BaseModel):
     open_questions: list[str] = []
     full_text: str
     sections: list[PaperSection] = []
+    sources: list[SourceReference] = []
 
 
 class ClarificationQuery(BaseModel):
@@ -115,6 +127,7 @@ class ResearchPaper(BaseModel):
     key_takeaways: list[str]
     conclusion: str
     appendices: list[PaperSection] = []
+    references: list[SourceReference] = []
     generated_at: datetime = Field(default_factory=datetime.now)
 
 

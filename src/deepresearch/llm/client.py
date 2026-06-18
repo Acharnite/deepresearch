@@ -303,6 +303,7 @@ class LLMClient:
         self.total_cost: float = 0.0
         self.call_count: int = 0
         self.cancel_event: asyncio.Event | None = None
+        self.last_tool_results: list[dict[str, Any]] = []
 
     # ── Provider routing helpers ───────────────────────────────────────
 
@@ -663,6 +664,7 @@ class LLMClient:
         messages = self._build_messages(system_prompt, user_prompt)
         full_text = ""
         max_tool_rounds = 5  # Prevent infinite loops
+        collected_tool_results: list[dict[str, Any]] = []
 
         for tool_round in range(max_tool_rounds):
             # Check cancellation before each tool round.
@@ -804,6 +806,9 @@ class LLMClient:
                     results = await _web_search(query, max_res)
                     result_text = json.dumps(results, ensure_ascii=False)
 
+                    # Collect search results for source attribution
+                    collected_tool_results.extend(results)
+
                     # Stream search activity to the output panel
                     if self.event_callback and results:
                         search_summary = f'\n[🔍 Web Search] Query: "{query}"\n'
@@ -837,6 +842,7 @@ class LLMClient:
                 {"type": "stream", "text": "\n\n[Final response complete]"}
             )
 
+        self.last_tool_results = collected_tool_results
         return full_text
 
     def _track_usage(self, response: Any) -> None:

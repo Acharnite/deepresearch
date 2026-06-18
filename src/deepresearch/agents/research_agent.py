@@ -8,6 +8,7 @@ for every lifecycle phase.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from deepresearch.agents.base_agent import BaseAgent
 from deepresearch.llm.client import LLMClient, LLMError
@@ -21,6 +22,7 @@ from deepresearch.models import (
     IndividualReport,
     ResearchTopic,
     SharedKnowledge,
+    SourceReference,
 )
 from deepresearch.utils.prompts import (
     build_agent_system_prompt,
@@ -125,6 +127,7 @@ class ResearchAgent(BaseAgent):
             perspective=data.get("perspective", ""),
             confidence=float(data.get("confidence", 0.5)),
             raw_response=response or "",
+            sources=self._extract_sources(),
         )
 
     async def review_findings(
@@ -237,6 +240,9 @@ class ResearchAgent(BaseAgent):
                 )
             ),
             raw_response=response,
+            sources=self._extract_sources(
+                getattr(current_findings, "sources", []) if current_findings else []
+            ),
         )
 
     async def research_round_2(
@@ -318,6 +324,7 @@ class ResearchAgent(BaseAgent):
             perspective=data.get("perspective", prev_findings.perspective),
             confidence=float(data.get("confidence", prev_findings.confidence)),
             raw_response=response,
+            sources=self._extract_sources(prev_findings.sources),
         )
 
     async def write_report(
@@ -346,6 +353,16 @@ class ResearchAgent(BaseAgent):
         response = await self._generate_with_retry(user_prompt)
         data = self._try_parse_json(response, "write_report")
         sections = self._parse_sections(data.get("sections", []))
+
+        # Collect sources from both rounds
+        all_sources = list(round_1.sources) if round_1 and round_1.sources else []
+        if round_2 and round_2.sources:
+            seen_urls = {s.url for s in all_sources}
+            for src in round_2.sources:
+                if src.url not in seen_urls:
+                    seen_urls.add(src.url)
+                    all_sources.append(src)
+
         return IndividualReport(
             agent_id=self.profile.id,
             title=data.get("title", "Research Report"),
@@ -356,6 +373,7 @@ class ResearchAgent(BaseAgent):
             open_questions=data.get("open_questions", []),
             full_text=data.get("full_text", ""),
             sections=sections,
+            sources=all_sources,
         )
 
     async def clarify(self, query: ClarificationQuery) -> ClarificationResponse:
@@ -396,6 +414,35 @@ class ResearchAgent(BaseAgent):
                 await self.llm.event_callback({"type": "agent_state", "state": state})
             except Exception:
                 pass  # Fire-and-forget — don't disrupt the agent.
+
+    def _extract_sources(
+        self, existing: list[SourceReference] | None = None,
+    ) -> list[SourceReference]:
+        """Extract SourceReference objects from the last tool call results.
+
+        Merges with any ``existing`` sources (deduplicating by URL).
+        """
+        existing = existing or []
+        seen_urls: set[str] = {s.url for s in existing}
+        now = datetime.now(timezone.utc).isoformat()
+        sources = list(existing)
+
+        if not self.llm or not hasattr(self.llm, "last_tool_results"):
+            return sources
+
+        for result in self.llm.last_tool_results:
+            url = result.get("url", "")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                sources.append(
+                    SourceReference(
+                        url=url,
+                        title=result.get("title", ""),
+                        snippet=result.get("snippet", ""),
+                        accessed_at=now,
+                    )
+                )
+        return sources
 
     async def _generate_with_retry(self, user_prompt: str) -> str:
         """Call the LLM, retrying **once** on failure with a stricter instruction."""

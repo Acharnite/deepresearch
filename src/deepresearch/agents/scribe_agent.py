@@ -29,6 +29,7 @@ from deepresearch.models import (
     ResearchPaper,
     ResearchTopic,
     SharedKnowledge,
+    SourceReference,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,8 @@ class ScribeAgent(BaseAgent):
         | None = None,  # noqa: E501
         status_callback: Callable[[str], Coroutine[Any, Any, None]] | None = None,
         language: str = "English",
+        sources: list[SourceReference] | None = None,
+        source_map: dict[str, int] | None = None,
     ) -> ResearchPaper:
         """Synthesise all agent reports into a final research paper.
 
@@ -138,6 +141,21 @@ class ScribeAgent(BaseAgent):
             "Each agent section must be titled with the agent's real name. "
             "Highlight areas of agreement and disagreement."
         )
+
+        # Add source context and citation instructions.
+        if sources:
+            source_list = "\n".join(
+                f"  [{source_map.get(s.url, i + 1)}] \"{s.title}\" — {s.url}"
+                for i, s in enumerate(sources)
+            )
+            user_prompt += (
+                f"\n\n## Available Sources ({len(sources)})\n"
+                f"The agents used the following web sources during research:\n"
+                f"{source_list}\n\n"
+                "When citing external sources in the paper, use numbered citations "
+                "matching the brackets above: [1], [2], etc. "
+                "Place citations inline after the relevant claim.\n"
+            )
         user_prompt += self._prompts.get("scribe", "compile_format")
 
         try:
@@ -173,6 +191,7 @@ class ScribeAgent(BaseAgent):
             key_takeaways=data.get("key_takeaways", []),
             conclusion=data.get("conclusion", ""),
             appendices=self._parse_sections(data.get("appendices", [])),
+            references=sources or [],
         )
 
         # ── Retry if compilation returned empty ─────────────────────
@@ -194,6 +213,7 @@ class ScribeAgent(BaseAgent):
                     key_takeaways=data.get("key_takeaways", []),
                     conclusion=data.get("conclusion", ""),
                     appendices=self._parse_sections(data.get("appendices", [])),
+                    references=sources or [],
                 )
             except Exception as e:
                 logger.error(
@@ -608,6 +628,7 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
             appendices=self._parse_sections(
                 data.get("appendices", [s.model_dump() for s in paper.appendices])
             ),
+            references=paper.references,
         )
 
     async def _recompile_all_clarifications(
@@ -688,6 +709,7 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
             appendices=self._parse_sections(
                 data.get("appendices", [s.model_dump() for s in paper.appendices])
             ),
+            references=paper.references,
         )
 
     # ------------------------------------------------------------------
@@ -782,6 +804,15 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
     @staticmethod
     def _fallback_paper(reports: dict[str, IndividualReport]) -> ResearchPaper:
         """Return a minimal paper when the LLM call fails entirely."""
+        # Collect sources from reports for fallback too
+        all_sources: list[SourceReference] = []
+        seen_urls: set[str] = set()
+        for report in reports.values():
+            for src in report.sources:
+                if src.url not in seen_urls:
+                    seen_urls.add(src.url)
+                    all_sources.append(src)
+
         return ResearchPaper(
             title="Research Paper",
             abstract=f"Synthesis of {len(reports)} agent perspectives "
@@ -792,4 +823,5 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
             "partial results are available in individual reports.",
             key_takeaways=[f"Analysis from {len(reports)} research agents."],
             conclusion="Compilation incomplete due to scribe error.",
+            references=all_sources,
         )

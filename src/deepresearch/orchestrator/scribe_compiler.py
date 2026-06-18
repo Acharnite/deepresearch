@@ -20,6 +20,7 @@ from deepresearch.models import (
     IndividualReport,
     ResearchPaper,
     SessionConfig,
+    SourceReference,
 )
 from deepresearch.observability.tracing import tracer
 
@@ -136,10 +137,22 @@ class ScribeCompiler:
             scribe: The scribe agent callable or ScribeAgent instance.
             topic: The original research topic string (optional).
         """
+        # Collect and deduplicate sources from all reports.
+        all_sources: list[SourceReference] = []
+        seen_urls: set[str] = set()
+        for report in reports.values():
+            for src in report.sources:
+                if src.url not in seen_urls:
+                    seen_urls.add(src.url)
+                    all_sources.append(src)
+        # Number them: first cited = [1]
+        source_map = {src.url: i + 1 for i, src in enumerate(all_sources)}
+
         with tracer.start_as_current_span(
             "scribe.compile",
             attributes={
                 "report.count": len(reports),
+                "source.count": len(all_sources),
             },
         ) as _:
             # Determine output language from session config.
@@ -170,6 +183,8 @@ class ScribeCompiler:
                             clarification_fn=self._orch.round_runner._handle_clarification,
                             status_callback=_scribe_status,
                             language=output_language,
+                            sources=all_sources,
+                            source_map=source_map,
                         )
                     else:
                         # Generic object with .compile method.
@@ -195,6 +210,7 @@ class ScribeCompiler:
                     synthesis="",
                     key_takeaways=[],
                     conclusion="",
+                    references=all_sources,
                 )
 
     # ------------------------------------------------------------------

@@ -180,6 +180,7 @@ class PDFGenerator:
             budget_summary=budget_summary,
             font_family=font_family,
             css_content=css_content,
+            references=paper.references or [],
         )
 
     def generate_pdf(

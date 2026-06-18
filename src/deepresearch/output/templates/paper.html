@@ -82,6 +82,9 @@
       {% if paper.conclusion %}
       <li><a href="#conclusion">Conclusion</a></li>
       {% endif %}
+      {% if references %}
+      <li><a href="#references">References</a></li>
+      {% endif %}
       {% if paper.appendices %}
       <li><a href="#appendices">Appendices</a></li>
       {% endif %}
@@ -137,6 +140,22 @@
   <div class="section conclusion-section" id="conclusion">
     <h2>Conclusion</h2>
     <div class="content">{{ paper.conclusion }}</div>
+  </div>
+  {% endif %}
+
+  <!-- ── References ────────────────────────────────────────────── -->
+  {% if references %}
+  <div class="section references-section" id="references">
+    <h2>References</h2>
+    <ol class="references-list">
+      {% for ref in references %}
+      <li id="ref-{{ loop.index }}">
+        <span class="ref-title">"{{ ref.title }}"</span> —
+        <a href="{{ ref.url }}" rel="nofollow noreferrer">{{ ref.url }}</a>
+        {% if ref.engine %}({% if ref.engine %}{{ ref.engine }}{% endif %}{% if ref.accessed_at %}, {{ ref.accessed_at }}{% endif %}){% elif ref.accessed_at %}({{ ref.accessed_at }}){% endif %}
+      </li>
+      {% endfor %}
+    </ol>
   </div>
   {% endif %}
 
