@@ -674,14 +674,18 @@ window.downloadModel = async function(modelName, repoName) {
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
+      let currentEvent = 'message';
       for (const lineText of lines) {
+        // Track SSE event type from 'event:' headers
+        if (lineText.startsWith('event: ')) {
+          currentEvent = lineText.slice(7).trim();
+          continue;
+        }
         if (lineText.startsWith('data: ')) {
           try {
-            const parsed = JSON.parse(lineText.slice(6));
-            const eventName = parsed.event || 'message';
-            const payload = parsed.data ? JSON.parse(parsed.data) : parsed;
+            const payload = JSON.parse(lineText.slice(6));
 
-            if (eventName === 'install_log') {
+            if (currentEvent === 'install_log') {
               const logLine = document.createElement('div');
               logLine.className = 'log-line';
               const pct = payload.progress || 0;
@@ -689,7 +693,7 @@ window.downloadModel = async function(modelName, repoName) {
               logLine.innerHTML = '<span class="log-icon">' + icon + '</span> <span class="log-msg">' + esc(payload.message || '') + '</span>';
               logOutput.appendChild(logLine);
               logContainer.scrollTop = logContainer.scrollHeight;
-            } else if (eventName === 'install_complete') {
+            } else if (currentEvent === 'install_complete') {
               const completeLine = document.createElement('div');
               completeLine.className = 'log-line log-success';
               const filePath = payload.file || payload.path || '';
@@ -701,7 +705,7 @@ window.downloadModel = async function(modelName, repoName) {
               logContainer.scrollTop = logContainer.scrollHeight;
               // Refresh discovered models
               loadDiscoveredModels();
-            } else if (eventName === 'install_error') {
+            } else if (currentEvent === 'install_error') {
               const errLine = document.createElement('div');
               errLine.className = 'log-line log-error';
               errLine.innerHTML = '<span class="log-icon">\u274C</span> <strong>Error:</strong> ' + esc(payload.message || 'Download failed');
@@ -711,6 +715,7 @@ window.downloadModel = async function(modelName, repoName) {
               logContainer.scrollTop = logContainer.scrollHeight;
             }
           } catch (e) {}
+          currentEvent = 'message'; // Reset after consuming data line
         }
       }
     }
