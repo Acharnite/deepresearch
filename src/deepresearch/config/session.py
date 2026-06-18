@@ -11,7 +11,7 @@ import hashlib
 import random
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Mapping, Sequence
+from typing import Literal, Mapping, Sequence
 
 import asyncio
 
@@ -25,6 +25,7 @@ class TimeBudget:
     Created from a keyword string ("quick", "medium", "deep", "custom")
     or from a raw number of minutes.
     """
+
     keyword: Literal["quick", "medium", "deep", "custom"]
     seconds: int
     max_rounds: int
@@ -32,9 +33,9 @@ class TimeBudget:
     @classmethod
     def from_keyword(cls, kw: str) -> "TimeBudget":
         table = {
-            "quick":  ("quick",  240, 2),
+            "quick": ("quick", 240, 2),
             "medium": ("medium", 420, 3),
-            "deep":   ("deep",   660, 5),
+            "deep": ("deep", 660, 5),
             "custom": ("custom", 600, 4),
         }
         kw = kw.lower()
@@ -57,6 +58,7 @@ class ModelAssignment:
     - ``random``: randomly (deterministic) assign from available models
     - ``manual``: use ``per_agent`` dict for explicit assignment
     """
+
     mode: Literal["same", "random", "manual"]
     selected_model: str | None = None
     per_agent: Mapping[str, str] = field(default_factory=dict)
@@ -69,17 +71,20 @@ class ModelAssignment:
         if self.mode == "manual":
             return dict(self.per_agent)
         # random — deterministic via stable seed (fixes #63's use of Python hash())
-        seed = int(hashlib.sha256(
-            f"{self.selected_model or ''}".encode()
-        ).hexdigest()[:8], 16)
+        seed = int(
+            hashlib.sha256(f"{self.selected_model or ''}".encode()).hexdigest()[:8], 16
+        )
         rng = random.Random(seed)
-        models = list(self.per_agent.values()) if self.per_agent else [self.selected_model]
+        models = (
+            list(self.per_agent.values()) if self.per_agent else [self.selected_model]
+        )
         return {aid: rng.choice(models) for aid in agent_ids}
 
 
 @dataclass(frozen=True)
 class OutputConfig:
     """Output options for a research session."""
+
     output_dir: Path = Path("output")
     output_language: str = "en"
     generate_pdf: bool = True
@@ -96,6 +101,7 @@ class SessionConfig:
 
     Once created, the instance is immutable (frozen=True).
     """
+
     topic: ResearchTopic
     budget: TimeBudget
     models: ModelAssignment
@@ -109,7 +115,7 @@ class SessionConfig:
         topic = ResearchTopic(
             question=data.get("topic", data.get("question", "")),
             time_budget="quick",  # unused — kept for model compat
-            model_mode="same",    # unused — kept for model compat
+            model_mode="same",  # unused — kept for model compat
         )
         budget = TimeBudget.from_keyword(data.get("time_budget", "medium"))
         if data.get("time_budget_seconds"):

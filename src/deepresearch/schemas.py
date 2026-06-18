@@ -8,34 +8,55 @@ ROUND_1_SCHEMA = {
     "type": "object",
     "properties": {
         "summary": {"type": "string", "description": "Concise summary of findings"},
-        "key_points": {"type": "array", "items": {"type": "string"}, "description": "Key insights"},
+        "key_points": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Key insights",
+        },
         "perspective": {"type": "string", "description": "Unique perspective on topic"},
-        "confidence": {"type": "number", "minimum": 0, "maximum": 1, "description": "Confidence level"}
+        "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Confidence level",
+        },
     },
     "required": ["summary", "key_points", "perspective", "confidence"],
-    "additionalProperties": False
+    "additionalProperties": False,
 }
 
 ROUND_2_SCHEMA = {
     "type": "object",
     "properties": {
         "summary": {"type": "string", "description": "Refined summary"},
-        "key_points": {"type": "array", "items": {"type": "string"}, "description": "Refined points"},
+        "key_points": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Refined points",
+        },
         "perspective": {"type": "string", "description": "Evolved perspective"},
-        "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
     },
     "required": ["summary", "key_points", "perspective", "confidence"],
-    "additionalProperties": False
+    "additionalProperties": False,
 }
 
 REVIEW_SCHEMA = {
     "type": "object",
     "properties": {
-        "questions": {"type": "array", "items": {"type": "string"}, "description": "Follow-up questions"},
-        "target_agent_ids": {"type": "array", "items": {"type": "string"}, "description": "Target agent IDs"}
+        "questions": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Follow-up questions",
+        },
+        "target_agent_ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Target agent IDs",
+        },
     },
     "required": ["questions", "target_agent_ids"],
-    "additionalProperties": False
+    "additionalProperties": False,
 }
 
 REPORT_SCHEMA = {
@@ -45,8 +66,8 @@ REPORT_SCHEMA = {
         "summary": {"type": "string"},
         "analysis": {"type": "string"},
         "key_insights": {"type": "array", "items": {"type": "string"}},
-        "open_questions": {"type": "array", "items": {"type": "string"}}
+        "open_questions": {"type": "array", "items": {"type": "string"}},
     },
     "required": ["title", "summary", "analysis", "key_insights"],
-    "additionalProperties": False
+    "additionalProperties": False,
 }

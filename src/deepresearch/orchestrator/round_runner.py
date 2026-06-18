@@ -10,12 +10,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Awaitable, Callable
+from typing import Any, Callable
 
 from rich.console import Console
 
 from deepresearch.agents.registry import Phase
-from deepresearch.config import ConfigError
+
+# from deepresearch.config import ConfigError  # unused — kept for reference
 from deepresearch.constants import MAX_SESSION_DURATION
 from deepresearch.observability.tracing import tracer
 from deepresearch.models import (
@@ -131,7 +132,11 @@ class RoundRunner:
                     )
                     if self._event_bus:
                         await self._event_bus.publish(
-                            {"event_type": "round_cancelled", "round": round_num, "agent_id": agent_id}
+                            {
+                                "event_type": "round_cancelled",
+                                "round": round_num,
+                                "agent_id": agent_id,
+                            }
                         )
                     break
 
@@ -228,7 +233,9 @@ class RoundRunner:
                 # Only enforce MAX_SESSION_DURATION as safety net — budget is an estimate
                 if start_time is not None:
                     if time.monotonic() - start_time > MAX_SESSION_DURATION:
-                        logger.warning("Safety timeout reached in round %d — stopping", round_num)
+                        logger.warning(
+                            "Safety timeout reached in round %d — stopping", round_num
+                        )
                         break
 
             # ── Retry failed agents once ────────────────────────────────
@@ -236,16 +243,22 @@ class RoundRunner:
                 agent_fn = retry_tasks[agent_id]
                 if agent_fn is None or agent_id in self._orch.failed_agents:
                     # Already marked as failed by a concurrent path — skip
-                    if agent_fn is not None and agent_id not in self._orch.failed_agents:
+                    if (
+                        agent_fn is not None
+                        and agent_id not in self._orch.failed_agents
+                    ):
                         # Agent fn available but task failed catastrophically — still mark
                         await self.handle_agent_failure(agent_id, "retry_unavailable")
                     continue
 
-
                 logger.info("Retrying agent '%s' (attempt 2/2)", agent_id)
                 if self._event_bus:
                     await self._event_bus.publish(
-                        {"event_type": "agent_retry", "agent_id": agent_id, "round": round_num}
+                        {
+                            "event_type": "agent_retry",
+                            "agent_id": agent_id,
+                            "round": round_num,
+                        }
                     )
 
                 # Publish retry start event so the dashboard shows "Retrying..."
@@ -271,7 +284,9 @@ class RoundRunner:
                     result_size = len(str(result)) if result else 0
 
                     if self._is_empty_result(result):
-                        await self.handle_agent_failure(agent_id, "empty_result (retry failed)")
+                        await self.handle_agent_failure(
+                            agent_id, "empty_result (retry failed)"
+                        )
                     else:
                         results[agent_id] = result
                         if self._event_bus:
@@ -354,7 +369,9 @@ class RoundRunner:
                 prev_findings = prev_round.get(agent_id)
                 if prev_findings is None:
                     logger.warning(
-                        "No previous findings for agent '%s' in round %d", agent_id, round_num
+                        "No previous findings for agent '%s' in round %d",
+                        agent_id,
+                        round_num,
                     )
                     continue
                 # Convert IndividualReport to Findings if needed (R2 dispatch wraps)
@@ -448,26 +465,37 @@ class RoundRunner:
                 # Only enforce MAX_SESSION_DURATION as safety net — budget is an estimate
                 if start_time is not None:
                     if time.monotonic() - start_time > MAX_SESSION_DURATION:
-                        logger.warning("Safety timeout reached in round %d — stopping", round_num)
+                        logger.warning(
+                            "Safety timeout reached in round %d — stopping", round_num
+                        )
                         break
 
             # ── Retry failed agents once ────────────────────────────────
             for agent_id in list(retry_tasks.keys()):
                 agent_fn = retry_tasks[agent_id]
                 if agent_fn is None or agent_id in self._orch.failed_agents:
-                    if agent_fn is not None and agent_id not in self._orch.failed_agents:
+                    if (
+                        agent_fn is not None
+                        and agent_id not in self._orch.failed_agents
+                    ):
                         await self.handle_agent_failure(agent_id, "retry_unavailable")
                     continue
 
                 logger.info("Retrying agent '%s' (attempt 2/2)", agent_id)
                 if self._event_bus:
                     await self._event_bus.publish(
-                        {"event_type": "agent_retry", "agent_id": agent_id, "round": round_num}
+                        {
+                            "event_type": "agent_retry",
+                            "agent_id": agent_id,
+                            "round": round_num,
+                        }
                     )
 
                 prev_findings = prev_round.get(agent_id)
                 if prev_findings is None:
-                    await self.handle_agent_failure(agent_id, "no_previous_findings (retry)")
+                    await self.handle_agent_failure(
+                        agent_id, "no_previous_findings (retry)"
+                    )
                     continue
                 if isinstance(prev_findings, IndividualReport):
                     prev_findings = Findings(
@@ -503,7 +531,9 @@ class RoundRunner:
                     result_size = len(str(result)) if result else 0
 
                     if self._is_empty_result(result):
-                        await self.handle_agent_failure(agent_id, "empty_result (retry failed)")
+                        await self.handle_agent_failure(
+                            agent_id, "empty_result (retry failed)"
+                        )
                     else:
                         results[agent_id] = result
                         if self._event_bus:
@@ -550,9 +580,7 @@ class RoundRunner:
             # Phase.REVIEW dispatch with agent_ids so the agent knows
             # which peers it can direct questions at.
             async def _call_with_ids(_fn=agent_fn, _ids=agent_ids):
-                return await _fn(
-                    Phase.REVIEW, shared=shared, agent_ids=_ids
-                )
+                return await _fn(Phase.REVIEW, shared=shared, agent_ids=_ids)
 
             tasks[agent_id] = asyncio.create_task(
                 asyncio.wait_for(_call_with_ids(), timeout=timeout),
@@ -592,7 +620,9 @@ class RoundRunner:
         or fails, returns a default response.
         """
         agent_id = query.agent_id
-        agent = self._orch._agents.get(agent_id) if hasattr(self._orch, "_agents") else None
+        agent = (
+            self._orch._agents.get(agent_id) if hasattr(self._orch, "_agents") else None
+        )
 
         if agent is None:
             return ClarificationResponse(
@@ -651,9 +681,7 @@ class RoundRunner:
             )
             try:
                 refined_result = await asyncio.wait_for(
-                    agents[agent_id](
-                        Phase.REFINEMENT, followup=targeted_followup
-                    ),
+                    agents[agent_id](Phase.REFINEMENT, followup=targeted_followup),
                     timeout=max(30, self._orch._get_round_timeout() // 2),
                 )
                 if (
@@ -673,7 +701,9 @@ class RoundRunner:
         # Only enforce MAX_SESSION_DURATION as safety net — budget is an estimate
         if start_time is not None:
             if time.monotonic() - start_time > MAX_SESSION_DURATION:
-                logger.warning("Safety timeout reached after refinement phase — stopping")
+                logger.warning(
+                    "Safety timeout reached after refinement phase — stopping"
+                )
 
         for result in results:
             if result:

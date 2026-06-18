@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 import os
 import sys
-import shutil
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -134,7 +133,9 @@ def cmd_restart() -> int:
         _run_cmd(["launchctl", "stop", f"dk.kiffnet.{SERVICE_NAME}"])
         return _run_cmd(["launchctl", "start", f"dk.kiffnet.{SERVICE_NAME}"])
     elif platform == "windows":
-        return _run_cmd(["net", "stop", SERVICE_NAME]) or _run_cmd(["net", "start", SERVICE_NAME])
+        return _run_cmd(["net", "stop", SERVICE_NAME]) or _run_cmd(
+            ["net", "start", SERVICE_NAME]
+        )
     else:
         print(f"Unsupported platform: {platform}")
         return 1
@@ -150,7 +151,9 @@ def cmd_logs() -> int:
         log_path = Path.home() / "Library" / "Logs" / f"{SERVICE_NAME}.log"
         return _run_cmd(["tail", "-f", "-n", "50", str(log_path)])
     elif platform == "windows":
-        return _run_cmd(["wevtutil", "qe", f"{SERVICE_NAME}", "/c:50", "/rd:true", "/f:text"])
+        return _run_cmd(
+            ["wevtutil", "qe", f"{SERVICE_NAME}", "/c:50", "/rd:true", "/f:text"]
+        )
     else:
         print(f"Unsupported platform: {platform}")
         return 1
@@ -193,6 +196,7 @@ def _install_systemd(paths: dict) -> int:
     # Get user/group
     user = os.environ.get("SUDO_USER") or os.environ.get("USER", "nobody")
     import grp
+
     try:
         group = grp.getgrgid(os.getgid()).gr_name
     except Exception:
@@ -212,7 +216,7 @@ def _install_systemd(paths: dict) -> int:
         print(f"  Service file created: {service_path}")
     except PermissionError:
         print(f"  Need sudo: could not write to {service_path}")
-        print(f"  Run: sudo mkdir -p /etc/systemd/system")
+        print("  Run: sudo mkdir -p /etc/systemd/system")
         print(f"  Run: sudo tee {service_path} << 'EOF'")
         print(service_content)
         print("EOF")
@@ -244,7 +248,9 @@ def _uninstall_systemd() -> int:
 
 def _install_launchd(paths: dict) -> int:
     """Create and load launchd plist (macOS)."""
-    plist_path = Path.home() / "Library" / "LaunchAgents" / f"dk.kiffnet.{SERVICE_NAME}.plist"
+    plist_path = (
+        Path.home() / "Library" / "LaunchAgents" / f"dk.kiffnet.{SERVICE_NAME}.plist"
+    )
     plist_path.parent.mkdir(parents=True, exist_ok=True)
 
     plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -255,7 +261,7 @@ def _install_launchd(paths: dict) -> int:
     <string>dk.kiffnet.{SERVICE_NAME}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>{paths['python']}</string>
+        <string>{paths["python"]}</string>
         <string>-m</string>
         <string>deepresearch</string>
         <string>serve</string>
@@ -265,19 +271,19 @@ def _install_launchd(paths: dict) -> int:
         <string>{os.environ.get("DEEPRESEARCH_PORT", "7500")}</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>{paths['project']}</string>
+    <string>{paths["project"]}</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>{Path.home() / 'Library' / 'Logs' / f'{SERVICE_NAME}.log'}</string>
+    <string>{Path.home() / "Library" / "Logs" / f"{SERVICE_NAME}.log"}</string>
     <key>StandardErrorPath</key>
-    <string>{Path.home() / 'Library' / 'Logs' / f'{SERVICE_NAME}.log'}</string>
+    <string>{Path.home() / "Library" / "Logs" / f"{SERVICE_NAME}.log"}</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>{paths['venv']}/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <string>{paths["venv"]}/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 </dict>
 </plist>"""
@@ -288,7 +294,9 @@ def _install_launchd(paths: dict) -> int:
 
 
 def _uninstall_launchd() -> int:
-    plist_path = Path.home() / "Library" / "LaunchAgents" / f"dk.kiffnet.{SERVICE_NAME}.plist"
+    plist_path = (
+        Path.home() / "Library" / "LaunchAgents" / f"dk.kiffnet.{SERVICE_NAME}.plist"
+    )
     _run_cmd(["launchctl", "unload", str(plist_path)])
     if plist_path.exists():
         plist_path.unlink()
@@ -311,9 +319,11 @@ def _uninstall_nssm() -> int:
 
 # ── Helpers ──────────────────────────────────────────────────────
 
+
 def _run_cmd(cmd: list[str], sudo: bool = False) -> int:
     """Run a command, optionally with sudo."""
     import subprocess
+
     if sudo and os.geteuid() != 0:
         cmd = ["sudo"] + cmd
     try:

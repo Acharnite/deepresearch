@@ -225,8 +225,7 @@ class AgentRegistry:
             elif phase == Phase.ROUND_2:
                 kwargs.setdefault(
                     "questions",
-                    _questions
-                    or FollowUpQuestions(agent_id=profile.id, questions=[]),
+                    _questions or FollowUpQuestions(agent_id=profile.id, questions=[]),
                 )
                 kwargs.setdefault("round_1_findings", _round_1)
 
@@ -257,7 +256,11 @@ class AgentRegistry:
 
 
 async def _handle_initial_round(
-    registry: AgentRegistry, *, agent: ResearchAgent, topic: ResearchTopic, **kwargs: Any
+    registry: AgentRegistry,
+    *,
+    agent: ResearchAgent,
+    topic: ResearchTopic,
+    **kwargs: Any,
 ) -> Findings:
     """Phase.INITIAL_ROUND — call ``agent.research_round_1``."""
     return await agent.research_round_1(topic)

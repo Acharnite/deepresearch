@@ -12,7 +12,8 @@ import logging
 import time
 from datetime import datetime
 from pathlib import Path
-from collections.abc import Awaitable
+
+# from collections.abc import Awaitable  # unused — kept for reference
 from typing import Any, Callable
 
 from rich.console import Console
@@ -20,7 +21,8 @@ from rich.console import Console
 from deepresearch.collaboration import CollaborationBus
 from deepresearch.config import ConfigError
 from deepresearch.config.session import SessionConfig
-from deepresearch.constants import MAX_SESSION_DURATION
+
+from deepresearch.constants import MAX_SESSION_DURATION  # noqa: F401 — re-exported via __init__
 from deepresearch.observability.tracing import tracer
 from deepresearch.models import (
     AgentProfile,
@@ -29,6 +31,7 @@ from deepresearch.models import (
     IndividualReport,
     ResearchTopic,
     SharedKnowledge,
+    ResearchPaper,
 )
 from deepresearch.orchestrator.round_runner import RoundRunner
 from deepresearch.orchestrator.scribe_compiler import ScribeCompiler
@@ -123,15 +126,25 @@ class Orchestrator:
         return self.timeout_calc.get_round_timeout()
 
     async def run_round(
-        self, round_num: int, agents: dict[str, AgentFunc], topic: ResearchTopic,
-        shared: SharedKnowledge | None = None, start_time: float | None = None,
+        self,
+        round_num: int,
+        agents: dict[str, AgentFunc],
+        topic: ResearchTopic,
+        shared: SharedKnowledge | None = None,
+        start_time: float | None = None,
     ) -> dict[str, Any]:
         return await self.round_runner.run_round(
-            round_num, agents, topic, shared=shared, start_time=start_time,
+            round_num,
+            agents,
+            topic,
+            shared=shared,
+            start_time=start_time,
         )
 
     async def collect_followup_questions(
-        self, agents: dict[str, AgentFunc], shared: SharedKnowledge,
+        self,
+        agents: dict[str, AgentFunc],
+        shared: SharedKnowledge,
     ) -> dict[str, FollowUpQuestions]:
         return await self.round_runner.collect_followup_questions(agents, shared)
 
@@ -145,7 +158,10 @@ class Orchestrator:
         return await self.scribe_comp._finalize_output(output_path)
 
     async def compile(
-        self, reports: dict[str, IndividualReport], scribe: AgentFunc, topic: str = "",
+        self,
+        reports: dict[str, IndividualReport],
+        scribe: AgentFunc,
+        topic: str = "",
     ) -> ResearchPaper:
         return await self.scribe_comp.compile(reports, scribe, topic=topic)
 
@@ -165,9 +181,7 @@ class Orchestrator:
     # Configuration
     # ------------------------------------------------------------------
 
-    async def configure(
-        self, topic_str: str, **overrides: Any
-    ) -> SessionConfig:
+    async def configure(self, topic_str: str, **overrides: Any) -> SessionConfig:
         """Create a validated SessionConfig for a research session."""
         from deepresearch.orchestrator.config import configure as _configure_impl
 
@@ -186,14 +200,17 @@ class Orchestrator:
         self._session_start_time = datetime.now()
         logger.info("Session started — topic: %s", topic)
         if self._event_bus:
-            await self._event_bus.publish({"event_type": "session_start", "topic": topic})
+            await self._event_bus.publish(
+                {"event_type": "session_start", "topic": topic}
+            )
         console.print("\n[bold]🚀 DeepeResearch — Multi-Agent Research System[/bold]")
         console.print(f"[yellow]Topic:[/yellow] {topic}")
 
         config = await self.configure(topic, **overrides)
         logger.info(
             "Config validated — budget=%s, model_mode=%s",
-            config.topic.time_budget, config.topic.model_mode,
+            config.topic.time_budget,
+            config.topic.model_mode,
         )
 
         if "output_path" in overrides:
@@ -228,7 +245,9 @@ class Orchestrator:
         scribe_cb = self.scribe_comp._make_stream_callback("scribe")
         scribe_model = overrides.get("scribe_model") or overrides.get("selected_model")
         scribe = self.scribe_comp._build_scribe(
-            scribe_factory, event_callback=scribe_cb, model_name=scribe_model,
+            scribe_factory,
+            event_callback=scribe_cb,
+            model_name=scribe_model,
         )
 
         if self._cancel_event and hasattr(scribe, "llm") and scribe.llm is not None:
@@ -239,8 +258,12 @@ class Orchestrator:
 
         logger.info("Starting _run_session — agents=%d", len(agents))
         await self._run_session(
-            agents=agents, scribe=scribe, active_agents=active_agents,
-            config=config, output_path=output_path, agent_factory=agent_factory,
+            agents=agents,
+            scribe=scribe,
+            active_agents=active_agents,
+            config=config,
+            output_path=output_path,
+            agent_factory=agent_factory,
         )
 
         pdf_path = await self.scribe_comp._finalize_output(output_path)
@@ -264,18 +287,22 @@ class Orchestrator:
 
         max_r = (
             config.budget.max_rounds
-            if hasattr(config, 'budget') else getattr(config, 'max_rounds', 4)
+            if hasattr(config, "budget")
+            else getattr(config, "max_rounds", 4)
         )
         budget_secs = (
             config.budget.seconds
-            if hasattr(config, 'budget') else getattr(config, 'time_budget_seconds', 300)
+            if hasattr(config, "budget")
+            else getattr(config, "time_budget_seconds", 300)
         )
 
         with tracer.start_as_current_span(
             "session.run",
             attributes={
                 "session.topic": config.topic.question[:100],
-                "session.budget": config.budget.keyword if hasattr(config, 'budget') else "",
+                "session.budget": config.budget.keyword
+                if hasattr(config, "budget")
+                else "",
                 "session.max_rounds": max_r or 0,
             },
         ) as _:
@@ -288,7 +315,8 @@ class Orchestrator:
                 if elapsed_so_far > budget_secs:
                     logger.info(
                         "Session elapsed (%ds) exceeds budget estimate (%ds) — continuing to completion",
-                        int(elapsed_so_far), budget_secs,
+                        int(elapsed_so_far),
+                        budget_secs,
                     )
 
                 self.state = f"ROUND{round_num}"
@@ -297,25 +325,36 @@ class Orchestrator:
                     + ("Independent Research" if round_num == 1 else "Refined Research")
                 )
                 if self._event_bus:
-                    await self._event_bus.publish({"event_type": "round_start", "round": round_num})
+                    await self._event_bus.publish(
+                        {"event_type": "round_start", "round": round_num}
+                    )
 
                 if round_num == 1:
                     results = await self.round_runner.run_round(
-                        1, {aid: agents[aid] for aid in active_agents()},
-                        config.topic, start_time=start_time,
+                        1,
+                        {aid: agents[aid] for aid in active_agents()},
+                        config.topic,
+                        start_time=start_time,
                     )
                 elif round_num == 2:
                     assert latest_shared is not None
                     results = await self.round_runner.run_round(
-                        round_num, {aid: agents[aid] for aid in active_agents()},
-                        config.topic, latest_shared, start_time=start_time,
+                        round_num,
+                        {aid: agents[aid] for aid in active_agents()},
+                        config.topic,
+                        latest_shared,
+                        start_time=start_time,
                     )
                 else:
                     assert latest_shared is not None
                     prev_round = round_results.get(round_num - 1, {})
                     results = await self.round_runner._run_round_n(
-                        round_num, {aid: agents[aid] for aid in active_agents()},
-                        config.topic, latest_shared, prev_round, start_time=start_time,
+                        round_num,
+                        {aid: agents[aid] for aid in active_agents()},
+                        config.topic,
+                        latest_shared,
+                        prev_round,
+                        start_time=start_time,
                     )
 
                 round_results[round_num] = results
@@ -323,37 +362,58 @@ class Orchestrator:
                 if not results:
                     logger.error("ALL agents failed in round %d — stopping", round_num)
                     if self._event_bus:
-                        await self._event_bus.publish({"event_type": "all_agents_failed", "round": round_num})
+                        await self._event_bus.publish(
+                            {"event_type": "all_agents_failed", "round": round_num}
+                        )
                     console.print("[red]All agents failed — stopping research[/red]")
                     break
 
                 logger.info(
                     "Round %d complete — %d/%d agents succeeded",
-                    round_num, len(results), len(agents),
+                    round_num,
+                    len(results),
+                    len(agents),
                 )
 
                 for agent_id, findings in results.items():
                     await self.bus.publish_round(agent_id, round_num, findings)
 
                 if round_num == 1:
-                    self.state_tracker.save_round_findings(results, output_path, round_num)
+                    self.state_tracker.save_round_findings(
+                        results, output_path, round_num
+                    )
 
                 if round_num == 1:
                     self.state = "COLLABORATING"
-                    console.print("\n[bold]Collaboration:[/bold] Sharing findings across agents")
+                    console.print(
+                        "\n[bold]Collaboration:[/bold] Sharing findings across agents"
+                    )
                     latest_shared = await self.bus.compute_shared_knowledge()
                     round_history.append(latest_shared)
                     if self._event_bus:
                         await self._event_bus.publish(
-                            {"event_type": "collaboration_phase", "shared_agent_count": len(results)}
+                            {
+                                "event_type": "collaboration_phase",
+                                "shared_agent_count": len(results),
+                            }
                         )
 
                     self.state = "FOLLOWUP"
-                    console.print("\n[bold]Follow-up:[/bold] Collecting follow-up questions")
+                    console.print(
+                        "\n[bold]Follow-up:[/bold] Collecting follow-up questions"
+                    )
                     if self._event_bus:
-                        await self._event_bus.publish({"event_type": "followup_start", "active_agents": len(active_agents())})
-                    followup_results = await self.round_runner.collect_followup_questions(
-                        {aid: agents[aid] for aid in active_agents()}, latest_shared,
+                        await self._event_bus.publish(
+                            {
+                                "event_type": "followup_start",
+                                "active_agents": len(active_agents()),
+                            }
+                        )
+                    followup_results = (
+                        await self.round_runner.collect_followup_questions(
+                            {aid: agents[aid] for aid in active_agents()},
+                            latest_shared,
+                        )
                     )
                     questions_dict: dict[str, list[str]] = {}
                     targets_dict: dict[str, list[str | None]] = {}
@@ -361,27 +421,43 @@ class Orchestrator:
                         if isinstance(fu, FollowUpQuestions):
                             await self.bus.publish_followup(agent_id, fu.questions)
                             questions_dict[agent_id] = fu.questions
-                            raw_targets = fu.target_agent_ids or [None] * len(fu.questions)
+                            raw_targets = fu.target_agent_ids or [None] * len(
+                                fu.questions
+                            )
                             targets_dict[agent_id] = [
                                 t if t is not None else "All" for t in raw_targets
                             ]
                     if self._event_bus:
                         await self._event_bus.publish(
-                            {"event_type": "followup_complete", "results": len(followup_results),
-                             "questions": questions_dict, "targets": targets_dict}
+                            {
+                                "event_type": "followup_complete",
+                                "results": len(followup_results),
+                                "questions": questions_dict,
+                                "targets": targets_dict,
+                            }
                         )
 
                     self.state = "REFINING"
                     console.print("\n[bold]Refinement:[/bold] Agents refining findings")
                     if self._event_bus:
-                        await self._event_bus.publish({"event_type": "refinement_start"})
+                        await self._event_bus.publish(
+                            {"event_type": "refinement_start"}
+                        )
                     refined = await self.round_runner._run_refinement(
-                        agents, followup_results, active_agents, start_time=start_time,
+                        agents,
+                        followup_results,
+                        active_agents,
+                        start_time=start_time,
                     )
                     for agent_id, refined_findings in refined.items():
                         results[agent_id] = refined_findings
                     if self._event_bus:
-                        await self._event_bus.publish({"event_type": "refinement_complete", "refined_agents": len(refined)})
+                        await self._event_bus.publish(
+                            {
+                                "event_type": "refinement_complete",
+                                "refined_agents": len(refined),
+                            }
+                        )
 
                 if round_num > 1:
                     latest_shared = await self.bus.compute_shared_knowledge()
@@ -391,13 +467,20 @@ class Orchestrator:
                         round_history.append(latest_shared)
 
                 if not await self.state_tracker.should_continue(
-                    self._cancel_event, self.session_config,
-                    round_num + 1, round_history, start_time,
+                    self._cancel_event,
+                    self.session_config,
+                    round_num + 1,
+                    round_history,
+                    start_time,
                 ):
                     logger.info("Convergence check: stopping after round %d", round_num)
                     if self._event_bus:
                         await self._event_bus.publish(
-                            {"event_type": "round_skip", "round": round_num, "reason": "convergence"}
+                            {
+                                "event_type": "round_skip",
+                                "round": round_num,
+                                "reason": "convergence",
+                            }
                         )
                     break
 
@@ -415,7 +498,8 @@ class Orchestrator:
                     reports[agent_id] = latest_result
                 elif isinstance(latest_result, Findings):
                     reports[agent_id] = IndividualReport(
-                        agent_id=agent_id, title=f"Report from {agent_id}",
+                        agent_id=agent_id,
+                        title=f"Report from {agent_id}",
                         perspective_summary=latest_result.summary,
                         key_insights=latest_result.key_points,
                         analysis=latest_result.raw_response or latest_result.summary,
@@ -427,12 +511,19 @@ class Orchestrator:
 
             all_reports = await self.bus.get_all_reports()
             if self._event_bus:
-                await self._event_bus.publish({
-                    "event_type": "scribe_start", "report_count": len(all_reports),
-                    "total_reports_chars": sum(len(str(r)) for r in all_reports.values()),
-                    "model": "unknown",
-                })
-            paper = await self.scribe_comp.compile(all_reports, scribe, topic=config.topic.question)
+                await self._event_bus.publish(
+                    {
+                        "event_type": "scribe_start",
+                        "report_count": len(all_reports),
+                        "total_reports_chars": sum(
+                            len(str(r)) for r in all_reports.values()
+                        ),
+                        "model": "unknown",
+                    }
+                )
+            paper = await self.scribe_comp.compile(
+                all_reports, scribe, topic=config.topic.question
+            )
             self._current_paper = paper
 
     # ------------------------------------------------------------------
@@ -440,22 +531,42 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def dry_run(
-        self, topic_str: str, time_budget: str, model_mode: str,
+        self,
+        topic_str: str,
+        time_budget: str,
+        model_mode: str,
         config: SessionConfig | None = None,
     ) -> dict[str, Any]:
         """Preview a session without executing any agents."""
         from deepresearch.orchestrator.dry_run import dry_run as _dry_run_impl
+
         return _dry_run_impl(self, topic_str, time_budget, model_mode, config=config)
 
     def _show_dry_run_table(
-        self, topic_str: str, time_budget_label: str, time_budget_seconds: int,
-        model_mode: str, rounds: int, agent_assignments: list[dict[str, Any]],
-        estimated_cost: float, estimated_tokens: int,
+        self,
+        topic_str: str,
+        time_budget_label: str,
+        time_budget_seconds: int,
+        model_mode: str,
+        rounds: int,
+        agent_assignments: list[dict[str, Any]],
+        estimated_cost: float,
+        estimated_tokens: int,
     ) -> None:
         from deepresearch.orchestrator.dry_run import _show_dry_run_table as _t
-        _t(topic_str, time_budget_label, time_budget_seconds, model_mode,
-           rounds, agent_assignments, estimated_cost, estimated_tokens)
+
+        _t(
+            topic_str,
+            time_budget_label,
+            time_budget_seconds,
+            model_mode,
+            rounds,
+            agent_assignments,
+            estimated_cost,
+            estimated_tokens,
+        )
 
     def _show_dry_run(self, config: SessionConfig) -> None:
         from deepresearch.orchestrator.dry_run import show_dry_run as _s
+
         _s(self, config)

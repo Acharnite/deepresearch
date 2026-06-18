@@ -82,7 +82,11 @@ class ContextWindowManager:
             try:
                 data = json.loads(self._path.read_text())
                 if isinstance(data, dict):
-                    return {k: int(v) for k, v in data.items() if isinstance(v, (int, float))}
+                    return {
+                        k: int(v)
+                        for k, v in data.items()
+                        if isinstance(v, (int, float))
+                    }
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning("Failed to read context windows: %s", e)
         return {}
@@ -96,7 +100,9 @@ class ContextWindowManager:
         overrides = self.get_overrides()
         overrides[model_id] = context_window
         self._path.write_text(json.dumps(overrides, indent=2))
-        logger.info("Context window override set for '%s': %d", model_id, context_window)
+        logger.info(
+            "Context window override set for '%s': %d", model_id, context_window
+        )
 
     def delete_override(self, model_id: str) -> bool:
         """Remove a context window override. Returns True if it existed."""

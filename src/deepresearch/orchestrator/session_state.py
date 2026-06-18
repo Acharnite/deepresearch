@@ -79,13 +79,11 @@ class SessionState:
         if session_config is not None:
             max_r = (
                 session_config.budget.max_rounds
-                if hasattr(session_config, 'budget')
+                if hasattr(session_config, "budget")
                 else session_config.max_rounds
             )
             if round_num >= max_r:
-                logger.info(
-                    "Max rounds reached (%d) — stopping", max_r
-                )
+                logger.info("Max rounds reached (%d) — stopping", max_r)
                 return False
 
         # 4. Trend convergence — gaps no longer decreasing

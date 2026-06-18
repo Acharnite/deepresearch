@@ -46,7 +46,9 @@ class ScribeCompiler:
     # Custom time-budget keyword used when --minutes is provided.
     _CUSTOM_BUDGET_KEY = "custom"
 
-    def __init__(self, orch: Any, prompt_func: Callable[..., str] | None = None) -> None:
+    def __init__(
+        self, orch: Any, prompt_func: Callable[..., str] | None = None
+    ) -> None:
         self._orch = orch
         self._event_bus = orch._event_bus
         self._prompt = prompt_func or self._default_prompt
@@ -169,7 +171,9 @@ class ScribeCompiler:
 
                         async def _scribe_status(status: str) -> None:
                             # Emit CLARIFYING state when scribe enters clarification protocol
-                            if status in ("identifying_claims",) or status.startswith("asking_agent:"):
+                            if status in ("identifying_claims",) or status.startswith(
+                                "asking_agent:"
+                            ):
                                 if self._orch.state != "CLARIFYING":
                                     self._orch.state = "CLARIFYING"
                             if self._event_bus:
@@ -316,7 +320,10 @@ class ScribeCompiler:
 
     async def _finalize_output(self, output_path: Path) -> Path:
         """Generate PDF (or HTML fallback) from compiled paper."""
-        if not hasattr(self._orch, "_current_paper") or self._orch._current_paper is None:
+        if (
+            not hasattr(self._orch, "_current_paper")
+            or self._orch._current_paper is None
+        ):
             # Fallback: no paper available (timeout before compile).
             self._orch._current_paper = ResearchPaper(
                 title="Research Paper",
@@ -338,9 +345,13 @@ class ScribeCompiler:
             from deepresearch.output.pdf_generator import PDFGenerator
 
             generator = PDFGenerator()
-            pdf_path = generator.generate_pdf(paper, output_path, language=output_language)
+            pdf_path = generator.generate_pdf(
+                paper, output_path, language=output_language
+            )
             if self._event_bus:
-                await self._event_bus.publish({"event_type": "pdf_generated", "path": str(pdf_path)})
+                await self._event_bus.publish(
+                    {"event_type": "pdf_generated", "path": str(pdf_path)}
+                )
             console.print(f"\n[bold green]✓ PDF generated: {pdf_path}[/bold green]")
             # Verify PDF size — mark as underweight if below threshold
             try:
@@ -375,7 +386,9 @@ class ScribeCompiler:
                 html_path.write_text(html, encoding="utf-8")
                 pdf_path = html_path
                 if self._event_bus:
-                    await self._event_bus.publish({"event_type": "pdf_generated", "path": str(html_path)})
+                    await self._event_bus.publish(
+                        {"event_type": "pdf_generated", "path": str(html_path)}
+                    )
                 console.print(
                     f"\n[yellow]⚠ PDF generation failed, HTML saved: "
                     f"{html_path}[/yellow]"
@@ -397,9 +410,7 @@ class ScribeCompiler:
         self._orch.state = "COMPLETE"
         if self._event_bus:
             await self._event_bus.publish({"event_type": "session_end"})
-        agent_count = len(
-            self._config.agent_profiles if self._config else []
-        )
+        agent_count = len(self._config.agent_profiles if self._config else [])
         console.print("\n[bold green]✓ Research complete![/bold green]")
         console.print(f"  Output: {pdf_path}")
         console.print(f"  Agents used: {agent_count}")
@@ -418,7 +429,10 @@ class ScribeCompiler:
                     "failed_agents": list(self._orch.failed_agents.keys()),
                     "state_history": [],
                     "elapsed": round(
-                        (datetime.now() - self._orch._session_start_time).total_seconds(), 1
+                        (
+                            datetime.now() - self._orch._session_start_time
+                        ).total_seconds(),
+                        1,
                     ),
                 }
             )

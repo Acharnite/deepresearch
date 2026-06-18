@@ -262,7 +262,8 @@ class LLMClient:
         """Return the per-model circuit breaker for ``self.model``."""
         if self.model not in self._breakers:
             self._breakers[self.model] = CircuitBreaker(
-                failure_threshold=3, reset_timeout=60.0,
+                failure_threshold=3,
+                reset_timeout=60.0,
             )
         return self._breakers[self.model]
 
@@ -368,6 +369,7 @@ class LLMClient:
                 port = route.get("local_backend_port")
                 try:
                     from deepresearch.web.settings_manager import local_backend_manager
+
                     custom_addr = local_backend_manager.get_address(provider)
                     if custom_addr:
                         return f"http://{custom_addr}/v1"
@@ -465,10 +467,16 @@ class LLMClient:
                         if hasattr(response, "usage") and response.usage:
                             usage = response.usage
                             prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
-                            completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+                            completion_tokens = (
+                                getattr(usage, "completion_tokens", 0) or 0
+                            )
                             llm_span.set_attribute("llm.prompt_tokens", prompt_tokens)
-                            llm_span.set_attribute("llm.completion_tokens", completion_tokens)
-                            cost = _lookup_cost(self.actual_model, prompt_tokens, completion_tokens)
+                            llm_span.set_attribute(
+                                "llm.completion_tokens", completion_tokens
+                            )
+                            cost = _lookup_cost(
+                                self.actual_model, prompt_tokens, completion_tokens
+                            )
                             llm_span.set_attribute("llm.cost", cost)
                     except Exception:
                         pass
@@ -638,14 +646,14 @@ class LLMClient:
         # Circuit breaker check — fast-fail if the model is on cooldown.
         breaker = self._get_breaker()
         if breaker.is_open:
-            raise CircuitBreakerOpenError(
-                f"Circuit breaker open for {self.model}"
-            )
+            raise CircuitBreakerOpenError(f"Circuit breaker open for {self.model}")
 
         try:
             from litellm import acompletion
 
-            kwargs = self._build_acompletion_kwargs(messages, temperature, effective_max_tokens)
+            kwargs = self._build_acompletion_kwargs(
+                messages, temperature, effective_max_tokens
+            )
             kwargs["stream"] = True
 
             response = await acompletion(**kwargs)
@@ -751,7 +759,9 @@ class LLMClient:
                 raise LLMError("Session cancelled")
 
             kwargs = self._build_acompletion_kwargs(
-                messages, temperature, effective_max_tokens,
+                messages,
+                temperature,
+                effective_max_tokens,
                 response_schema=response_schema,
             )
             kwargs["tools"] = tools
@@ -766,7 +776,9 @@ class LLMClient:
             # ── Ollama models don't support streaming tool calls ────────
             # (they hang silently with no output). Skip straight to
             # non-streaming for known local-backend providers.
-            if self.provider and PROVIDER_ROUTES.get(self.provider, {}).get("local_backend"):
+            if self.provider and PROVIDER_ROUTES.get(self.provider, {}).get(
+                "local_backend"
+            ):
                 kwargs["stream"] = False
                 response = await acompletion(**kwargs)
 
@@ -850,7 +862,8 @@ class LLMClient:
                         logger.warning(
                             "Non-streaming tool call also failed (model=%s): %s. "
                             "Retrying without tools.",
-                            self.model, e2,
+                            self.model,
+                            e2,
                         )
                         # Remove tools and fall back to plain generate_stream
                         return await self.generate_stream(
@@ -887,6 +900,7 @@ class LLMClient:
             # (e.g. local models without native function calling support)
             if not tool_calls and _round_text:
                 import re
+
                 tool_json_match = re.search(
                     r'\{\s*"name"\s*:\s*"(\w+)"\s*,\s*"arguments"\s*:\s*(\{.*?\})\s*\}',
                     _round_text.strip(),
@@ -998,9 +1012,7 @@ class LLMClient:
                 usage = response.usage
                 prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
                 completion_tokens = getattr(usage, "completion_tokens", 0) or 0
-                cost = _lookup_cost(
-                    self.actual_model, prompt_tokens, completion_tokens
-                )
+                cost = _lookup_cost(self.actual_model, prompt_tokens, completion_tokens)
                 self.total_input_tokens += prompt_tokens
                 self.total_output_tokens += completion_tokens
                 self.total_cost += cost
@@ -1033,16 +1045,16 @@ class LLMClient:
 
         # Remove [🔍 Web Search], [Tool], etc. block patterns
         cleaned = re.sub(
-            r'\[[^\]]*\]\s*Query:.*?(?=\n\n|\n[^ []|$)', '', response, flags=re.DOTALL
+            r"\[[^\]]*\]\s*Query:.*?(?=\n\n|\n[^ []|$)", "", response, flags=re.DOTALL
         )
         # Remove bullet-point tool result lines
-        cleaned = re.sub(r'^\s*[•\-]\s+.*$', '', cleaned, flags=re.MULTILINE)
+        cleaned = re.sub(r"^\s*[•\-]\s+.*$", "", cleaned, flags=re.MULTILINE)
         # Remove numbered list items from search results (e.g. "1. Some title")
-        cleaned = re.sub(r'^\s*\d+\.\s+.*$', '', cleaned, flags=re.MULTILINE)
+        cleaned = re.sub(r"^\s*\d+\.\s+.*$", "", cleaned, flags=re.MULTILINE)
         # Remove lines that don't contain any JSON (non-JSON noise lines)
-        cleaned = re.sub(r'^(?!.*\{).*$', '', cleaned, flags=re.MULTILINE)
+        cleaned = re.sub(r"^(?!.*\{).*$", "", cleaned, flags=re.MULTILINE)
         # Collapse multiple blank lines
-        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
         return cleaned.strip()
 
     def parse_json_response(self, response: str) -> dict[str, Any]:

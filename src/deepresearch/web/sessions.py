@@ -21,9 +21,9 @@ from pathlib import Path
 from typing import Any, Callable
 
 import json as _json
-from deepresearch.config.session import SessionConfig, TimeBudget
+from deepresearch.config.session import TimeBudget
 from deepresearch.llm.tracker import TokenTracker
-from deepresearch.constants import MAX_ROUNDS_BY_BUDGET, PDF_MIN_HEALTHY_BYTES, TIME_BUDGET_SECONDS
+from deepresearch.constants import PDF_MIN_HEALTHY_BYTES
 from deepresearch.web.event_bus import EventBus
 from deepresearch.web.settings_manager import settings_manager
 
@@ -147,7 +147,9 @@ class MultiSessionManager:
 
         # Calculate seconds and rounds from TimeBudget (single source of truth).
         if time_budget_seconds is not None:
-            budget = TimeBudget(keyword="custom", seconds=time_budget_seconds, max_rounds=4)
+            budget = TimeBudget(
+                keyword="custom", seconds=time_budget_seconds, max_rounds=4
+            )
         else:
             budget = TimeBudget.from_keyword(time_budget)
         secs = budget.seconds
@@ -184,9 +186,11 @@ class MultiSessionManager:
             # Fall back to the first configured default model.
             try:
                 from deepresearch.config import load_model_config
+
                 model_configs = load_model_config()
                 default_model = next(
-                    (m for m in model_configs if m.get("default")), model_configs[0] if model_configs else None
+                    (m for m in model_configs if m.get("default")),
+                    model_configs[0] if model_configs else None,
                 )
                 test_model = default_model["id"] if default_model else None
             except Exception:
@@ -225,7 +229,9 @@ class MultiSessionManager:
                 "error": info.error,
                 "output_language": info.output_language,
             }
-            await _atomic_update_session_db(lambda db: db.__setitem__(info.session_id, entry))
+            await _atomic_update_session_db(
+                lambda db: db.__setitem__(info.session_id, entry)
+            )
             await info.event_bus.publish(
                 {
                     "event_type": "session_error",
@@ -237,13 +243,18 @@ class MultiSessionManager:
 
         # Start background task with optional concurrency semaphore.
         self._tasks[session_id] = asyncio.create_task(
-            self._run_session(session_id, scribe_model=scribe_model, semaphore=semaphore),
+            self._run_session(
+                session_id, scribe_model=scribe_model, semaphore=semaphore
+            ),
         )
 
         return info
 
     async def _run_session(
-        self, session_id: str, scribe_model: str | None = None, semaphore: asyncio.Semaphore | None = None,
+        self,
+        session_id: str,
+        scribe_model: str | None = None,
+        semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         """Run the full orchestration lifecycle with a per-session event bus."""
         info = self._sessions[session_id]
@@ -275,7 +286,9 @@ class MultiSessionManager:
 
             token_tracker = TokenTracker()
             info.token_tracker = token_tracker
-            llm = LLMClient(max_tokens=settings_manager.get_max_tokens(), tracker=token_tracker)
+            llm = LLMClient(
+                max_tokens=settings_manager.get_max_tokens(), tracker=token_tracker
+            )
             registry = AgentRegistry(llm, token_tracker=token_tracker)
 
             # Pick the scribe model: passed scribe_model > selected_model > first agent_models > None
@@ -329,7 +342,7 @@ class MultiSessionManager:
 
             # Check underweight PDF — mark as error instead of complete
             pdf_size = pdf_file.stat().st_size if pdf_file.exists() else 0
-            is_underweight = getattr(orchestrator, '_pdf_underweight', False) or (
+            is_underweight = getattr(orchestrator, "_pdf_underweight", False) or (
                 pdf_file.exists() and pdf_size < PDF_MIN_HEALTHY_BYTES
             )
             if is_underweight:
@@ -365,9 +378,7 @@ class MultiSessionManager:
                         "pdf_filename": pdf_file.name,
                     }
                     info.status = "error"
-                    info.error = (
-                        f"All agents failed: {', '.join(orchestrator.failed_agents.keys())}"
-                    )
+                    info.error = f"All agents failed: {', '.join(orchestrator.failed_agents.keys())}"
                 else:
                     info.result = {
                         "status": "complete",
@@ -392,7 +403,9 @@ class MultiSessionManager:
                 "error": info.error,
                 "output_language": info.output_language,
             }
-            await _atomic_update_session_db(lambda db: db.__setitem__(info.session_id, entry))
+            await _atomic_update_session_db(
+                lambda db: db.__setitem__(info.session_id, entry)
+            )
             info.output_path = str(output_path)
 
             await info.event_bus.publish(
@@ -604,7 +617,7 @@ class MultiSessionManager:
                 del db[session_id]
                 SESSION_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
                 SESSION_DB_PATH.write_text(
-                    _json.dumps(db, indent=2, default=str), encoding='utf-8'
+                    _json.dumps(db, indent=2, default=str), encoding="utf-8"
                 )
         except Exception:
             pass
@@ -627,11 +640,12 @@ class MultiSessionManager:
 
     async def save_all_sessions(self) -> None:
         """Save ALL sessions to persistent DB before shutdown.
-        
+
         Running/interrupted sessions get their current state preserved.
         Completed sessions are re-saved with latest data.
         """
         from datetime import datetime
+
         for session_id, info in list(self._sessions.items()):
             try:
                 if info.status == "running":
@@ -640,7 +654,7 @@ class MultiSessionManager:
                     if task and not task.done():
                         task.cancel()
                     logger.info("Marked session %s as interrupted", session_id)
-                
+
                 entry = {
                     "session_id": info.session_id,
                     "topic": info.topic,

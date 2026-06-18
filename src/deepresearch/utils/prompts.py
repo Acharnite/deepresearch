@@ -51,7 +51,7 @@ def build_round_1_prompt(topic: str, time_budget: str) -> str:
         f"# Time Budget\n{time_budget}\n\n"
         "## CRITICAL INSTRUCTIONS\n\n"
         "**STAY STRICTLY ON TOPIC.** Your entire analysis must be directly about "
-        f"the topic above: \"{topic}\". Do NOT wander into tangential, related, "
+        f'the topic above: "{topic}". Do NOT wander into tangential, related, '
         "or loosely connected subjects. Every finding, insight, and point you "
         "make must clearly relate to this specific topic.\n\n"
         "Research this topic using web_search. **Use the web_search tool "
@@ -170,7 +170,7 @@ def build_round_2_prompt(
         f"# Research Topic\n{topic}\n\n"
         "## CRITICAL INSTRUCTIONS\n\n"
         "**STAY STRICTLY ON TOPIC.** Everything you produce must be directly "
-        f"about the topic: \"{topic}\". Do NOT drift into tangential subjects.\n\n"
+        f'about the topic: "{topic}". Do NOT drift into tangential subjects.\n\n'
         "## Shared Context\n"
         f"Key themes identified:\n{themes}\n\n"
         f"Areas of disagreement to address:\n{disagreements}\n\n"
@@ -252,9 +252,7 @@ def build_round_n_prompt(
         The Round N user prompt.
     """
     themes = "\n".join(f"  - {t}" for t in shared.key_themes)
-    disagreements = "\n".join(
-        f"  - {d}" for d in shared.areas_of_disagreement
-    )
+    disagreements = "\n".join(f"  - {d}" for d in shared.areas_of_disagreement)
     gaps = "\n".join(f"  - {g}" for g in shared.knowledge_gaps)
     prev_kp_text = "\n".join(f"  - {kp}" for kp in prev_findings.key_points)
 
@@ -262,7 +260,7 @@ def build_round_n_prompt(
         f"# Research Topic\n{topic}\n\n"
         "## CRITICAL INSTRUCTIONS\n\n"
         "**STAY STRICTLY ON TOPIC.** Everything you produce must be directly "
-        f"about the topic: \"{topic}\". Do NOT drift into tangential subjects.\n\n"
+        f'about the topic: "{topic}". Do NOT drift into tangential subjects.\n\n'
         f"## Round {round_num} of {max_rounds}\n\n"
         f"## Your Previous Findings (Round {round_num - 1})\n"
         f"Summary: {prev_findings.summary}\n\n"

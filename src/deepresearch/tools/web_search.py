@@ -26,9 +26,7 @@ logger = logging.getLogger(__name__)
 # ── SearXNG configuration (loaded from settings / env) ────────────────
 _search_engine: str = os.environ.get("SEARCH_ENGINE", "searxng")
 _searxng_url: str = os.environ.get("SEARXNG_URL", "http://localhost:8888")
-_searxng_fallback_url: str = os.environ.get(
-    "SEARXNG_FALLBACK_URL", "https://searx.be"
-)
+_searxng_fallback_url: str = os.environ.get("SEARXNG_FALLBACK_URL", "https://searx.be")
 _searxng_engines: list[str] = ["google", "bing", "startpage"]
 _searxng_categories: list[str] = ["general"]
 _searxng_timeout: int = 10
@@ -110,9 +108,7 @@ def _cache_key(query: str) -> str:
 # ── SearXNG backend ──────────────────────────────────────────────────
 
 
-async def _searxng_search(
-    query: str, max_results: int = 5
-) -> list[dict[str, str]]:
+async def _searxng_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
     """Search via SearXNG JSON API with primary/fallback fallback.
 
     Returns:
@@ -130,9 +126,7 @@ async def _searxng_search(
     for base_url in [_searxng_url, _searxng_fallback_url]:
         try:
             t0 = time.monotonic()
-            async with httpx.AsyncClient(
-                timeout=_searxng_timeout
-            ) as client:
+            async with httpx.AsyncClient(timeout=_searxng_timeout) as client:
                 resp = await client.get(f"{base_url}/search", params=params)
                 resp.raise_for_status()
                 data = resp.json()
@@ -173,9 +167,7 @@ async def _searxng_search(
 # ── DuckDuckGo backend (legacy) ──────────────────────────────────────
 
 
-async def _ddgs_search(
-    query: str, max_results: int = 5
-) -> list[dict[str, str]]:
+async def _ddgs_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
     """Search via DuckDuckGo (ddgs library). Legacy fallback."""
     global _search_health
 

@@ -28,10 +28,15 @@ from fastapi.staticfiles import StaticFiles
 
 from deepresearch import __version__ as _deepresearch_version
 from deepresearch.config import load_agent_profiles, load_model_config
-from deepresearch.constants import TIME_BUDGETS, TIME_BUDGET_SECONDS
+from deepresearch.constants import TIME_BUDGETS
 from deepresearch.web.event_bus import event_bus as global_event_bus
 from deepresearch.web.sessions import multi_session_manager
-from deepresearch.web.settings_manager import PROVIDERS, settings_manager, context_window_manager, local_backend_manager
+from deepresearch.web.settings_manager import (
+    PROVIDERS,
+    settings_manager,
+    context_window_manager,
+    local_backend_manager,
+)
 from deepresearch.web import state as _ws
 
 logger = logging.getLogger(__name__)
@@ -113,6 +118,7 @@ if _settings_env_path.exists():
 
 VERSION = f"v{_deepresearch_version}"
 
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """Lifespan handler — saves session state on shutdown."""
@@ -121,10 +127,12 @@ async def _lifespan(app: FastAPI):
     logger.warning("Server shutting down — saving session state...")
     try:
         from deepresearch.web.sessions import multi_session_manager
+
         await multi_session_manager.save_all_sessions()
         logger.warning("Session state saved successfully")
     except Exception as e:
         logger.error("Failed to save sessions during shutdown: %s", e)
+
 
 app = FastAPI(title="DeepeResearch Dashboard", lifespan=_lifespan)
 
@@ -261,8 +269,11 @@ async def get_version() -> JSONResponse:
 async def get_agents() -> JSONResponse:
     """Return agent profile metadata."""
     from deepresearch.config import load_agent_profiles
+
     profiles = load_agent_profiles()
-    return JSONResponse([{"id": p.id, "name": p.name, "emoji": p.emoji} for p in profiles])
+    return JSONResponse(
+        [{"id": p.id, "name": p.name, "emoji": p.emoji} for p in profiles]
+    )
 
 
 # ── Multi-session Management Endpoints ─────────────────────────────────
@@ -359,10 +370,12 @@ async def session_stats() -> JSONResponse:
     for s in all_sessions:
         st = s.get("status", "unknown")
         counts[st] = counts.get(st, 0) + 1
-    return JSONResponse({
-        "total": len(all_sessions),
-        "by_status": counts,
-    })
+    return JSONResponse(
+        {
+            "total": len(all_sessions),
+            "by_status": counts,
+        }
+    )
 
 
 @app.get("/api/sessions/{session_id}")
@@ -379,8 +392,7 @@ async def get_session(session_id: str) -> JSONResponse:
             "time_budget": info.time_budget,
             "time_budget_seconds": info.time_budget_seconds,
             "estimated_duration_seconds": {
-                kw: v["seconds"]
-                for kw, v in TIME_BUDGETS.items()
+                kw: v["seconds"] for kw, v in TIME_BUDGETS.items()
             },
             "model_mode": info.model_mode,
             "created_at": info.created_at,
@@ -544,9 +556,14 @@ async def _error_generator(msg: str) -> AsyncGenerator[str, None]:
     yield {"event": "error", "data": json.dumps({"error": msg})}
 
 
-async def _install_error_generator(msg: str, code: str = "ALREADY_INSTALLED") -> AsyncGenerator[str, None]:
+async def _install_error_generator(
+    msg: str, code: str = "ALREADY_INSTALLED"
+) -> AsyncGenerator[str, None]:
     """Generate a single install error event."""
-    yield {"event": "install_error", "data": json.dumps({"status": "error", "message": msg, "code": code})}
+    yield {
+        "event": "install_error",
+        "data": json.dumps({"status": "error", "message": msg, "code": code}),
+    }
 
 
 @app.post("/api/sessions/{session_id}/cancel")
@@ -1208,7 +1225,9 @@ async def set_context_window(req: ContextWindowRequest) -> JSONResponse:
     if req.context_window < 1:
         return JSONResponse({"error": "context_window must be >= 1"}, status_code=400)
     context_window_manager.set_override(req.model_id, req.context_window)
-    return JSONResponse({"status": "ok", "model_id": req.model_id, "context_window": req.context_window})
+    return JSONResponse(
+        {"status": "ok", "model_id": req.model_id, "context_window": req.context_window}
+    )
 
 
 @app.delete("/api/config/context/{model_id:path}")
@@ -1217,7 +1236,9 @@ async def delete_context_window(model_id: str) -> JSONResponse:
     removed = context_window_manager.delete_override(model_id)
     if removed:
         return JSONResponse({"status": "ok", "model_id": model_id})
-    return JSONResponse({"error": f"No override found for '{model_id}'"}, status_code=404)
+    return JSONResponse(
+        {"error": f"No override found for '{model_id}'"}, status_code=404
+    )
 
 
 # ── System Log Buffer ──────────────────────────────────────────────────
@@ -1371,6 +1392,7 @@ async def get_tools_status() -> JSONResponse:
     """Check if llmfit is installed and return version."""
     import shutil
     import subprocess
+
     result: dict[str, dict[str, bool | str]] = {"llmfit": {"installed": False}}
     if shutil.which("llmfit"):
         result["llmfit"]["installed"] = True  # type: ignore[assignment]
@@ -1378,7 +1400,9 @@ async def get_tools_status() -> JSONResponse:
             version = subprocess.run(
                 ["llmfit", "--version"], capture_output=True, text=True, timeout=5
             )
-            result["llmfit"]["version"] = version.stdout.strip() or version.stderr.strip()
+            result["llmfit"]["version"] = (
+                version.stdout.strip() or version.stderr.strip()
+            )
         except Exception:
             result["llmfit"]["version"] = "unknown"
     return JSONResponse(result)
@@ -1389,12 +1413,15 @@ async def get_hardware_info() -> JSONResponse:
     """Return hardware specs via llmfit system --json (if installed)."""
     import shutil
     import subprocess
+
     if not shutil.which("llmfit"):
         return JSONResponse({"available": False, "message": "llmfit not installed"})
     try:
         result = subprocess.run(
             ["llmfit", "system", "--json"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         if result.returncode == 0:
             data = json.loads(result.stdout)
@@ -1412,12 +1439,15 @@ async def get_model_recommendations() -> JSONResponse:
     Filters models based on available hardware (RAM/VRAM)."""
     import shutil
     import subprocess
+
     if not shutil.which("llmfit"):
         return JSONResponse({"available": False, "message": "llmfit not installed"})
     try:
         result = subprocess.run(
             ["llmfit", "recommend", "--json"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True,
+            text=True,
+            timeout=15,
         )
         if result.returncode == 0:
             data = json.loads(result.stdout)
@@ -1429,7 +1459,9 @@ async def get_model_recommendations() -> JSONResponse:
             try:
                 hw_result = subprocess.run(
                     ["llmfit", "system", "--json"],
-                    capture_output=True, text=True, timeout=10,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
                 )
                 if hw_result.returncode == 0:
                     hw_data = json.loads(hw_result.stdout)
@@ -1448,9 +1480,9 @@ async def get_model_recommendations() -> JSONResponse:
                     hw_info.get("total_ram_gb", 0) * 0.7,
                 )
                 if usable_memory_gb <= 0:
-                    usable_memory_gb = float('inf')
+                    usable_memory_gb = float("inf")
             else:
-                usable_memory_gb = float('inf')
+                usable_memory_gb = float("inf")
 
             # Filter and annotate models
             filtered_models = []
@@ -1465,12 +1497,14 @@ async def get_model_recommendations() -> JSONResponse:
                 m["supports_tool_use"] = "tool_use" in (m.get("capability_ids") or [])
                 filtered_models.append(m)
 
-            return JSONResponse({
-                "available": True,
-                "models": filtered_models[:10],
-                "system": data.get("system", {}),
-                "hardware": hw_info if hw_info else None,
-            })
+            return JSONResponse(
+                {
+                    "available": True,
+                    "models": filtered_models[:10],
+                    "system": data.get("system", {}),
+                    "hardware": hw_info if hw_info else None,
+                }
+            )
         return JSONResponse({"available": False, "error": result.stderr.strip()})
     except FileNotFoundError:
         return JSONResponse({"available": False, "message": "llmfit not found"})
@@ -1480,17 +1514,54 @@ async def get_model_recommendations() -> JSONResponse:
 
 # ── Local Backend Discovery ────────────────────────────
 
+
 class BackendAddressRequest(BaseModel):
     """Request body for setting a custom backend address."""
+
     address: str  # e.g. "localhost:11434" or "192.168.1.100:8080"
 
 
 BACKEND_DEFINITIONS = [
-    {"name": "ollama",    "label": "Ollama",    "description": "Easy-to-use local LLM runner",         "port": 11434, "path": "/api/tags",   "binary": "ollama"},
-    {"name": "llama-cpp", "label": "llama.cpp", "description": "Lightweight CPU/GPU inference",       "port": 8080,  "path": "/v1/models", "binary": None},
-    {"name": "vllm",      "label": "vLLM",      "description": "High-throughput GPU inference",         "port": 8000,  "path": "/v1/models", "binary": None},
-    {"name": "lm-studio", "label": "LM Studio", "description": "Desktop app for local models",          "port": 1234,  "path": "/v1/models", "binary": None},
-    {"name": "local-ai",  "label": "LocalAI",   "description": "OpenAI-compatible local API",           "port": 8080,  "path": "/readyz",    "binary": None},
+    {
+        "name": "ollama",
+        "label": "Ollama",
+        "description": "Easy-to-use local LLM runner",
+        "port": 11434,
+        "path": "/api/tags",
+        "binary": "ollama",
+    },
+    {
+        "name": "llama-cpp",
+        "label": "llama.cpp",
+        "description": "Lightweight CPU/GPU inference",
+        "port": 8080,
+        "path": "/v1/models",
+        "binary": None,
+    },
+    {
+        "name": "vllm",
+        "label": "vLLM",
+        "description": "High-throughput GPU inference",
+        "port": 8000,
+        "path": "/v1/models",
+        "binary": None,
+    },
+    {
+        "name": "lm-studio",
+        "label": "LM Studio",
+        "description": "Desktop app for local models",
+        "port": 1234,
+        "path": "/v1/models",
+        "binary": None,
+    },
+    {
+        "name": "local-ai",
+        "label": "LocalAI",
+        "description": "OpenAI-compatible local API",
+        "port": 8080,
+        "path": "/readyz",
+        "binary": None,
+    },
 ]
 
 
@@ -1548,6 +1619,7 @@ async def list_local_backends() -> JSONResponse:
 
     Respects custom address overrides from local_backend_manager.
     """
+
     async def _probe_with_custom(defn: dict) -> dict:
         name = defn["name"]
         custom = local_backend_manager.get_address(name)
@@ -1597,24 +1669,30 @@ async def test_local_backend(name: str) -> JSONResponse:
             resp = await client.get(check_url)
             latency_ms = round((time.monotonic() - start) * 1000, 1)
             running = resp.status_code == 200
-            return JSONResponse({
-                "status": "ok",
-                "running": running,
-                "port": port,
-                "latency_ms": latency_ms,
-            })
+            return JSONResponse(
+                {
+                    "status": "ok",
+                    "running": running,
+                    "port": port,
+                    "latency_ms": latency_ms,
+                }
+            )
     except httpx.ConnectError:
-        return JSONResponse({
-            "status": "error",
-            "running": False,
-            "message": f"Connection refused on port {port}",
-        })
+        return JSONResponse(
+            {
+                "status": "error",
+                "running": False,
+                "message": f"Connection refused on port {port}",
+            }
+        )
     except httpx.TimeoutException:
-        return JSONResponse({
-            "status": "error",
-            "running": False,
-            "message": f"Connection timed out on port {port}",
-        })
+        return JSONResponse(
+            {
+                "status": "error",
+                "running": False,
+                "message": f"Connection timed out on port {port}",
+            }
+        )
 
 
 @app.put("/api/local-backends/{name}/address")
@@ -1630,7 +1708,10 @@ async def set_backend_address(name: str, req: BackendAddressRequest) -> JSONResp
     # Validate address format: host:port
     if not re.match(r"^[a-zA-Z0-9.-]+:\d+$", req.address):
         return JSONResponse(
-            {"status": "error", "message": f"Invalid address format: {req.address}. Expected host:port"},
+            {
+                "status": "error",
+                "message": f"Invalid address format: {req.address}. Expected host:port",
+            },
             status_code=400,
         )
 
@@ -1649,14 +1730,17 @@ async def get_backend_address(name: str) -> JSONResponse:
         )
 
     addr = local_backend_manager.get_address(name)
-    return JSONResponse({
-        "status": "ok",
-        "name": name,
-        "address": addr,
-    })
+    return JSONResponse(
+        {
+            "status": "ok",
+            "name": name,
+            "address": addr,
+        }
+    )
 
 
 # ── Local Backend Installation (Ollama) ────────────────────────────────
+
 
 @app.get("/api/local-backends/ollama/status")
 async def get_ollama_status() -> JSONResponse:
@@ -1685,11 +1769,13 @@ async def get_ollama_status() -> JSONResponse:
     except Exception:
         running = False
 
-    return JSONResponse({
-        "installed": installed,
-        "running": running,
-        "version": version,
-    })
+    return JSONResponse(
+        {
+            "installed": installed,
+            "running": running,
+            "version": version,
+        }
+    )
 
 
 @app.post("/api/local-backends/ollama/install")
@@ -1705,15 +1791,22 @@ async def install_ollama(request: Request) -> EventSourceResponse:
 
     async def generate() -> AsyncGenerator[str, None]:
         try:
-            yield {"event": "install_log", "data": json.dumps({
-                "step": "download",
-                "message": "Downloading Ollama install script...",
-                "progress": 10,
-            })}
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "download",
+                        "message": "Downloading Ollama install script...",
+                        "progress": 10,
+                    }
+                ),
+            }
 
             # Run the install script
             process = await asyncio.create_subprocess_exec(
-                "sh", "-c", "curl -fsSL https://ollama.com/install.sh | sh",
+                "sh",
+                "-c",
+                "curl -fsSL https://ollama.com/install.sh | sh",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
@@ -1728,11 +1821,16 @@ async def install_ollama(request: Request) -> EventSourceResponse:
                 line_count += 1
                 # Parse progress from output (simple heuristic)
                 progress = min(30 + line_count * 3, 90)
-                yield {"event": "install_log", "data": json.dumps({
-                    "step": "install" if line_count > 1 else "download",
-                    "message": line_str,
-                    "progress": progress,
-                })}
+                yield {
+                    "event": "install_log",
+                    "data": json.dumps(
+                        {
+                            "step": "install" if line_count > 1 else "download",
+                            "message": line_str,
+                            "progress": progress,
+                        }
+                    ),
+                }
 
                 if await request.is_disconnected():
                     process.terminate()
@@ -1742,11 +1840,16 @@ async def install_ollama(request: Request) -> EventSourceResponse:
 
             if process.returncode == 0:
                 # Verify installation
-                yield {"event": "install_log", "data": json.dumps({
-                    "step": "verify",
-                    "message": "Verifying installation...",
-                    "progress": 95,
-                })}
+                yield {
+                    "event": "install_log",
+                    "data": json.dumps(
+                        {
+                            "step": "verify",
+                            "message": "Verifying installation...",
+                            "progress": 95,
+                        }
+                    ),
+                }
 
                 import subprocess
 
@@ -1754,29 +1857,46 @@ async def install_ollama(request: Request) -> EventSourceResponse:
                 try:
                     result = subprocess.run(
                         ["ollama", "--version"],
-                        capture_output=True, text=True, timeout=5,
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
                     )
                     version = result.stdout.strip() or result.stderr.strip()
                 except Exception:
                     pass
 
-                yield {"event": "install_complete", "data": json.dumps({
-                    "status": "success",
-                    "version": version,
-                    "path": shutil.which("ollama") or "/usr/local/bin/ollama",
-                })}
+                yield {
+                    "event": "install_complete",
+                    "data": json.dumps(
+                        {
+                            "status": "success",
+                            "version": version,
+                            "path": shutil.which("ollama") or "/usr/local/bin/ollama",
+                        }
+                    ),
+                }
             else:
-                yield {"event": "install_error", "data": json.dumps({
-                    "status": "error",
-                    "message": f"Installation failed with exit code {process.returncode}",
-                    "code": "INSTALL_FAILED",
-                })}
+                yield {
+                    "event": "install_error",
+                    "data": json.dumps(
+                        {
+                            "status": "error",
+                            "message": f"Installation failed with exit code {process.returncode}",
+                            "code": "INSTALL_FAILED",
+                        }
+                    ),
+                }
         except Exception as e:
-            yield {"event": "install_error", "data": json.dumps({
-                "status": "error",
-                "message": str(e),
-                "code": "UNEXPECTED_ERROR",
-            })}
+            yield {
+                "event": "install_error",
+                "data": json.dumps(
+                    {
+                        "status": "error",
+                        "message": str(e),
+                        "code": "UNEXPECTED_ERROR",
+                    }
+                ),
+            }
 
     return EventSourceResponse(generate())
 
@@ -1791,8 +1911,8 @@ class PullModelRequest(BaseModel):
 class DownloadModelRequest(BaseModel):
     name: str
     download_type: str = "auto"  # "ollama", "llmfit", "auto"
-    repo: str | None = None      # HuggingFace repo from gguf_sources
-    quant: str | None = None     # Specific quantization (e.g. "Q4_K_M")
+    repo: str | None = None  # HuggingFace repo from gguf_sources
+    quant: str | None = None  # Specific quantization (e.g. "Q4_K_M")
 
 
 @app.post("/api/local-backends/llmfit/install")
@@ -1808,15 +1928,22 @@ async def install_llmfit(request: Request) -> EventSourceResponse:
 
     async def generate() -> AsyncGenerator[str, None]:
         try:
-            yield {"event": "install_log", "data": json.dumps({
-                "step": "download",
-                "message": "Downloading llmfit install script...",
-                "progress": 10,
-            })}
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "download",
+                        "message": "Downloading llmfit install script...",
+                        "progress": 10,
+                    }
+                ),
+            }
 
             # Run the install script
             process = await asyncio.create_subprocess_exec(
-                "sh", "-c", "curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local",
+                "sh",
+                "-c",
+                "curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
@@ -1830,11 +1957,16 @@ async def install_llmfit(request: Request) -> EventSourceResponse:
                     continue
                 line_count += 1
                 progress = min(30 + line_count * 3, 90)
-                yield {"event": "install_log", "data": json.dumps({
-                    "step": "install" if line_count > 1 else "download",
-                    "message": line_str,
-                    "progress": progress,
-                })}
+                yield {
+                    "event": "install_log",
+                    "data": json.dumps(
+                        {
+                            "step": "install" if line_count > 1 else "download",
+                            "message": line_str,
+                            "progress": progress,
+                        }
+                    ),
+                }
 
                 if await request.is_disconnected():
                     process.terminate()
@@ -1843,11 +1975,16 @@ async def install_llmfit(request: Request) -> EventSourceResponse:
             await process.wait()
 
             if process.returncode == 0:
-                yield {"event": "install_log", "data": json.dumps({
-                    "step": "verify",
-                    "message": "Verifying installation...",
-                    "progress": 95,
-                })}
+                yield {
+                    "event": "install_log",
+                    "data": json.dumps(
+                        {
+                            "step": "verify",
+                            "message": "Verifying installation...",
+                            "progress": 95,
+                        }
+                    ),
+                }
 
                 import subprocess
 
@@ -1855,29 +1992,46 @@ async def install_llmfit(request: Request) -> EventSourceResponse:
                 try:
                     result = subprocess.run(
                         ["llmfit", "--version"],
-                        capture_output=True, text=True, timeout=5,
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
                     )
                     version = result.stdout.strip() or result.stderr.strip()
                 except Exception:
                     pass
 
-                yield {"event": "install_complete", "data": json.dumps({
-                    "status": "success",
-                    "version": version,
-                    "path": shutil.which("llmfit") or "~/.local/bin/llmfit",
-                })}
+                yield {
+                    "event": "install_complete",
+                    "data": json.dumps(
+                        {
+                            "status": "success",
+                            "version": version,
+                            "path": shutil.which("llmfit") or "~/.local/bin/llmfit",
+                        }
+                    ),
+                }
             else:
-                yield {"event": "install_error", "data": json.dumps({
-                    "status": "error",
-                    "message": f"Installation failed with exit code {process.returncode}",
-                    "code": "INSTALL_FAILED",
-                })}
+                yield {
+                    "event": "install_error",
+                    "data": json.dumps(
+                        {
+                            "status": "error",
+                            "message": f"Installation failed with exit code {process.returncode}",
+                            "code": "INSTALL_FAILED",
+                        }
+                    ),
+                }
         except Exception as e:
-            yield {"event": "install_error", "data": json.dumps({
-                "status": "error",
-                "message": str(e),
-                "code": "UNEXPECTED_ERROR",
-            })}
+            yield {
+                "event": "install_error",
+                "data": json.dumps(
+                    {
+                        "status": "error",
+                        "message": str(e),
+                        "code": "UNEXPECTED_ERROR",
+                    }
+                ),
+            }
 
     return EventSourceResponse(generate())
 
@@ -1932,7 +2086,9 @@ async def start_ollama() -> JSONResponse:
     try:
         subprocess.run(
             ["systemctl", "--user", "start", "ollama"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return JSONResponse({"status": "ok", "message": "Ollama started"})
     except Exception:
@@ -1961,7 +2117,9 @@ async def stop_ollama() -> JSONResponse:
     try:
         subprocess.run(
             ["systemctl", "--user", "stop", "ollama"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return JSONResponse({"status": "ok", "message": "Ollama stopped"})
     except Exception:
@@ -1970,7 +2128,9 @@ async def stop_ollama() -> JSONResponse:
     try:
         subprocess.run(
             ["pkill", "ollama"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return JSONResponse({"status": "ok", "message": "Ollama stopped"})
     except Exception as e:
@@ -1993,15 +2153,22 @@ async def uninstall_ollama(request: Request) -> EventSourceResponse:
 
     async def generate() -> AsyncGenerator[str, None]:
         try:
-            yield {"event": "install_log", "data": json.dumps({
-                "step": "stop",
-                "message": "Stopping Ollama...",
-                "progress": 10,
-            })}
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "stop",
+                        "message": "Stopping Ollama...",
+                        "progress": 10,
+                    }
+                ),
+            }
 
             # Step 1: Stop Ollama
             stop_proc = await asyncio.create_subprocess_exec(
-                "sh", "-c", "systemctl --user stop ollama 2>/dev/null; pkill ollama 2>/dev/null",
+                "sh",
+                "-c",
+                "systemctl --user stop ollama 2>/dev/null; pkill ollama 2>/dev/null",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
@@ -2012,15 +2179,22 @@ async def uninstall_ollama(request: Request) -> EventSourceResponse:
                     return
             await stop_proc.wait()
 
-            yield {"event": "install_log", "data": json.dumps({
-                "step": "remove_binary",
-                "message": "Removing Ollama binary...",
-                "progress": 30,
-            })}
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "remove_binary",
+                        "message": "Removing Ollama binary...",
+                        "progress": 30,
+                    }
+                ),
+            }
 
             # Step 2: Remove binary
             which_proc = await asyncio.create_subprocess_exec(
-                "sh", "-c", "which ollama",
+                "sh",
+                "-c",
+                "which ollama",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
@@ -2033,43 +2207,65 @@ async def uninstall_ollama(request: Request) -> EventSourceResponse:
             await which_proc.wait()
 
             import os as _os
+
             for p in ollama_paths:
                 try:
                     _os.remove(p)
-                    yield {"event": "install_log", "data": json.dumps({
-                        "step": "remove_binary",
-                        "message": f"Removed {p}",
-                        "progress": 35,
-                    })}
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps(
+                            {
+                                "step": "remove_binary",
+                                "message": f"Removed {p}",
+                                "progress": 35,
+                            }
+                        ),
+                    }
                 except Exception as ex:
-                    yield {"event": "install_log", "data": json.dumps({
-                        "step": "remove_binary",
-                        "message": f"Could not remove {p}: {ex}",
-                        "progress": 35,
-                    })}
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps(
+                            {
+                                "step": "remove_binary",
+                                "message": f"Could not remove {p}: {ex}",
+                                "progress": 35,
+                            }
+                        ),
+                    }
 
             # Also try common locations
             for p in ["/usr/local/bin/ollama", "/usr/bin/ollama"]:
                 if _os.path.exists(p):
                     try:
                         _os.remove(p)
-                        yield {"event": "install_log", "data": json.dumps({
-                            "step": "remove_binary",
-                            "message": f"Removed {p}",
-                            "progress": 38,
-                        })}
+                        yield {
+                            "event": "install_log",
+                            "data": json.dumps(
+                                {
+                                    "step": "remove_binary",
+                                    "message": f"Removed {p}",
+                                    "progress": 38,
+                                }
+                            ),
+                        }
                     except Exception:
                         pass
 
-            yield {"event": "install_log", "data": json.dumps({
-                "step": "remove_service",
-                "message": "Removing systemd service files...",
-                "progress": 45,
-            })}
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "remove_service",
+                        "message": "Removing systemd service files...",
+                        "progress": 45,
+                    }
+                ),
+            }
 
             # Step 3: Remove systemd service
             rm_service_proc = await asyncio.create_subprocess_exec(
-                "sh", "-c",
+                "sh",
+                "-c",
                 "rm -f /etc/systemd/system/ollama.service "
                 "/usr/lib/systemd/system/ollama.service "
                 "$HOME/.config/systemd/user/ollama.service",
@@ -2081,15 +2277,21 @@ async def uninstall_ollama(request: Request) -> EventSourceResponse:
                 pass
             await rm_service_proc.wait()
 
-            yield {"event": "install_log", "data": json.dumps({
-                "step": "remove_data",
-                "message": "Removing data directories...",
-                "progress": 60,
-            })}
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "remove_data",
+                        "message": "Removing data directories...",
+                        "progress": 60,
+                    }
+                ),
+            }
 
             # Step 4: Remove data directories
             rm_data_proc = await asyncio.create_subprocess_exec(
-                "sh", "-c",
+                "sh",
+                "-c",
                 "rm -rf ~/.ollama /usr/share/ollama /usr/local/share/ollama",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
@@ -2099,15 +2301,22 @@ async def uninstall_ollama(request: Request) -> EventSourceResponse:
                 pass
             await rm_data_proc.wait()
 
-            yield {"event": "install_log", "data": json.dumps({
-                "step": "remove_user",
-                "message": "Removing ollama user (if exists)...",
-                "progress": 80,
-            })}
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "remove_user",
+                        "message": "Removing ollama user (if exists)...",
+                        "progress": 80,
+                    }
+                ),
+            }
 
             # Step 5: Remove user (optional)
             rm_user_proc = await asyncio.create_subprocess_exec(
-                "sh", "-c", "userdel ollama 2>/dev/null",
+                "sh",
+                "-c",
+                "userdel ollama 2>/dev/null",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
@@ -2116,41 +2325,62 @@ async def uninstall_ollama(request: Request) -> EventSourceResponse:
                 pass
             await rm_user_proc.wait()
 
-            yield {"event": "install_log", "data": json.dumps({
-                "step": "verify",
-                "message": "Verifying uninstallation...",
-                "progress": 95,
-            })}
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "verify",
+                        "message": "Verifying uninstallation...",
+                        "progress": 95,
+                    }
+                ),
+            }
 
             # Step 6: Verify
             if shutil.which("ollama") is not None:
-                yield {"event": "install_error", "data": json.dumps({
-                    "status": "error",
-                    "message": "Ollama binary still found after removal",
-                    "code": "REMOVAL_FAILED",
-                })}
+                yield {
+                    "event": "install_error",
+                    "data": json.dumps(
+                        {
+                            "status": "error",
+                            "message": "Ollama binary still found after removal",
+                            "code": "REMOVAL_FAILED",
+                        }
+                    ),
+                }
                 return
 
-            yield {"event": "install_complete", "data": json.dumps({
-                "status": "success",
-                "message": "Ollama has been fully uninstalled",
-            })}
+            yield {
+                "event": "install_complete",
+                "data": json.dumps(
+                    {
+                        "status": "success",
+                        "message": "Ollama has been fully uninstalled",
+                    }
+                ),
+            }
 
         except Exception as e:
-            yield {"event": "install_error", "data": json.dumps({
-                "status": "error",
-                "message": str(e),
-                "code": "UNEXPECTED_ERROR",
-            })}
+            yield {
+                "event": "install_error",
+                "data": json.dumps(
+                    {
+                        "status": "error",
+                        "message": str(e),
+                        "code": "UNEXPECTED_ERROR",
+                    }
+                ),
+            }
 
     return EventSourceResponse(generate())
 
 
 @app.post("/api/local-backends/ollama/pull")
-async def pull_ollama_model(req: PullModelRequest, request: Request) -> EventSourceResponse:
+async def pull_ollama_model(
+    req: PullModelRequest, request: Request
+) -> EventSourceResponse:
     """Pull an Ollama model via 'ollama pull' with SSE log streaming."""
     import shutil
-    import subprocess
 
     # Pre-check: Ollama installed
     if not shutil.which("ollama"):
@@ -2166,19 +2396,28 @@ async def pull_ollama_model(req: PullModelRequest, request: Request) -> EventSou
                 raise RuntimeError("Ollama not responding")
     except Exception:
         return EventSourceResponse(
-            _install_error_generator("Ollama is not running. Start it first.", "NOT_RUNNING")
+            _install_error_generator(
+                "Ollama is not running. Start it first.", "NOT_RUNNING"
+            )
         )
 
     async def generate() -> AsyncGenerator[str, None]:
         try:
-            yield {"event": "install_log", "data": json.dumps({
-                "step": "pull",
-                "message": f"Pulling model {req.model}. This may take a while...",
-                "progress": 5,
-            })}
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "pull",
+                        "message": f"Pulling model {req.model}. This may take a while...",
+                        "progress": 5,
+                    }
+                ),
+            }
 
             process = await asyncio.create_subprocess_exec(
-                "ollama", "pull", req.model,
+                "ollama",
+                "pull",
+                req.model,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
@@ -2191,11 +2430,16 @@ async def pull_ollama_model(req: PullModelRequest, request: Request) -> EventSou
                     continue
                 line_count += 1
                 progress = min(10 + line_count * 2, 95)
-                yield {"event": "install_log", "data": json.dumps({
-                    "step": "pull",
-                    "message": line_str,
-                    "progress": progress,
-                })}
+                yield {
+                    "event": "install_log",
+                    "data": json.dumps(
+                        {
+                            "step": "pull",
+                            "message": line_str,
+                            "progress": progress,
+                        }
+                    ),
+                }
 
                 if await request.is_disconnected():
                     process.terminate()
@@ -2204,22 +2448,37 @@ async def pull_ollama_model(req: PullModelRequest, request: Request) -> EventSou
             await process.wait()
 
             if process.returncode == 0:
-                yield {"event": "install_complete", "data": json.dumps({
-                    "status": "success",
-                    "model": req.model,
-                })}
+                yield {
+                    "event": "install_complete",
+                    "data": json.dumps(
+                        {
+                            "status": "success",
+                            "model": req.model,
+                        }
+                    ),
+                }
             else:
-                yield {"event": "install_error", "data": json.dumps({
-                    "status": "error",
-                    "message": f"Pull failed with exit code {process.returncode}",
-                    "code": "PULL_FAILED",
-                })}
+                yield {
+                    "event": "install_error",
+                    "data": json.dumps(
+                        {
+                            "status": "error",
+                            "message": f"Pull failed with exit code {process.returncode}",
+                            "code": "PULL_FAILED",
+                        }
+                    ),
+                }
         except Exception as e:
-            yield {"event": "install_error", "data": json.dumps({
-                "status": "error",
-                "message": str(e),
-                "code": "UNEXPECTED_ERROR",
-            })}
+            yield {
+                "event": "install_error",
+                "data": json.dumps(
+                    {
+                        "status": "error",
+                        "message": str(e),
+                        "code": "UNEXPECTED_ERROR",
+                    }
+                ),
+            }
 
     return EventSourceResponse(generate())
 
@@ -2231,7 +2490,9 @@ async def get_download_progress() -> JSONResponse:
 
 
 @app.post("/api/local-backends/models/download")
-async def download_model(req: DownloadModelRequest, request: Request) -> EventSourceResponse:
+async def download_model(
+    req: DownloadModelRequest, request: Request
+) -> EventSourceResponse:
     """Smart model download via Ollama pull or llmfit download with SSE log streaming."""
     import shutil
 
@@ -2282,31 +2543,50 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                     if req.repo and shutil.which("llmfit"):
                         use_ollama = False
                         use_llmfit = True
-                        yield {"event": "install_log", "data": json.dumps({
-                            "step": "fallback",
-                            "message": "Ollama not running — falling back to llmfit download",
-                            "progress": 5,
-                        })}
+                        yield {
+                            "event": "install_log",
+                            "data": json.dumps(
+                                {
+                                    "step": "fallback",
+                                    "message": "Ollama not running — falling back to llmfit download",
+                                    "progress": 5,
+                                }
+                            ),
+                        }
                     else:
                         _download_state["status"] = "error"
                         _download_state["message"] = "Ollama is not running."
-                        yield {"event": "install_error", "data": json.dumps({
-                            "status": "error",
-                            "message": "Ollama is not running. Start it first or install llmfit for GGUF downloads.",
-                            "code": "NOT_RUNNING",
-                        })}
+                        yield {
+                            "event": "install_error",
+                            "data": json.dumps(
+                                {
+                                    "status": "error",
+                                    "message": "Ollama is not running. Start it first or install llmfit for GGUF downloads.",
+                                    "code": "NOT_RUNNING",
+                                }
+                            ),
+                        }
                         return
 
                 if use_ollama:
-                    _update_state(5, f"Pulling model {req.name}. This may take a while...")
-                    yield {"event": "install_log", "data": json.dumps({
-                        "step": "pull",
-                        "message": f"Pulling model {req.name}. This may take a while...",
-                        "progress": 5,
-                    })}
+                    _update_state(
+                        5, f"Pulling model {req.name}. This may take a while..."
+                    )
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps(
+                            {
+                                "step": "pull",
+                                "message": f"Pulling model {req.name}. This may take a while...",
+                                "progress": 5,
+                            }
+                        ),
+                    }
 
                     process = await asyncio.create_subprocess_exec(
-                        "ollama", "pull", req.name,
+                        "ollama",
+                        "pull",
+                        req.name,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.STDOUT,
                     )
@@ -2321,11 +2601,16 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                         line_count += 1
                         progress = min(10 + line_count * 2, 95)
                         _update_state(progress, line_str)
-                        yield {"event": "install_log", "data": json.dumps({
-                            "step": "pull",
-                            "message": line_str,
-                            "progress": progress,
-                        })}
+                        yield {
+                            "event": "install_log",
+                            "data": json.dumps(
+                                {
+                                    "step": "pull",
+                                    "message": line_str,
+                                    "progress": progress,
+                                }
+                            ),
+                        }
 
                     await process.wait()
 
@@ -2333,18 +2618,30 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                         _download_state["status"] = "complete"
                         _download_state["message"] = f"Pull completed: {req.name}"
                         _download_state["progress"] = 100
-                        yield {"event": "install_complete", "data": json.dumps({
-                            "status": "success",
-                            "model": req.name,
-                        })}
+                        yield {
+                            "event": "install_complete",
+                            "data": json.dumps(
+                                {
+                                    "status": "success",
+                                    "model": req.name,
+                                }
+                            ),
+                        }
                     else:
                         _download_state["status"] = "error"
-                        _download_state["message"] = f"Pull failed with exit code {process.returncode}"
-                        yield {"event": "install_error", "data": json.dumps({
-                            "status": "error",
-                            "message": f"Pull failed with exit code {process.returncode}",
-                            "code": "PULL_FAILED",
-                        })}
+                        _download_state["message"] = (
+                            f"Pull failed with exit code {process.returncode}"
+                        )
+                        yield {
+                            "event": "install_error",
+                            "data": json.dumps(
+                                {
+                                    "status": "error",
+                                    "message": f"Pull failed with exit code {process.returncode}",
+                                    "code": "PULL_FAILED",
+                                }
+                            ),
+                        }
                     _download_state["active"] = False
                     _download_process = None
                     return
@@ -2355,11 +2652,16 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                 if not shutil.which("llmfit"):
                     _download_state["status"] = "error"
                     _download_state["message"] = "llmfit is not installed."
-                    yield {"event": "install_error", "data": json.dumps({
-                        "status": "error",
-                        "message": "llmfit is not installed. Install it first to download GGUF models.",
-                        "code": "NOT_INSTALLED",
-                    })}
+                    yield {
+                        "event": "install_error",
+                        "data": json.dumps(
+                            {
+                                "status": "error",
+                                "message": "llmfit is not installed. Install it first to download GGUF models.",
+                                "code": "NOT_INSTALLED",
+                            }
+                        ),
+                    }
                     return
 
                 repo = req.repo or req.name
@@ -2368,11 +2670,16 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                 os.makedirs(output_dir, exist_ok=True)
 
                 _update_state(5, f"Starting download of {model_display} from {repo}...")
-                yield {"event": "install_log", "data": json.dumps({
-                    "step": "download",
-                    "message": f"Starting download of {model_display} from {repo}...",
-                    "progress": 5,
-                })}
+                yield {
+                    "event": "install_log",
+                    "data": json.dumps(
+                        {
+                            "step": "download",
+                            "message": f"Starting download of {model_display} from {repo}...",
+                            "progress": 5,
+                        }
+                    ),
+                }
 
                 # Build command: llmfit download <repo> --output-dir <dir>  (NO --json!)
                 cmd = ["llmfit", "download", repo, "--output-dir", output_dir]
@@ -2386,37 +2693,48 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
 
                 assert process.stdout is not None
                 import re as _re
+
                 last_pct = 0.0
                 pre_pct = 0
                 async for line in process.stdout:
                     line_str = line.decode("utf-8", errors="replace").strip()
                     # Strip ANSI escape codes (ESC[K) and carriage returns
-                    clean = _re.sub('\[K|\r', '', line_str).strip()
+                    clean = _re.sub("\[K|\r", "", line_str).strip()
                     if not clean:
                         continue
                     # Parse percentage from llmfit output: "100.0% - message"
-                    pct_match = _re.match(r'\s*(\d+\.?\d*)\s*%', clean)
+                    pct_match = _re.match(r"\s*(\d+\.?\d*)\s*%", clean)
                     msg = clean
                     if pct_match:
                         pct_val = float(pct_match.group(1))
                         last_pct = min(pct_val, 99)
                         # Strip leading percentage for cleaner message
-                        msg = _re.sub(r'^\s*\d+\.?\d*\s*%\s*-\s*', '', clean)
+                        msg = _re.sub(r"^\s*\d+\.?\d*\s*%\s*-\s*", "", clean)
                         _update_state(last_pct, msg)
-                        yield {"event": "install_log", "data": json.dumps({
-                            "step": "download",
-                            "message": msg,
-                            "progress": last_pct,
-                        })}
+                        yield {
+                            "event": "install_log",
+                            "data": json.dumps(
+                                {
+                                    "step": "download",
+                                    "message": msg,
+                                    "progress": last_pct,
+                                }
+                            ),
+                        }
                     else:
                         # Non-percentage line: show incremental pre-progress
                         pre_pct = min(pre_pct + 1, 3)
                         _update_state(pre_pct, msg)
-                        yield {"event": "install_log", "data": json.dumps({
-                            "step": "download",
-                            "message": msg,
-                            "progress": pre_pct,
-                        })}
+                        yield {
+                            "event": "install_log",
+                            "data": json.dumps(
+                                {
+                                    "step": "download",
+                                    "message": msg,
+                                    "progress": pre_pct,
+                                }
+                            ),
+                        }
 
                 await process.wait()
 
@@ -2424,28 +2742,45 @@ async def download_model(req: DownloadModelRequest, request: Request) -> EventSo
                     _download_state["status"] = "complete"
                     _download_state["message"] = f"Download completed: {model_display}"
                     _download_state["progress"] = 100
-                    yield {"event": "install_complete", "data": json.dumps({
-                        "status": "success",
-                        "message": f"Download completed: {model_display}",
-                        "model": req.name,
-                    })}
+                    yield {
+                        "event": "install_complete",
+                        "data": json.dumps(
+                            {
+                                "status": "success",
+                                "message": f"Download completed: {model_display}",
+                                "model": req.name,
+                            }
+                        ),
+                    }
                 else:
                     _download_state["status"] = "error"
-                    _download_state["message"] = f"llmfit download failed with exit code {process.returncode}"
-                    yield {"event": "install_error", "data": json.dumps({
-                        "status": "error",
-                        "message": f"llmfit download failed with exit code {process.returncode}",
-                        "code": "DOWNLOAD_FAILED",
-                    })}
+                    _download_state["message"] = (
+                        f"llmfit download failed with exit code {process.returncode}"
+                    )
+                    yield {
+                        "event": "install_error",
+                        "data": json.dumps(
+                            {
+                                "status": "error",
+                                "message": f"llmfit download failed with exit code {process.returncode}",
+                                "code": "DOWNLOAD_FAILED",
+                            }
+                        ),
+                    }
 
         except Exception as e:
             _download_state["status"] = "error"
             _download_state["message"] = str(e)
-            yield {"event": "install_error", "data": json.dumps({
-                "status": "error",
-                "message": str(e),
-                "code": "UNEXPECTED_ERROR",
-            })}
+            yield {
+                "event": "install_error",
+                "data": json.dumps(
+                    {
+                        "status": "error",
+                        "message": str(e),
+                        "code": "UNEXPECTED_ERROR",
+                    }
+                ),
+            }
         finally:
             _download_state["active"] = False
             _download_process = None

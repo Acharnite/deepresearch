@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from deepresearch.agents.base_agent import BaseAgent
 from deepresearch.llm.client import LLMClient, LLMError
-from deepresearch.schemas import ROUND_1_SCHEMA, ROUND_2_SCHEMA, REVIEW_SCHEMA, REPORT_SCHEMA
+from deepresearch.schemas import ROUND_1_SCHEMA, ROUND_2_SCHEMA
 from prompts import PromptTemplate  # type: ignore[import-untyped]
 from deepresearch.models import (
     AgentProfile,
@@ -84,7 +84,7 @@ class ResearchAgent(BaseAgent):
                 user_prompt=user_prompt,
                 tools=[WEB_SEARCH_TOOL],
                 temperature=self.profile.temperature,
-                max_tokens=getattr(self.llm, 'max_tokens', None) or 4096,
+                max_tokens=getattr(self.llm, "max_tokens", None) or 4096,
                 response_schema=ROUND_1_SCHEMA,
             )
         except LLMError:
@@ -98,9 +98,7 @@ class ResearchAgent(BaseAgent):
             try:
                 response = await self._generate_with_retry(user_prompt)
             except LLMError:
-                logger.error(
-                    "All LLM attempts failed for agent '%s'", self.profile.id
-                )
+                logger.error("All LLM attempts failed for agent '%s'", self.profile.id)
                 response = ""
 
         data = self._try_parse_json(response, "research_round_1")
@@ -117,9 +115,7 @@ class ResearchAgent(BaseAgent):
                 if data2.get("summary") or data2.get("key_points"):
                     data = data2
             except LLMError:
-                logger.error(
-                    "Retry also failed for agent '%s'", self.profile.id
-                )
+                logger.error("Retry also failed for agent '%s'", self.profile.id)
 
         return Findings(
             agent_id=self.profile.id,
@@ -200,7 +196,7 @@ class ResearchAgent(BaseAgent):
                 user_prompt=user_prompt,
                 tools=[WEB_SEARCH_TOOL],
                 temperature=self.profile.temperature,
-                max_tokens=getattr(self.llm, 'max_tokens', None) or 4096,
+                max_tokens=getattr(self.llm, "max_tokens", None) or 4096,
                 response_schema=ROUND_1_SCHEMA,
             )
         except LLMError:
@@ -293,7 +289,7 @@ class ResearchAgent(BaseAgent):
                 user_prompt=user_prompt,
                 tools=[WEB_SEARCH_TOOL],
                 temperature=self.profile.temperature,
-                max_tokens=getattr(self.llm, 'max_tokens', None) or 4096,
+                max_tokens=getattr(self.llm, "max_tokens", None) or 4096,
                 response_schema=ROUND_2_SCHEMA,
             )
         except LLMError:
@@ -394,7 +390,7 @@ class ResearchAgent(BaseAgent):
                 user_prompt=user_prompt,
                 tools=[WEB_SEARCH_TOOL],
                 temperature=self.profile.temperature,
-                max_tokens=getattr(self.llm, 'max_tokens', None) or 2048,
+                max_tokens=getattr(self.llm, "max_tokens", None) or 2048,
             )
         except LLMError:
             logger.warning(
@@ -420,7 +416,8 @@ class ResearchAgent(BaseAgent):
                 pass  # Fire-and-forget — don't disrupt the agent.
 
     def _extract_sources(
-        self, existing: list[SourceReference] | None = None,
+        self,
+        existing: list[SourceReference] | None = None,
     ) -> list[SourceReference]:
         """Extract SourceReference objects from the last tool call results.
 
@@ -455,7 +452,7 @@ class ResearchAgent(BaseAgent):
                 system_prompt=self._system_prompt,
                 user_prompt=user_prompt,
                 temperature=self.profile.temperature,
-                max_tokens=getattr(self.llm, 'max_tokens', None),
+                max_tokens=getattr(self.llm, "max_tokens", None),
             )
         except LLMError:
             logger.warning(
@@ -469,5 +466,5 @@ class ResearchAgent(BaseAgent):
                 "no explanation, no code fences.",
                 user_prompt=user_prompt,
                 temperature=self.profile.temperature,
-                max_tokens=getattr(self.llm, 'max_tokens', None),
+                max_tokens=getattr(self.llm, "max_tokens", None),
             )

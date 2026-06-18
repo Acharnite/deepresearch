@@ -23,7 +23,7 @@ class TimeoutCalculator:
         if self._config is None:
             return 120
         # Support both new (budget dataclass) and old (Pydantic) SessionConfig.
-        if hasattr(self._config, 'budget'):
+        if hasattr(self._config, "budget"):
             b = self._config.budget.seconds
             m = self._config.budget.max_rounds
         else:

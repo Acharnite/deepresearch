@@ -1,7 +1,8 @@
 """Session-level token usage tracking."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass
@@ -47,9 +48,7 @@ class TokenTracker:
     @property
     def total_tokens(self) -> int:
         """Total accumulated tokens (prompt + completion) across all models."""
-        return sum(
-            u.prompt_tokens + u.completion_tokens for u in self._models.values()
-        )
+        return sum(u.prompt_tokens + u.completion_tokens for u in self._models.values())
 
     def per_model(self) -> dict[str, dict]:
         """Per-model breakdown of tokens and cost."""

@@ -106,7 +106,9 @@ class BaseAgent(ABC):
             subs = [
                 PaperSection(
                     heading=s.get("heading", ""),
-                    source_agent_id=str(s.get("source_agent_id", "")) if s.get("source_agent_id") is not None else None,
+                    source_agent_id=str(s.get("source_agent_id", ""))
+                    if s.get("source_agent_id") is not None
+                    else None,
                     content=s.get("content", ""),
                     subsections=[],
                 )
@@ -116,7 +118,9 @@ class BaseAgent(ABC):
             sections.append(
                 PaperSection(
                     heading=item.get("heading", ""),
-                    source_agent_id=str(item.get("source_agent_id", "")) if item.get("source_agent_id") is not None else None,
+                    source_agent_id=str(item.get("source_agent_id", ""))
+                    if item.get("source_agent_id") is not None
+                    else None,
                     content=item.get("content", ""),
                     subsections=subs,
                 )

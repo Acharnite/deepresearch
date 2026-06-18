@@ -38,8 +38,6 @@ logger = logging.getLogger(__name__)
 _MAX_CLARIFICATION_ROUNDS = 2
 
 
-
-
 class ScribeAgent(BaseAgent):
     """Neutral academic compiler that produces the final research paper.
 
@@ -132,7 +130,7 @@ class ScribeAgent(BaseAgent):
             f"The following are individual reports from {len(reports)} "
             f"research agents on the topic above. Synthesise them into a coherent paper "
             f"about this specific topic.\n\n"
-            f"**CRITICAL: The paper MUST be about \"{topic}\". All content — abstract, "
+            f'**CRITICAL: The paper MUST be about "{topic}". All content — abstract, '
             f"synthesis, key takeaways, conclusion — must directly address this topic.**\n\n"
             f"**IMPORTANT: Use EXACTLY these agent names for section headings: {agent_names}**\n"
             f"**Do NOT invent new agent names, titles, or perspective names.**\n\n"
@@ -145,7 +143,7 @@ class ScribeAgent(BaseAgent):
         # Add source context and citation instructions.
         if sources:
             source_list = "\n".join(
-                f"  [{source_map.get(s.url, i + 1)}] \"{s.title}\" — {s.url}"
+                f'  [{source_map.get(s.url, i + 1)}] "{s.title}" — {s.url}'
                 for i, s in enumerate(sources)
             )
             user_prompt += (
@@ -175,9 +173,7 @@ class ScribeAgent(BaseAgent):
             )
             return self._fallback_paper(reports)
         except Exception as e:
-            logger.error(
-                "Scribe compilation failed: %s", str(e)[:500], exc_info=True
-            )
+            logger.error("Scribe compilation failed: %s", str(e)[:500], exc_info=True)
             return self._fallback_paper(reports)
 
         data = self._try_parse_json(response, "compile")
@@ -217,7 +213,9 @@ class ScribeAgent(BaseAgent):
                 )
             except Exception as e:
                 logger.error(
-                    "Scribe compilation failed on retry: %s", str(e)[:500], exc_info=True
+                    "Scribe compilation failed on retry: %s",
+                    str(e)[:500],
+                    exc_info=True,
                 )
 
             if paper is None or not paper.sections:
@@ -364,7 +362,9 @@ class ScribeAgent(BaseAgent):
                     _consecutive_empties,
                 )
                 if _consecutive_empties >= 2:
-                    logger.info("2 consecutive empty clarifications, stopping protocol (per ADR-0007)")
+                    logger.info(
+                        "2 consecutive empty clarifications, stopping protocol (per ADR-0007)"
+                    )
                     break
                 continue
 
@@ -670,7 +670,7 @@ Respond with valid JSON **only** — no markdown fences, no explanation.
         prompt += "## Clarifications\n\n"
         for agent_id, claim, response in collected:
             prompt += f"### Agent '{agent_id}' on claim: \"{claim}\"\n"
-            prompt += f"Response: \"{response}\"\n\n"
+            prompt += f'Response: "{response}"\n\n'
         prompt += (
             f"## Current Draft\n"
             f"Title: {paper.title}\n"

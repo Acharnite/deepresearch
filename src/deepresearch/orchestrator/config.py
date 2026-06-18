@@ -41,7 +41,9 @@ async def configure(
     """
     orchestrator.state = "CONFIGURING"
     if orchestrator._event_bus:
-        await orchestrator._event_bus.publish({"event_type": "config_validated", "topic": topic_str})
+        await orchestrator._event_bus.publish(
+            {"event_type": "config_validated", "topic": topic_str}
+        )
 
     # --- load configs (from override or from file) ---
     try:
@@ -103,9 +105,7 @@ async def configure(
         budget_seconds = TIME_BUDGET_SECONDS.get(time_budget, 300)
 
     # Derive max_rounds from budget keyword.
-    max_rounds = overrides.get("max_rounds") or MAX_ROUNDS_BY_BUDGET.get(
-        time_budget, 4
-    )
+    max_rounds = overrides.get("max_rounds") or MAX_ROUNDS_BY_BUDGET.get(time_budget, 4)
 
     output_language: str = overrides.get("output_language", "English")
 
@@ -119,7 +119,9 @@ async def configure(
     )
     orchestrator.session_config = config
     if orchestrator._event_bus:
-        await orchestrator._event_bus.publish({"event_type": "models_assigned", "assignments": agent_models})
+        await orchestrator._event_bus.publish(
+            {"event_type": "models_assigned", "assignments": agent_models}
+        )
     return config
 
 
@@ -163,9 +165,7 @@ async def assign_models(
 
     if mode == "random":
         seed_str = orchestrator._topic_seed
-        random.seed(
-            int(hashlib.sha256(seed_str.encode()).hexdigest()[:8], 16)
-        )
+        random.seed(int(hashlib.sha256(seed_str.encode()).hexdigest()[:8], 16))
         selected = random.choices(available, k=len(profiles))
         return {p.id: m["id"] for p, m in zip(profiles, selected)}
 
