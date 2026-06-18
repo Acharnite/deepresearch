@@ -91,6 +91,31 @@ PROVIDER_ROUTES: dict[str, dict[str, Any]] = {
     "ollama": {
         "api_base": "http://localhost:11434",
         "api_key_env": None,
+        "local_backend": True,
+    },
+    "llama-cpp": {
+        "api_base": None,
+        "api_key_env": None,
+        "local_backend": True,
+        "local_backend_port": 8080,
+    },
+    "vllm": {
+        "api_base": None,
+        "api_key_env": None,
+        "local_backend": True,
+        "local_backend_port": 8000,
+    },
+    "lm-studio": {
+        "api_base": None,
+        "api_key_env": None,
+        "local_backend": True,
+        "local_backend_port": 1234,
+    },
+    "local-ai": {
+        "api_base": None,
+        "api_key_env": None,
+        "local_backend": True,
+        "local_backend_port": 8080,
     },
 }
 
@@ -190,7 +215,11 @@ class LLMClient:
     ``cohere/``              ``https://api.cohere.ai/v1``             ``COHERE_API_KEY``
     ``gemini/``              ``https://generativelanguageapi…``       ``GEMINI_API_KEY``
     ``anthropic/``           ``https://api.anthropic.com``            ``ANTHROPIC_API_KEY``
-    ``ollama/``              ``http://localhost:11434``               *(none — local)*
+    ``llama-cpp/``           ``http://localhost:8080/v1``             *(none — local)*  (custom address via Settings)
+    ``vllm/``                ``http://localhost:8000/v1``             *(none — local)*  (custom address via Settings)
+    ``lm-studio/``           ``http://localhost:1234/v1``             *(none — local)*  (custom address via Settings)
+    ``local-ai/``            ``http://localhost:8080/v1``             *(none — local)*  (custom address via Settings)
+    ``ollama/``              ``http://localhost:11434``               *(none — local)*  (custom address via Settings)
     ======================== ======================================== =====================
 
     Models without a recognized prefix (e.g. ``gpt-4o``) are passed
@@ -323,11 +352,32 @@ class LLMClient:
         For endpoint-routed providers (e.g. ``opencode``), returns ``None``
         since the API base is determined by the specific endpoint parsed from
         the model ID (handled in ``__init__``).
+
+        For **local backends** (e.g. ``ollama``, ``llama-cpp``, ``vllm``,
+        ``lm-studio``, ``local-ai``), the address is resolved dynamically:
+        1. If a custom address was set via ``local_backend_manager``, use that.
+        2. Otherwise fall back to ``http://localhost:{port}/v1``.
         """
         if provider and provider in PROVIDER_ROUTES:
             route = PROVIDER_ROUTES[provider]
             if isinstance(route, dict) and route.get("type") == "endpoint_routed":
                 return None
+
+            # Handle local backends with dynamic address resolution
+            if route.get("local_backend"):
+                port = route.get("local_backend_port")
+                try:
+                    from deepresearch.web.settings_manager import local_backend_manager
+                    custom_addr = local_backend_manager.get_address(provider)
+                    if custom_addr:
+                        return f"http://{custom_addr}/v1"
+                except ImportError:
+                    pass  # Fall through to default
+
+                # Fall back to standard port
+                if port:
+                    return f"http://localhost:{port}/v1"
+
             return route.get("api_base")  # type: ignore
         return None
 

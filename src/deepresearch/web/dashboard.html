@@ -5,6 +5,35 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DeepeResearch — Research Dashboard</title>
 <link rel="stylesheet" href="/static/dashboard.css">
+<style>
+#ollamaInstallLog { white-space: pre-wrap; word-break: break-all; }
+#ollamaInstallLog .log-line { padding: 2px 0; line-height: 1.5; }
+#ollamaInstallLog .log-icon { display: inline-block; width: 20px; text-align: center; }
+#ollamaInstallLog .log-step { color: #888; margin-right: 6px; font-size: 11px; }
+#ollamaInstallLog .log-msg { color: #ccc; }
+#ollamaInstallLog .log-success { color: #4caf50; }
+#ollamaInstallLog .log-error { color: #f44336; }
+#ollamaInstallLog .log-retry { padding: 8px 0; }
+
+/* Local Backends tab */
+.backend-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+.backend-card { background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:14px; display:flex; flex-direction:column; gap:8px; font-size:13px; }
+.backend-card .backend-header { display:flex; align-items:center; gap:8px; }
+.backend-status-dot { width:10px; height:10px; border-radius:50%; display:inline-block; flex-shrink:0; }
+.backend-status-dot.running { background:#4caf50; }
+.backend-status-dot.installed { background:#ffb300; }
+.backend-status-dot.not-available { background:#666; }
+.backend-card .backend-name { font-weight:600; font-size:14px; }
+.backend-card .backend-desc { color:var(--text-secondary); font-size:12px; }
+.backend-card .backend-detail { font-size:12px; color:var(--text-muted); font-family:monospace; }
+.backend-card .backend-status-text { font-size:12px; font-weight:500; }
+.backend-card .backend-status-text.running { color:#4caf50; }
+.backend-card .backend-status-text.installed { color:#ffb300; }
+.backend-card .backend-status-text.not-available { color:#999; }
+.backend-actions { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+.backend-address-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.backend-address-row input { flex:1; min-width:100px; padding:4px 6px; background:var(--input-bg); border:1px solid var(--border); border-radius:4px; color:var(--text); font-size:12px; }
+</style>
 </head>
 <body>
 
@@ -268,6 +297,7 @@
       <button class="settings-tab" data-tab="scribe" onclick="switchSettingsTab('scribe')">📝 Scribe</button>
       <button class="settings-tab" data-tab="context-window" onclick="switchSettingsTab('context-window')">📐 Context Window</button>
       <button class="settings-tab" data-tab="max-tokens" onclick="switchSettingsTab('max-tokens')">🔢 Max Tokens</button>
+      <button class="settings-tab" data-tab="local-backends" onclick="switchSettingsTab('local-backends')">⚡ Local Backends</button>
     </div>
 
     <!-- API Keys Tab -->
@@ -289,9 +319,38 @@
 
       <div class="card-header" style="border:1px solid var(--border);border-radius:6px;margin-bottom:12px;">
         <span>🔍 Auto-Discovered (Ollama)</span>
+        <span id="ollamaStatus" style="font-size:12px;font-weight:400;margin-left:8px;"></span>
       </div>
       <div id="discoveredModels">
         <div class="text-muted" style="padding:12px;font-size:13px;">Scanning for local models...</div>
+      </div>
+      <div id="ollamaActions" style="padding:8px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);">
+        <button id="installOllamaBtn" class="btn btn-primary btn-sm" style="display:none;" onclick="window.installOllama()">⬇ Install Ollama</button>
+        <span class="text-muted" style="font-size:11px;" id="ollamaActionHint">Checking Ollama status...</span>
+      </div>
+
+      <!-- Shared Log Viewer (install, uninstall, model pull) -->
+      <div id="ollamaInstallLog" class="hidden" style="margin:8px 12px;border:1px solid var(--border);border-radius:6px;background:#1a1a2e;color:#e0e0e0;font-family:monospace;font-size:12px;max-height:300px;overflow-y:auto;padding:8px;white-space:pre-wrap;word-break:break-all;">
+        <div id="ollamaInstallOutput"></div>
+      </div>
+
+      <div class="card-header" style="border:1px solid var(--border);border-radius:6px;margin-bottom:12px;">
+        <span>🖥️ Hardware</span>
+        <span id="llmfitStatus" style="font-size:12px;font-weight:400;margin-left:8px;"></span>
+      </div>
+      <div id="hardwareInfo">
+        <div class="text-muted" style="padding:12px;font-size:13px;">Detecting hardware...</div>
+      </div>
+      <div id="llmfitActions" style="padding:4px 12px 8px;display:flex;gap:8px;align-items:center;">
+        <!-- Populated by JS: Install/Uninstall button -->
+      </div>
+
+      <div class="card-header" style="border:1px solid var(--border);border-radius:6px;margin:12px 0 8px;">
+        <span>⭐ Recommended Models (llmfit)</span>
+        <span id="llmfitRecStatus" style="font-size:12px;font-weight:400;margin-left:8px;"></span>
+      </div>
+      <div id="modelRecommendations">
+        <div class="text-muted" style="padding:12px;font-size:13px;">Loading recommendations...</div>
       </div>
 
       <div class="card-header" style="border:1px solid var(--border);border-radius:6px;margin:12px 0 8px;">
@@ -381,6 +440,17 @@
       <p class="text-muted" style="margin-top:12px;font-size:12px;">
         Common values: 1024 (fast/cheap), 2048 (balanced), 4096 (detailed), 8192 (max detail).
       </p>
+    </div>
+
+    <!-- Local Backends Tab -->
+    <div id="tab-local-backends" class="settings-section">
+      <p class="text-muted" style="margin-bottom:16px;font-size:13px;">
+        Manage local AI backends including Ollama, llama.cpp, vLLM, LM Studio, and LocalAI.
+        Each backend's connectivity is auto-detected. You can set custom addresses for non-standard setups.
+      </p>
+      <div id="localBackendsList">
+        <div class="text-muted" style="text-align:center;padding:20px;">Loading backends...</div>
+      </div>
     </div>
   </div>
 </div>

@@ -348,6 +348,38 @@ class SettingsManager:
         logger.info("Max tokens set to %d", value)
 
 
+class LocalBackendManager:
+    """Manages local backend address overrides, persisted to ~/.deepresearch/local_backends.json"""
+
+    def __init__(self) -> None:
+        self._settings_dir = Path.home() / ".deepresearch"
+        self._settings_dir.mkdir(parents=True, exist_ok=True)
+        self._path = self._settings_dir / "local_backends.json"
+
+    def get_address(self, name: str) -> str | None:
+        """Return custom address for a backend, or None."""
+        overrides = self._load()
+        return overrides.get(name)
+
+    def set_address(self, name: str, address: str) -> None:
+        """Set custom address for a backend. Persisted to JSON."""
+        overrides = self._load()
+        overrides[name] = address
+        self._save(overrides)
+
+    def _load(self) -> dict[str, str]:
+        try:
+            with open(self._path) as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return {}
+
+    def _save(self, data: dict[str, str]) -> None:
+        with open(self._path, "w") as f:
+            json.dump(data, f, indent=2)
+
+
 # Module-level singletons.
 settings_manager = SettingsManager()
 context_window_manager = ContextWindowManager()
+local_backend_manager = LocalBackendManager()

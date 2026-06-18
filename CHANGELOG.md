@@ -2,6 +2,17 @@
 
 All notable changes to DeepeResearch will be documented in this file.
 
+## v0.13.0 (2026-06-18)
+- Epic: ADR-0005 Local LLM Backends — Auto-Discovery, Installation, and LiteLLM Routing (Phase 2+3)
+- Feature: Auto-discovery probe for 5 local backends (Ollama, llama.cpp, vLLM, LM Studio, LocalAI)
+- Feature: Unified `GET /api/local-backends` endpoint with concurrent probing
+- Feature: `POST /api/local-backends/{name}/test` — test connectivity with latency measurement
+- Feature: `PUT /api/local-backends/{name}/address` — persistent custom address configuration
+- Feature: "⚡ Local Backends" tab in Settings UI — backend cards with 🟢/🟡/🔴 status
+- Feature: LiteLLM routing — 5 new model prefixes (`ollama/`, `llama-cpp/`, `vllm/`, `lm-studio/`, `local-ai/`) with dynamic custom address resolution
+- Feature: LocalBackendManager — persistent backend config in `~/.deepresearch/local_backends.json`
+- Docs: ADR-0005 updated to v2.4, phases 1-3 marked done
+
 ## v0.12.0 (2026-06-17)
 - Epic: ADR-0016 Code Review Handlingsplan — 33 issues closed
 - Phase 1: 9 P0 critical bug fixes (constants keystone, CORS, race conditions, etc.)

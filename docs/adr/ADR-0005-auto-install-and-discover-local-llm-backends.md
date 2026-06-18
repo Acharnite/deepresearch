@@ -1,18 +1,20 @@
 ---
 phase:
-  current: 1
-  total: 1
+  current: 3
+  total: 3
   status:
     1: done
+    2: done
+    3: done
 ---
 
 # ADR-0005: Local LLM Backends — Auto-Discovery, Installation, and LiteLLM Routing
 
 ## Status
 
-In Progress (v2.2)
+In Progress (v2.4)
 
-**Version:** 2.2
+**Version:** 2.4
 **Last Updated:** 2026-06-18
 
 > **⚠️ Valgfrit:** Local LLM installation er **ikke påkrævet** for at bruge DeepeResearch.
@@ -69,10 +71,11 @@ llmfit is well-maintained, cross-platform Rust binary that solves hardware detec
 
 ### Implementation Phases
 
-| Phase | Scope | Timeline |
-|-------|-------|----------|
-| Phase 1 | Ollama auto-install + llmfit hardware detection + custom addresses | Week 1 |
-| Phase 2 | Auto-discovery (all backends) + LiteLLM routing integration | Week 2 |
+| Phase | Scope | Timeline | Status |
+|-------|-------|----------|--------|
+| Phase 1 | Ollama auto-install + llmfit hardware detection + custom addresses | Week 1 | ✅ Done |
+| Phase 2 | Auto-discovery (all backends) + LiteLLM routing integration + Ollama install via Web UI (SSE) | Week 2 | ✅ Done |
+| Phase 3 | Local backend management: llmfit install/uninstall, Ollama start/stop/uninstall, model pull from recommendations table | Week 3 | ✅ Done |
 
 Each phase is independently testable and deployable.
 
@@ -424,7 +427,7 @@ curl "http://localhost:8888/search?q=test&format=json" | python -m json.tool
 SearXNG runs on port 8888 by default and is auto-discovered by the same port-probing protocol used for LLM backends.
 
 ## Related Issues
-- #36 (Local LLM auto-install): ADR-0005 v2.2 — llmfit (HW detection) + Ollama auto-install + auto-discovery + LiteLLM routing. Web UI installation with live log tail (SSE) and frontend state machine.
+- #36 (Local LLM auto-install): ADR-0005 v2.3 — llmfit (HW detection) + Ollama auto-install + auto-discovery + LiteLLM routing + Web UI install with live log tail (SSE) and frontend state machine (Fase 2c).
 - #94 (Epic: ADR-0017 — Deployment & Resiliency, v0.13.0): Parent epic that includes #36 as Phase 2.
 - LiteLLM (core dependency): `litellm>=1.40.0` — already handles routing for both cloud and local backends.
 

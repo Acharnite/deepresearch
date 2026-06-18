@@ -223,3 +223,97 @@ export async function saveMaxTokensAPI(maxTokens) {
     body: JSON.stringify({ max_tokens: maxTokens }),
   });
 }
+
+// ── Tools / Hardware (llmfit) ─────────────────────────
+
+export async function fetchToolStatus() {
+  const resp = await fetch('/api/tools/status');
+  return resp.json();
+}
+
+export async function fetchHardwareInfo() {
+  const resp = await fetch('/api/hardware');
+  return resp.json();
+}
+
+export async function fetchModelRecommendations() {
+  const resp = await fetch('/api/tools/recommendations');
+  if (!resp.ok) return { available: false };
+  return await resp.json();
+}
+
+// ── Ollama Install ────────────────────────────────────
+
+export async function fetchOllamaStatus() {
+  const resp = await fetch('/api/local-backends/ollama/status');
+  if (!resp.ok) return { installed: false, running: false };
+  return await resp.json();
+}
+
+export function getOllamaInstallURL() {
+  return '/api/local-backends/ollama/install';
+}
+
+// ── Local Backend Management ────────────────────────────
+
+export async function installLlmfit() {
+  return '/api/local-backends/llmfit/install';
+}
+
+export async function uninstallLlmfit() {
+  return await fetch('/api/local-backends/llmfit/uninstall', { method: 'POST' });
+}
+
+export async function startOllama() {
+  return await fetch('/api/local-backends/ollama/start', { method: 'POST' });
+}
+
+export async function stopOllama() {
+  return await fetch('/api/local-backends/ollama/stop', { method: 'POST' });
+}
+
+export async function uninstallOllama() {
+  return '/api/local-backends/ollama/uninstall';
+}
+
+export function getPullModelURL() {
+  return '/api/local-backends/ollama/pull';
+}
+
+export function getDownloadModelURL() {
+  return '/api/local-backends/models/download';
+}
+
+export function getLlmfitInstallURL() {
+  return '/api/local-backends/llmfit/install';
+}
+
+export function getOllamaUninstallURL() {
+  return '/api/local-backends/ollama/uninstall';
+}
+
+export async function fetchLocalBackends() {
+  const resp = await fetch('/api/local-backends');
+  if (!resp.ok) return { backends: [] };
+  return resp.json();
+}
+
+export async function testLocalBackend(name) {
+  const resp = await fetch(`/api/local-backends/${encodeURIComponent(name)}/test`, { method: 'POST' });
+  return resp.json();
+}
+
+export async function setBackendAddress(name, address) {
+  const resp = await fetch(`/api/local-backends/${encodeURIComponent(name)}/address`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address }),
+  });
+  return resp.json();
+}
+
+export async function getBackendAddress(name) {
+  const resp = await fetch(`/api/local-backends/${encodeURIComponent(name)}/address`);
+  if (!resp.ok) return { address: null };
+  return resp.json();
+}
