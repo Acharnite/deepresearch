@@ -645,7 +645,7 @@ class MultiSessionManager:
                     "session_id": info.session_id,
                     "topic": info.topic,
                     "status": info.status or "unknown",
-                    "model": info.model,
+                    "model": info.selected_model,
                     "max_rounds": info.max_rounds,
                     "time_budget_seconds": info.time_budget_seconds,
                     "source": info.source,
