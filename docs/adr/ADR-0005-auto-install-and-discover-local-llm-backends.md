@@ -6,98 +6,119 @@ phase:
     1: done
 ---
 
-# ADR-0005: Auto-Install and Auto-Discover Local LLM Backends
+# ADR-0005: Local LLM Backends — Auto-Discovery, Installation, and LiteLLM Routing
 
 ## Status
 
-Proposed
+In Progress (v2.2)
 
-**Version:** 2.1
+**Version:** 2.2
 **Last Updated:** 2026-06-18
 
 > **⚠️ Valgfrit:** Local LLM installation er **ikke påkrævet** for at bruge DeepeResearch.
-> Systemet fungerer fuldt ud med cloud-baserede modeller (OpenAI, Anthropic, OpenRouter).
+> Systemet fungerer fuldt ud med cloud-baserede modeller (OpenAI, Anthropic, OpenRouter) via API keys.
 > Local LLM er kun nødvendigt hvis du vil køre modeller lokalt uden API-omkostninger.
 
 ## Context
 
 DeepeResearch currently supports cloud-based LLM providers (OpenAI, Anthropic, OpenRouter, Groq, etc.) via API keys, and has basic Ollama integration (localhost:11434). Users want to run research locally without paying for API calls, using open-source models through local inference backends.
 
+**LiteLLM** is already a core dependency (`litellm>=1.40.0`) — used for routing to `openrouter/deepseek/deepseek-v4-flash` and other cloud providers via OpenRouter. The same routing layer can be extended to local backends.
+
 ### Current State
+- LiteLLM already handles all LLM routing (cloud providers via OpenRouter)
 - Ollama auto-discovered at localhost:11434 via `/api/tags`
 - Custom local endpoints configurable via Settings tab (llama.cpp, vLLM)
 - No auto-install capability — users must install backends manually
-- No auto-discovery beyond Ollama — llama.cpp, vLLM, SGLang require manual URL entry
+- No auto-discovery beyond Ollama — llama.cpp, vLLM, LM Studio, LocalAI require manual URL entry
 - No installation UI — terminal-only setup
 
 ### Problem
-1. Users must manually install and configure local backends (Ollama, vLLM, llama.cpp, SGLang)
+1. Users must manually install and configure local backends (Ollama, vLLM, llama.cpp, LM Studio, LocalAI)
 2. Each backend has different installation methods (pip, binary, Docker)
 3. Users don't know which backend to choose for their hardware
 4. No feedback during installation (silent failures, unclear errors)
 5. Auto-discovery only works for Ollama — other backends require manual configuration
+6. LiteLLM routing to local backends requires manual `api_base` configuration
 
 ### Key Forces
 1. Cross-platform support (Linux, macOS, Windows WSL)
 2. Hardware diversity (CPU-only, NVIDIA GPU, Apple Silicon, AMD)
-3. Backend complexity (Ollama = simple, vLLM = Docker, llama.cpp = binary, SGLang = pip+torch)
+3. Backend complexity (Ollama = simple, vLLM = Docker/pip, llama.cpp = binary, LM Studio = GUI)
 4. User experience — install should be one-click from the web UI
-5. Must not break existing Ollama integration
+5. Must not break existing LiteLLM + OpenRouter integration
 6. Safety — auto-install should not overwrite existing installations
+7. LiteLLM is already the routing layer — reuse it, don't duplicate
 
 ### Existing Solutions
-- **fitllm** (28.1k stars, Rust, MIT) — hardware detection, model scoring, recommendations, download management
-- **llm-serve** (281 stars, Rust, MIT) — backend detection, model serving, TUI for managing servers
 
-Both are well-maintained, cross-platform Rust binaries that solve hardware detection and backend management better than custom code.
+- **llmfit** (AlexsJones/llmfit, 28.2k⭐, Rust, MIT) — hardware detection (`llmfit system --json`), model recommendations (`llmfit recommend --json`), scoring. CLI + REST API (`llmfit serve --port 8787`) + MCP server (`llmfit serve --mcp`). Install: `curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local` (uden sudo). 5.8 MB static binary.
+- **llmserve** (AlexsJones/llmserve, 285⭐) — LAV fit. TUI-only, ingen CLI mode, ingen REST API, kan ikke scriptes. Droppet.
+
+llmfit is well-maintained, cross-platform Rust binary that solves hardware detection better than custom code. llmserve is rejected due to TUI-only interface.
 
 ## Decision
 
-### Approach: Integrate fitllm + llm-serve
+### Approach
 
-Replace custom auto-install logic with integration of existing open-source tools. This reduces ~470 lines of custom code to integration with mature, community-maintained binaries.
+1. **llmfit** (AlexsJones/llmfit) — hardware detection + model recommendations. Installeres via Web UI med live log tail. Køres som subprocess eller REST API sidecar.
+2. **Ollama auto-install** — `curl -fsSL https://ollama.com/install.sh | sh` via Web UI med live log tail.
+3. **Auto-discovery** — probe standardporte for Ollama (11434), llama.cpp (8080), vLLM (8000), LM Studio (1234), LocalAI (8080).
+4. **Custom addresses** — bruger kan indstille custom host:port for hver backend.
+5. **LiteLLM routing** — deepresearch bruger LiteLLM til at route til den valgte backend. OpenAI-kompatible endpoints (llama.cpp, vLLM, LM Studio, LocalAI) routes via `custom/openai`. Ollama routes via `ollama/`.
 
 ### Implementation Phases
 
 | Phase | Scope | Timeline |
 |-------|-------|----------|
-| Phase 1 | fitllm/llm-serve detection + install UI + custom addresses | Week 1 |
-| Phase 2 | Hardware-aware model recommendations | Week 2 |
-| Phase 3 | Backend management via llm-serve | Week 3 |
-| Phase 4 | Model selection integration + polish | Week 4 |
+| Phase 1 | Ollama auto-install + llmfit hardware detection + custom addresses | Week 1 |
+| Phase 2 | Auto-discovery (all backends) + LiteLLM routing integration | Week 2 |
 
 Each phase is independently testable and deployable.
 
 ### Tool Integration
 
-#### fitllm — Hardware Detection & Model Recommendations
+#### llmfit — Hardware Detection & Model Recommendations
 
 ```bash
 # Detect hardware
-fitllm system --json
+llmfit system --json
 # Returns: GPU type, VRAM, CPU cores, RAM, platform
 
 # Get model recommendations
-fitllm recommend --json --use-case coding
+llmfit recommend --json
 # Returns: model list with hardware fit scores
 
-# Download a model
-fitllm download <model-name>
-# Manages download with progress
+# REST API (sidecar)
+llmfit serve --port 8787
+# Also supports MCP: llmfit serve --mcp
+
+# Install (no sudo)
+curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local
 ```
 
-#### llm-serve — Backend Management
+#### Backend Installation
 
+Primært Ollama:
 ```bash
-# List running backends
-llm-serve list --json
-
-# Start a backend
-llm-serve start --model <model-name> --backend ollama
-
-# Stop a backend
-llm-serve stop <server-id>
+curl -fsSL https://ollama.com/install.sh | sh
 ```
+
+Andre backends (llama.cpp, vLLM) kan installeres, men Ollama er hovedmålet.
+
+#### LiteLLM Routing
+
+LiteLLM er allerede dependency og bruges til at route til cloud providers via OpenRouter. Samme routing layer bruges til local backends:
+
+| Backend | LiteLLM Model Prefix | Example |
+|---------|---------------------|---------|
+| Ollama | `ollama/<model>` | `ollama/llama3.2-3b` |
+| llama.cpp | `custom/openai` med `api_base` | `custom/llama` → `http://localhost:8080/v1` |
+| vLLM | `custom/openai` med `api_base` | `custom/vllm` → `http://localhost:8000/v1` |
+| LM Studio | `custom/openai` med `api_base` | `custom/lmstudio` → `http://localhost:1234/v1` |
+| LocalAI | `custom/openai` med `api_base` | `custom/localai` → `http://localhost:8080/v1` |
+
+Brugeren vælger en model i Web UI, og deepresearch konfigurerer LiteLLM dynamisk med korrekt `api_base` + model prefix.
 
 ### Web UI Integration
 
@@ -105,35 +126,32 @@ llm-serve stop <server-id>
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│ Local LLM                                            │
+│ Local LLM (valgfrit)                                 │
+│ ⚠️ Kan bruges uden — OpenRouter default              │
 │                                                      │
-│ Hardware Summary (from fitllm)                       │
+│ Hardware (via llmfit)                                │
 │ ┌──────────────────────────────────────────────────┐ │
-│ │ GPU: NVIDIA RTX 3080 (10GB VRAM)                 │ │
-│ │ CPU: 12 cores, 64GB RAM                         │ │
-│ │ Platform: Linux x86_64                          │ │
+│ │ 🖥️ GPU: NVIDIA RTX 3080 (10GB VRAM)             │ │
+│ │ 🧠 CPU: 12 cores, 64GB RAM                      │ │
+│ │ 🔧 Backend: CUDA                                 │ │
+│ │ [Install llmfit] [Refresh]                       │ │
 │ └──────────────────────────────────────────────────┘ │
 │                                                      │
-│ Recommended Models (from fitllm recommend)           │
+│ Anbefalede modeller (via llmfit)                     │
 │ ┌──────────────────────────────────────────────────┐ │
-│ │ Model                │ Fit  │ Size  │ Backend    │ │
-│ │ codellama-7b         │ 95%  │ 4.1GB │ ollama     │ │
-│ │ mistral-7b           │ 90%  │ 4.1GB │ ollama     │ │
-│ │ deepseek-coder-6.7b  │ 85%  │ 4.0GB │ ollama     │ │
-│ │ [Show more...]                                      │ │
+│ │ Model              │ Fit  │ Size │ Backend        │ │
+│ │ llama3.2-3b        │ 95%  │ 2.0GB│ ollama         │ │
+│ │ mistral-7b         │ 90%  │ 4.1GB│ ollama         │ │
+│ │ qwen2.5-7b         │ 85%  │ 4.0GB│ ollama         │ │
 │ └──────────────────────────────────────────────────┘ │
 │                                                      │
-│ Running Backends (from llm-serve / port probing)      │
+│ Discovered Backends                                  │
 │ ┌──────────────────────────────────────────────────┐ │
-│ │ 🟢 Ollama — localhost:11434 — 3 models loaded    │ │
-│ │ 🟡 llama.cpp — localhost:8080 — idle             │ │
-│ │ [Configure Custom Address...]                     │ │
-│ └──────────────────────────────────────────────────┘ │
-│                                                      │
-│ Tool Status                                          │
-│ ┌──────────────────────────────────────────────────┐ │
-│ │ fitllm: ✅ Installed (v0.3.2)                   │ │
-│ │ llm-serve: ❌ Not installed [Install Instructions]│ │
+│ │ 🟢 Ollama — localhost:11434 — 5 modeller         │ │
+│ │ 🔴 llama.cpp — localhost:8080 — ej fundet        │ │
+│ │ ⚫ vLLM — [custom address]                       │ │
+│ │ ⚫ LM Studio — [custom address]                   │ │
+│ │ [Install Ollama] [Add Custom...]                  │ │
 │ └──────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────┘
 ```
@@ -147,16 +165,17 @@ Når en bruger klikker "Install" i Settings → Local LLM, sker følgende:
 3. Frontend viser en terminal-lignende log viewer:
    ```
    ┌──────────────────────────────────────────────────────┐
-   │ Installing fitllm...                                 │
+   │ Installing Ollama...                                 │
    │                                                      │
-   │ $ curl -fsSL https://fitllm.dev/install.sh | bash    │
+   │ $ curl -fsSL https://ollama.com/install.sh | sh      │
    │ ✓ Detected platform: linux-x86_64                    │
-   │ ✓ Downloading fitllm v0.4.1...                       │
+   │ ✓ Downloaded install script                          │
+   │ ✓ Installing Ollama...                               │
    │ ████████████████████░░░░░░░░░░ 65%                   │
-   │ ✓ Extracting binary...                               │
-   │ ✓ Installing to /usr/local/bin/fitllm                │
+   │ ✓ Verifying installation...                          │
+   │ ✓ Ollama v0.5.1 installed                            │
    │                                                      │
-   │ ✅ Installation complete! (v0.4.1)                   │
+   │ ✅ Installation complete! (v0.5.1)                   │
    │ [Continue] [View Details]                            │
    └──────────────────────────────────────────────────────┘
    ```
@@ -168,13 +187,13 @@ Når en bruger klikker "Install" i Settings → Local LLM, sker følgende:
 ```javascript
 // Server → Frontend via SSE
 event: install_log
-data: {"step": "download", "message": "Downloading fitllm v0.4.1...", "progress": 65}
+data: {"step": "download", "message": "Downloading install script...", "progress": 30}
 
 event: install_log
-data: {"step": "extract", "message": "Extracting binary...", "progress": 80}
+data: {"step": "install", "message": "Installing Ollama...", "progress": 65}
 
 event: install_complete
-data: {"status": "success", "version": "0.4.1", "path": "/usr/local/bin/fitllm"}
+data: {"status": "success", "version": "0.5.1", "path": "/usr/local/bin/ollama"}
 
 event: install_error
 data: {"status": "error", "message": "Disk space insufficient: need 500MB, have 200MB", "code": "ENOSPC"}
@@ -189,23 +208,25 @@ IDLE → INSTALLING → [SUCCESS | ERROR] → IDLE
 
 ### Custom Address Configuration
 
-Users may run backends on non-standard addresses, remote machines, or Docker containers. Each backend supports a configurable `host:port` address. This is retained from v1.0.
+Users may run backends on non-standard addresses, remote machines, or Docker containers. Each backend supports a configurable `host:port` address.
 
 #### Configuration Model
 
 ```python
 class LocalBackendConfig(BaseModel):
-    name: str                           # "ollama", "llamacpp", "vllm", "sglang"
+    name: str                           # "ollama", "llamacpp", "vllm", "lm-studio", "localai"
     address: str = ""                   # Custom host:port (e.g. "192.168.1.50:11434")
     auto_install: bool = True           # Allow auto-install if not found
     enabled: bool = True                # Enable/disable this backend
     installed_version: str | None = None  # Detected backend version
     last_checked: str | None = None     # ISO timestamp of last health check
+    lite_llm_model: str = ""            # Model name for LiteLLM routing (auto-configured)
+    lite_llm_api_base: str = ""         # api_base for LiteLLM (auto-configured)
 ```
 
 Address resolution order:
 1. User-configured `address` (from Settings tab or config file)
-2. Auto-discovered address (from llm-serve or port probing)
+2. Auto-discovered address (from port probing)
 3. Default address (`localhost:<default-port>`)
 
 #### Remote Backend Support
@@ -224,37 +245,37 @@ Address resolution order:
 On startup and on-demand, the server detects backends in this order:
 
 1. **Custom addresses** — Check each backend's saved custom address first
-2. **llm-serve** — Query `llm-serve list --json` for managed backends
-3. **Default ports** — Probe `localhost:<default-port>` for each backend
+2. **Default ports** — Probe `localhost:<default-port>` for each backend
 
 | Backend | Default Port | Probe Endpoint | Response |
 |---------|:------------:|----------------|----------|
 | Ollama | 11434 | `GET /api/tags` | `{"models": [...]}` |
 | llama.cpp | 8080 | `GET /v1/models` | `{"data": [{"id": "..."}]}` |
 | vLLM | 8000 | `GET /v1/models` | `{"data": [{"id": "..."}]}` |
-| SGLang | 30000 | `GET /v1/models` | `{"data": [{"id": "..."}]}` |
+| LM Studio | 1234 | `GET /v1/models` | `{"data": [{"id": "..."}]}` |
+| LocalAI | 8080 | `GET /v1/models` | `{"data": [{"id": "..."}]}` |
 
 If a custom address is configured, it takes priority. The probe is a lightweight HTTP GET with a 2-second timeout.
 
 ### Hardware-Aware Model Recommendations
 
-The server calls fitllm to get hardware info and model suggestions:
+The server calls llmfit to get hardware info and model suggestions:
 
 ```python
 async def get_hardware_info() -> HardwareInfo:
-    """Get hardware info from fitllm."""
+    """Get hardware info from llmfit."""
     result = await asyncio.create_subprocess_exec(
-        "fitllm", "system", "--json",
+        "llmfit", "system", "--json",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     stdout, _ = await result.communicate()
     return json.loads(stdout)
 
-async def get_model_recommendations(use_case: str = "coding") -> list[ModelRecommendation]:
-    """Get model recommendations from fitllm."""
+async def get_model_recommendations() -> list[ModelRecommendation]:
+    """Get model recommendations from llmfit."""
     result = await asyncio.create_subprocess_exec(
-        "fitllm", "recommend", "--json", "--use-case", use_case,
+        "llmfit", "recommend", "--json",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -268,27 +289,51 @@ Model recommendations include a hardware fit score (0-100%) indicating how well 
 
 ```
 GET    /api/local-backends                  — List all backends with status + address
-POST   /api/local-backends/{name}/install   — Start installation (SSE stream)
-POST   /api/local-backends/{name}/start     — Start a stopped backend
-POST   /api/local-backends/{name}/stop      — Stop a running backend
-GET    /api/local-backends/{name}/logs      — Stream installation/runtime logs (SSE)
+POST   /api/local-backends/{name}/install   — Start installation (Ollama/llmfit) (SSE stream)
+POST   /api/local-backends/{name}/uninstall — Uninstall a backend
 PUT    /api/local-backends/{name}/address   — Update custom address
 POST   /api/local-backends/{name}/test      — Test connectivity to address
-DELETE /api/local-backends/{name}           — Uninstall a backend
-GET    /api/hardware                        — Hardware info (from fitllm)
-GET    /api/recommendations                 — Model recommendations (from fitllm)
-GET    /api/tools/status                    — fitllm/llm-serve installation status
+GET    /api/hardware                        — Hardware info (via llmfit if installed)
+GET    /api/recommendations                 — Model recommendations (via llmfit if installed)
+GET    /api/tools/status                    — llmfit installation status + version
 ```
+
+### LiteLLM Routing Integration
+
+When a user selects a local model in Web UI, deepresearch dynamically configures LiteLLM:
+
+```python
+from litellm import completion
+
+# Example: Route to Ollama
+response = completion(
+    model="ollama/llama3.2-3b",
+    api_base="http://localhost:11434",
+    messages=[{"role": "user", "content": "Hello"}]
+)
+
+# Example: Route to custom OpenAI-compatible backend
+response = completion(
+    model="custom/openai",
+    api_base="http://localhost:8080/v1",
+    messages=[{"role": "user", "content": "Hello"}]
+)
+```
+
+The Web UI Settings tab allows users to:
+1. Select a discovered backend
+2. Choose a model from that backend's available models
+3. LiteLLM configuration is auto-generated based on backend type + address
 
 ## Consequences
 
 ### Security Considerations
 
-1. **Tool installation**: fitllm and llm-serve are installed via standard package managers (brew, pip, curl script). Users are shown instructions and must install manually — no silent background installation.
+1. **Tool installation**: llmfit and Ollama are installed via standard curl|sh scripts. Users are shown live logs and can abort at any time.
 
-2. **HTTPS-only downloads**: fitllm's model downloads use HTTPS with checksum verification. We do not implement custom download logic.
+2. **HTTPS-only downloads**: All install scripts downloaded over HTTPS. llmfit verification via SHA256 checksum.
 
-3. **No arbitrary code execution**: Only pre-approved tools (fitllm, llm-serve) are invoked. Users cannot provide custom scripts or binaries.
+3. **No arbitrary code execution**: Only pre-approved tools (llmfit, Ollama install script) are invoked. Users cannot provide custom scripts or binaries.
 
 4. **Input sanitization**: Custom addresses are validated (host:port format, port range 1-65535, no URL schemes). Prevents command injection.
 
@@ -297,34 +342,35 @@ GET    /api/tools/status                    — fitllm/llm-serve installation st
 6. **Docker alternative**: For maximum isolation, users can run backends via Docker. Docker containers are discovered via the same port-probing protocol.
 
 ### Positive
-- Dramatically less custom code (~300 lines vs ~470) — leverage community-maintained tools
-- Hardware detection is battle-tested (fitllm has 28.1k stars)
-- Model recommendations based on real hardware benchmarks
+- One-click Ollama install from Web UI with live log feedback
+- llmfit provides hardware-aware model recommendations (battle-tested, 28.2k⭐)
+- LiteLLM already handles routing — no new routing code needed
 - Custom address support retained for remote/Docker deployments
-- Clear install instructions — users choose their installation method
-- Auto-discovery still works for Ollama and other backends on known ports
+- Auto-discovery works for 5 backends via standard port probing
 - Hardware fit scores help users pick the right model
+- No llmserve dependency (dropped due to TUI-only limitations)
 
 ### Negative
-- Users must install fitllm/llm-serve separately (extra step vs fully automatic)
-- Two external tool dependencies (fitllm, llm-serve) must be maintained
-- If fitllm/llm-serve change their CLI interface, integration must be updated
-- Port probing fallback is still custom code
+- llmfit is an extra optional dependency (~5.8 MB binary)
+- Ollama install uses curl|sh pattern (industry standard, but carries trust risk)
+- Two external dependencies (llmfit, Ollama) must be maintained
+- If llmfit changes CLI interface, integration must be updated
+- Port probing fallback is custom code
 
 ### Risks
-- fitllm/llm-serve may not be available on all platforms (Rust binaries)
-- CLI interface changes in upstream tools could break integration
+- llmfit may not be available on all platforms (Rust binary, but cross-platform)
+- CLI interface changes in upstream llmfit could break integration
 - Port conflicts if user already has something running on default ports
 - Remote backends may have higher latency affecting research speed
 - Custom addresses may become stale if services move
 
 ### Mitigations
-- Provide installation instructions for all major platforms (macOS, Linux, Windows WSL)
-- Pin to specific tool versions and test before upgrading
+- llmfit install without sudo (`--local` flag) — works on all Unix platforms
+- Pin to specific llmfit version and test before upgrading
 - Check port availability before starting
 - "Test" button validates address before saving
 - Periodic health check on configured addresses (warn if unreachable)
-- Cache tool output to reduce subprocess calls
+- Cache llmfit output to reduce subprocess calls
 
 ### Docker Alternative
 
@@ -378,14 +424,15 @@ curl "http://localhost:8888/search?q=test&format=json" | python -m json.tool
 SearXNG runs on port 8888 by default and is auto-discovered by the same port-probing protocol used for LLM backends.
 
 ## Related Issues
-- #36 (fitllm/llm-serve Integration): ADR-0005 v2.1 replaces custom auto-installers with fitllm (hardware detection) + llm-serve (model serving). Includes web UI installation with live log tail (SSE) and frontend state machine.
-- #37 (Deployment — systemd/launchd/NSSM): Natural companion — users who install local LLMs also want persistent service deployment.
-- #50 (Server Crash — no graceful shutdown): Resolved by #37 deployment as a systemd/launchd service with auto-restart.
-- #94 (Epic: ADR-0017 — Deployment & Resiliency, v0.13.0): Parent epic that includes #36 as Phase 4.
+- #36 (Local LLM auto-install): ADR-0005 v2.2 — llmfit (HW detection) + Ollama auto-install + auto-discovery + LiteLLM routing. Web UI installation with live log tail (SSE) and frontend state machine.
+- #94 (Epic: ADR-0017 — Deployment & Resiliency, v0.13.0): Parent epic that includes #36 as Phase 2.
+- LiteLLM (core dependency): `litellm>=1.40.0` — already handles routing for both cloud and local backends.
 
 ## References
 - ADR-0001: Multi-Agent Research Architecture (backend integration point)
 - ADR-0003: Web Frontend and Multi-Session (Settings tab extension)
 - ADR-0004: Test Findings (DuckDuckGo timeout → local model alternative)
-- fitllm: https://github.com/fitllm/fitllm
-- llm-serve: https://github.com/llm-serve/llm-serve
+- llmfit: https://github.com/AlexsJones/llmfit
+- llmserve (dropped): https://github.com/AlexsJones/llmserve
+- Ollama install: https://ollama.com/install.sh
+- LiteLLM: https://github.com/BerriAI/litellm
