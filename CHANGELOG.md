@@ -2,6 +2,23 @@
 
 All notable changes to DeepeResearch will be documented in this file.
 
+## v0.14.0 (2026-06-20)
+- ADR-0017: Enhanced Tool Calling with Multi-Provider Search
+- Feature: Multi-provider search chain (SearXNG → DuckDuckGo → Brave → Google PSE → Tavily → Serper)
+- Feature: Parallel page content fetching from search results
+- Feature: Enriched search result format (content, key_points, tl_dr, quotes, source, time_filter)
+- Feature: Multi-format ToolCallParser (JSON inline, fenced blocks, TOOL_CALL tags, XML invoke, DSML)
+- Feature: Tool alias registry with resolve_tool() (web_search = search = websearch = google_search)
+- Feature: Time filter auto-detection from query keywords (today→day, this week→week, etc.)
+- Feature: Search disk cache (SHA-256 keys, LRU eviction, TTL auto-detection)
+- Feature: Gemini dual-path routing + force_text_parsing override flag
+- Feature: 6 individual provider modules under tools/providers/
+- Tests: 133 new unit tests for all tool modules (486 total, 0 failures)
+- Refactor: test_adr0017_tools.py split into 6 focused test files
+- Refactor: test_web.py + test_local_backends.py consolidated to class-style
+- Chore: All 3 pre-existing RuntimeWarnings suppressed via pytest filterwarnings
+- Docs: ADR-0017 updated to v1.1 with review fixes applied
+
 ## v0.13.0 (2026-06-18)
 - Epic: ADR-0005 Local LLM Backends — Auto-Discovery, Installation, and LiteLLM Routing (Phase 2+3)
 - Feature: Auto-discovery probe for 5 local backends (Ollama, llama.cpp, vLLM, LM Studio, LocalAI)

@@ -55,3 +55,11 @@ include = ["deepresearch*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+filterwarnings = [
+    # FastAPI TestClient background tasks produce unawaited coroutine warnings
+    # on garbage collection — harmless, upstream issue with TestClient + background tasks
+    "ignore:coroutine 'Orchestrator.run' was never awaited:RuntimeWarning",
+    "ignore:coroutine 'BaseLLMHTTPHandler.acompletion_stream_function' was never awaited:RuntimeWarning",
+    # Starlette deprecation — httpx2 doesn't exist yet (upstream pre-announcement)
+    "ignore::starlette.exceptions.StarletteDeprecationWarning",
+]

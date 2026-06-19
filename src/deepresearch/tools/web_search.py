@@ -1,11 +1,14 @@
 """Web search tool for DeepeResearch agents.
 
-Supports two backends:
-  - SearXNG (default): self-hosted metasearch engine, no rate limits
-  - DuckDuckGo (legacy): scraped via ddgs library
+Refactored per ADR-0017.  Delegates to ``SearchChain`` for multi-provider
+fallback and wires in content fetching, caching, and time filter
+auto-detection.
 
-The active backend is controlled by ``_search_engine`` (feature flag),
-which reads from the settings manager on first use.
+Backward-compatible:
+  - ``web_search(query, max_results=5, retries=3)`` signature preserved
+  - ``WEB_SEARCH_TOOL`` dict preserved
+  - ``get_search_health_info()`` / ``get_search_semaphore_info()`` preserved
+  - Old ``_search_engine`` / ``_search_health`` globals kept for compat
 """
 
 from __future__ import annotations
@@ -14,67 +17,104 @@ import asyncio
 import hashlib
 import logging
 import os
-import time
+import re
 from typing import Any
 
-import httpx
-
 from deepresearch.observability.tracing import tracer
+from deepresearch.tools.cache import SearchCache
+from deepresearch.tools.content_fetcher import fetch_page_content
+from deepresearch.tools.search_chain import SearchChain
+from deepresearch.tools.time_filter import detect_time_filter
 
 logger = logging.getLogger(__name__)
 
-# ── SearXNG configuration (loaded from settings / env) ────────────────
+# ── Configuration from environment (ADR-0017) ──────────────────────────
+
+_SEARCH_CACHE_ENABLED: bool = (
+    os.environ.get("SEARCH_CACHE_ENABLED", "true").lower()
+    in ("1", "true", "yes")
+)
+_SEARCH_CACHE_TTL_EVERGREEN: int = int(
+    os.environ.get("SEARCH_CACHE_TTL_EVERGREEN", "3600")
+)
+_SEARCH_CACHE_TTL_CURRENT: int = int(
+    os.environ.get("SEARCH_CACHE_TTL_CURRENT", "300")
+)
+_SEARCH_FETCH_CONTENT: bool = (
+    os.environ.get("SEARCH_FETCH_CONTENT", "true").lower()
+    in ("1", "true", "yes")
+)
+_SEARCH_FETCH_MAX_PAGES: int = int(
+    os.environ.get("SEARCH_FETCH_MAX_PAGES", "5")
+)
+_SEARCH_FETCH_MAX_CHARS: int = int(
+    os.environ.get("SEARCH_FETCH_MAX_CHARS", "2000")
+)
+
+
+# ── Global lazy singletons (patchable in tests) ────────────────────────
+
+_search_chain: SearchChain | None = None
+_search_cache: SearchCache | None = None
+
+
+def _get_search_chain() -> SearchChain:
+    """Return the global ``SearchChain`` instance (lazy-init)."""
+    global _search_chain
+    if _search_chain is None:
+        _search_chain = SearchChain()
+    return _search_chain
+
+
+def _get_search_cache() -> SearchCache | None:
+    """Return the global ``SearchCache`` instance (lazy-init, best-effort).
+
+    Returns ``None`` if caching is disabled or initialization fails.
+    """
+    global _search_cache
+    if _search_cache is None and _SEARCH_CACHE_ENABLED:
+        try:
+            _search_cache = SearchCache()
+        except Exception as e:
+            logger.warning("Failed to initialize SearchCache: %s", e)
+            _search_cache = None
+    return _search_cache
+
+
+# ── Backward-compat globals (kept for existing consumers) ──────────────
+
 _search_engine: str = os.environ.get("SEARCH_ENGINE", "searxng")
+_search_health: str = "unknown"
+_last_search_latency_ms: float = 0.0
+_search_semaphore = asyncio.Semaphore(3)
 _searxng_url: str = os.environ.get("SEARXNG_URL", "http://localhost:8888")
-_searxng_fallback_url: str = os.environ.get("SEARXNG_FALLBACK_URL", "https://searx.be")
+_searxng_fallback_url: str = os.environ.get(
+    "SEARXNG_FALLBACK_URL", "https://searx.be"
+)
 _searxng_engines: list[str] = ["google", "bing", "startpage"]
 _searxng_categories: list[str] = ["general"]
 _searxng_timeout: int = 10
 
-# ── Health tracking ───────────────────────────────────────────────────
-_search_health: str = "unknown"  # "healthy" | "degraded" | "unhealthy"
-_last_search_latency_ms: float = 0.0
-
 
 def _load_search_config() -> None:
-    """Load search config from the settings manager (if available)."""
-    global _search_engine, _searxng_url, _searxng_fallback_url
-    global _searxng_engines, _searxng_categories, _searxng_timeout
-
-    try:
-        from deepresearch.web.settings_manager import settings_manager
-
-        config = settings_manager.get_search_config()
-        if config.get("engine"):
-            _search_engine = config["engine"]
-        if config.get("searxng_url"):
-            _searxng_url = config["searxng_url"]
-        if config.get("searxng_fallback_url"):
-            _searxng_fallback_url = config["searxng_fallback_url"]
-        if config.get("searxng_engines"):
-            _searxng_engines = config["searxng_engines"]
-        if config.get("searxng_categories"):
-            _searxng_categories = config["searxng_categories"]
-        if config.get("searxng_timeout"):
-            _searxng_timeout = config["searxng_timeout"]
-        logger.debug(
-            "Loaded search config: engine=%s, url=%s", _search_engine, _searxng_url
-        )
-    except Exception as e:
-        logger.debug("Could not load search config (using defaults): %s", e)
+    """Load search config from the settings manager (backward compat)."""
+    # No-op — config is now managed by individual providers via their own
+    # _load_config() calls.  Kept so callers that invoke it before
+    # web_search() continue to work without error.
+    pass
 
 
-# ── Global semaphore to limit concurrent searches ─────────────────────
-_search_semaphore = asyncio.Semaphore(3)
-
-
-# ── Tool definition for LiteLLM function calling ──────────────────────
+# ── Tool definition for LiteLLM function calling ───────────────────────
 
 WEB_SEARCH_TOOL: dict[str, Any] = {
     "type": "function",
     "function": {
         "name": "web_search",
-        "description": "Search the web for current information on a topic. Use this when you need up-to-date facts, recent developments, or external sources.",
+        "description": (
+            "Search the web for current information on a topic. "
+            "Use this when you need up-to-date facts, recent developments, "
+            "or external sources."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -94,187 +134,165 @@ WEB_SEARCH_TOOL: dict[str, Any] = {
 }
 
 
+# ── Helpers ────────────────────────────────────────────────────────────
+
+
+def _make_cache_key(query: str, max_results: int) -> str:
+    """Create a SHA-256 cache key from query parameters."""
+    normalized = " ".join(query.strip().lower().split())
+    raw = "|".join([normalized, str(max_results)])
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _extract_quotes(text: str, max_quotes: int = 3) -> list[str]:
+    """Extract notable quoted excerpts from text (simple heuristic)."""
+    quotes: list[str] = []
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    for s in sentences[:10]:
+        s = s.strip()
+        if 40 < len(s) < 300:
+            quotes.append(s)
+        if len(quotes) >= max_quotes:
+            break
+    return quotes
+
+
 def _normalize_query(query: str) -> str:
-    """Normalize a search query for cache key consistency."""
+    """Normalize a search query for cache key consistency (backward compat)."""
     return query.strip().lower()
 
 
 def _cache_key(query: str) -> str:
-    """Return a short hash for a normalized query."""
+    """Return a short hash for a normalized query (backward compat).
+
+    The old inline cache-key function is preserved for any external
+    callers.  New code uses ``SearchCache`` instead.
+    """
     normalized = _normalize_query(query)
     return hashlib.sha256(normalized.encode()).hexdigest()[:16]
 
 
-# ── SearXNG backend ──────────────────────────────────────────────────
-
-
-async def _searxng_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
-    """Search via SearXNG JSON API with primary/fallback fallback.
-
-    Returns:
-        List of dicts with 'title', 'snippet', 'url' keys.
-    """
-    global _search_health, _last_search_latency_ms
-
-    params = {
-        "q": query,
-        "format": "json",
-        "categories": ",".join(_searxng_categories),
-        "engines": ",".join(_searxng_engines),
-    }
-
-    for base_url in [_searxng_url, _searxng_fallback_url]:
-        try:
-            t0 = time.monotonic()
-            async with httpx.AsyncClient(timeout=_searxng_timeout) as client:
-                resp = await client.get(f"{base_url}/search", params=params)
-                resp.raise_for_status()
-                data = resp.json()
-
-            latency = (time.monotonic() - t0) * 1000
-            _last_search_latency_ms = latency
-
-            results: list[dict[str, str]] = []
-            for item in data.get("results", [])[:max_results]:
-                results.append(
-                    {
-                        "title": (item.get("title", "") or "")[:80],
-                        "snippet": (item.get("content", "") or "")[:150],
-                        "url": (item.get("url", "") or "")[:80],
-                    }
-                )
-
-            # Track health
-            if base_url == _searxng_url:
-                _search_health = "healthy"
-            else:
-                _search_health = "degraded"
-                logger.info(
-                    "SearXNG fallback used (primary failed), got %d results",
-                    len(results),
-                )
-
-            return results
-        except Exception as e:
-            logger.warning("SearXNG search failed (%s): %s", base_url, e)
-            continue
-
-    # Both URLs failed
-    _search_health = "unhealthy"
-    return []
-
-
-# ── DuckDuckGo backend (legacy) ──────────────────────────────────────
-
-
-async def _ddgs_search(query: str, max_results: int = 5) -> list[dict[str, str]]:
-    """Search via DuckDuckGo (ddgs library). Legacy fallback."""
-    global _search_health
-
-    from ddgs import DDGS
-
-    def _search() -> list[dict[str, str]]:
-        with DDGS() as ddgs:
-            results: list[dict[str, str]] = []
-            for i, r in enumerate(ddgs.text(query, max_results=max_results)):
-                if i >= max_results:
-                    break
-                results.append(
-                    {
-                        "title": (r.get("title", "") or "")[:80],
-                        "snippet": (r.get("body", "") or "")[:150],
-                        "url": (r.get("href", "") or "")[:80],
-                    }
-                )
-            return results
-
-    results = await asyncio.to_thread(_search)
-    _search_health = "healthy"
-    return results
-
-
-# ── Main dispatch ─────────────────────────────────────────────────────
+# ── Main search function ───────────────────────────────────────────────
 
 
 async def web_search(
     query: str, max_results: int = 5, retries: int = 3
-) -> list[dict[str, str]]:
-    """Execute a web search with concurrency control and retry.
+) -> list[dict[str, Any]]:
+    """Execute a web search with multi-provider fallback and enrichment.
 
-    Dispatches to SearXNG or DuckDuckGo based on ``_search_engine``.
+    Delegates to ``SearchChain`` for provider dispatch.  Wires in time
+    filter auto-detection, disk caching, and parallel content fetching.
 
     Args:
         query: The search query.
         max_results: Max results to return (1-10).
-        retries: Number of retry attempts.
+        retries: Ignored in the new implementation (per-provider retry
+            is handled by ``SearchChain``).  Kept in the signature for
+            backward compatibility.
 
     Returns:
-        List of dicts with 'title', 'snippet', and 'url' keys.
-        Returns an empty list on failure (fallback mode).
+        List of enriched result dicts.  Each dict contains at minimum:
+        ``title``, ``snippet``, ``url`` (backward compat), plus enriched
+        fields: ``content``, ``key_points``, ``tl_dr``, ``quotes``,
+        ``source``, ``time_filter``.
     """
-    # Lazy-load search config from settings on first call
-    if _search_engine == "searxng":
-        _load_search_config()
+    with tracer.start_as_current_span(
+        "web_search",
+        attributes={
+            "search.query": query[:100],
+            "search.max_results": max_results,
+        },
+    ):
+        # 1. Auto-detect time filter from query keywords
+        time_filter = detect_time_filter(query)
 
-    use_searxng = _search_engine == "searxng"
+        # 2. Cache lookup
+        cache = _get_search_cache()
+        cache_key = None
+        if cache:
+            cache_key = _make_cache_key(query, max_results)
+            cached = await cache.get(cache_key)
+            if cached is not None:
+                logger.debug(
+                    "Cache hit for '%s' (%d results)", query, len(cached)
+                )
+                return cached
 
-    async with _search_semaphore:
-        with tracer.start_as_current_span(
-            f"search.{_search_engine}",
-            attributes={
-                "search.engine": _search_engine,
-                "search.query": query[:100],
-            },
-        ) as _:
-            for attempt in range(retries):
-                try:
-                    if use_searxng:
-                        results = await _searxng_search(query, max_results)
-                    else:
-                        results = await _ddgs_search(query, max_results)
+        # 3. Execute search via SearchChain
+        chain = _get_search_chain()
+        results = await chain.search(
+            query=query,
+            max_results=max_results,
+            time_filter=time_filter,
+        )
 
-                    logger.debug(
-                        "Web search for '%s' returned %d results (engine=%s)",
-                        query,
-                        len(results),
-                        _search_engine,
-                    )
-                    return results
-                except Exception as e:
-                    if attempt < retries - 1:
-                        wait = 1.0 * (2**attempt)  # 1s, 2s, 4s
-                        logger.warning(
-                            "Web search failed for '%s': %s, retrying in %.1fs (attempt %d/%d)",
-                            query,
-                            e,
-                            wait,
-                            attempt + 1,
-                            retries,
-                        )
-                        await asyncio.sleep(wait)
-                    else:
-                        logger.warning(
-                            "Web search failed for query '%s': %s — returning empty results",
-                            query,
-                            str(e),
-                        )
+        # 4. Build enriched result envelope
+        enriched: list[dict[str, Any]] = []
+        for r in results:
+            enriched.append(
+                {
+                    "title": r.get("title", ""),
+                    "snippet": r.get("snippet", ""),
+                    "url": r.get("url", ""),
+                    "content": None,
+                    "key_points": [],
+                    "tl_dr": None,
+                    "quotes": [],
+                    "source": r.get("source", "unknown"),
+                    "time_filter": time_filter,
+                }
+            )
 
-    return []
+        # 5. Cache results
+        if cache and cache_key and enriched:
+            ttl = (
+                _SEARCH_CACHE_TTL_CURRENT
+                if time_filter
+                else _SEARCH_CACHE_TTL_EVERGREEN
+            )
+            await cache.set(cache_key, enriched, ttl=ttl)
+
+        # 6. Parallel content fetching
+        if _SEARCH_FETCH_CONTENT and enriched:
+            urls = [r["url"] for r in enriched[:_SEARCH_FETCH_MAX_PAGES]]
+            fetched = await fetch_page_content(
+                urls, max_chars=_SEARCH_FETCH_MAX_CHARS
+            )
+            url_to_content = {f["url"]: f for f in fetched}
+            for r in enriched:
+                fc = url_to_content.get(r["url"])
+                if fc and fc.get("content"):
+                    r["content"] = fc["content"]
+                    # Basic quote extraction from fetched content
+                    quotes = _extract_quotes(fc["content"])
+                    if quotes:
+                        r["quotes"] = quotes
+
+        logger.debug(
+            "Web search for '%s' returned %d results",
+            query,
+            len(enriched),
+        )
+        return enriched
 
 
-# ── Info helpers for server endpoints ─────────────────────────────────
+# ── Info helpers for server endpoints (backward compat) ────────────────
 
 
 def get_search_semaphore_info() -> dict[str, int]:
-    """Return current search concurrency state for the /api/system/concurrency endpoint."""
+    """Return current search concurrency state (backward compat)."""
     return {
-        "active_searches": 3 - _search_semaphore._value,
+        "active_searches": 3 - _search_semaphore._value,  # type: ignore[attr-defined]
         "max_searches": 3,
     }
 
 
 def get_search_health_info() -> dict[str, Any]:
-    """Return full search engine status for the /api/system/search endpoint."""
+    """Return full search engine status for server endpoints.
+
+    Returns backward-compatible keys.  Some values are static since
+    the new architecture delegates health to individual providers.
+    """
     return {
         "engine": _search_engine,
         "searxng_url": _searxng_url,

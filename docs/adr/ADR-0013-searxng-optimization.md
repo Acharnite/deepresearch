@@ -10,7 +10,7 @@ phase:
 
 ## Status
 
-Proposed
+Accepted
 
 **Version:** 1.2
 **Last Updated:** 2026-06-17

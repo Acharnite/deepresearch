@@ -30,6 +30,9 @@ from deepresearch.web.event_bus import EventBus
 from deepresearch.orchestrator import Orchestrator
 
 
+# ponytail: inline integration fixtures for clarity — each test class owns its setup.
+# Ceiling: 851 lines / 18 tests. Upgrade path: shared fixtures in conftest at 25+ tests.
+
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 
 

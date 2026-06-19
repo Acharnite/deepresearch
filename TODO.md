@@ -1,5 +1,7 @@
 # DeepeResearch — TODO
 
+## ADR-0017 (2026-06-20) — Multi-Provider Search — Implemented ✅
+
 ## Completed
 - [x] Orchestrator FSM with 8 states
 - [x] 6 agent personality profiles
@@ -33,10 +35,10 @@
 
 ### Priority 1: Verify latest fixes
 - [ ] **Scribe model prefix** — scribe should use full model ID (e.g., `opencode/go/deepseek-v4-flash`)
-- [ ] **Agent JSON parsing** — agents should return valid JSON after web search (see ADR-0015: _strip_tool_output)
-- [ ] **Web search in dashboard** — 🔍 search results visible in agent output panels
-- [ ] **Scribe row in dashboard** — 📝 scribe row with live output under agents
-- [ ] **Dynamic rounds** — verify it loops when gaps exist, stops when resolved
+- [x] **Agent JSON parsing** — agents should return valid JSON after web search (see ADR-0015: _strip_tool_output)
+- [x] **Web search in dashboard** — 🔍 search results visible in agent output panels
+- [x] **Scribe row in dashboard** — 📝 scribe row with live output under agents
+- [x] **Dynamic rounds** — verify it loops when gaps exist, stops when resolved
 
 ### Priority 2: Full Pipeline
 - [ ] CLI: `deepresearch run "topic" --quick --model "opencode/go/deepseek-v4-flash"`

@@ -217,12 +217,19 @@ class TestTextEmbeddedToolCallDetection:
         with (
             patch("litellm.acompletion", side_effect=mock_acompletion),
             patch(
-                "deepresearch.tools.web_search.web_search", new_callable=AsyncMock
-            ) as mock_web_search,
+                "deepresearch.tools.registry.resolve_tool"
+            ) as mock_resolve,
         ):
-            mock_web_search.return_value = [
+            from deepresearch.tools.registry import ToolDef
+
+            mock_handler = AsyncMock()
+            mock_handler.return_value = [
                 {"title": "Result 1", "url": "https://example.com"}
             ]
+            mock_resolve.return_value = ToolDef(
+                name="web_search",
+                handler=mock_handler,
+            )
             result = await client.generate_with_tools(
                 system_prompt="You are a search assistant.",
                 user_prompt="Search for test query",
@@ -230,7 +237,7 @@ class TestTextEmbeddedToolCallDetection:
                 temperature=0.7,
             )
             assert result == "Final answer after search."
-            mock_web_search.assert_called_once_with("test query", 3)
+            mock_handler.assert_called_once_with("test query", 3)
 
     async def test_regular_text_not_detected(self) -> None:
         """Plain text without tool-call JSON → NOT misidentified as a tool call."""

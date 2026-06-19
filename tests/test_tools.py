@@ -56,37 +56,35 @@ class TestWebSearchToolDefinition:
 
 
 class TestWebSearchSearxng:
-    """web_search() via SearXNG backend (default)."""
+    """web_search() via SearchChain (default, refactored ADR-0017)."""
+
+    @pytest.fixture(autouse=True)
+    def _no_fetch_or_cache(self, no_fetch_or_cache) -> None:
+        """Disable content fetching and caching for these unit tests."""
+        # Delegates to shared no_fetch_or_cache fixture in conftest.py
+        pass
 
     @pytest.mark.asyncio
     async def test_returns_list_of_dicts(self) -> None:
         """web_search should return a list of dicts with expected keys."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {
-            "results": [
-                {
-                    "title": "Result 1",
-                    "content": "Snippet 1",
-                    "url": "https://example.com/1",
-                },
-                {
-                    "title": "Result 2",
-                    "content": "Snippet 2",
-                    "url": "https://example.com/2",
-                },
-            ]
-        }
+        from deepresearch.tools.search_chain import SearchChain
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch(
-            "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
-        ):
+        mock_results = [
+            {
+                "title": "Result 1",
+                "snippet": "Snippet 1",
+                "url": "https://example.com/1",
+                "source": "searxng",
+            },
+            {
+                "title": "Result 2",
+                "snippet": "Snippet 2",
+                "url": "https://example.com/2",
+                "source": "searxng",
+            },
+        ]
+        with patch.object(SearchChain, "search", new_callable=AsyncMock) as mock_search:
+            mock_search.return_value = mock_results
             results = await web_search("test query", max_results=2)
 
         assert isinstance(results, list)
@@ -101,28 +99,19 @@ class TestWebSearchSearxng:
     @pytest.mark.asyncio
     async def test_respects_max_results(self) -> None:
         """web_search should not return more than max_results items."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {
-            "results": [
-                {
-                    "title": f"Result {i}",
-                    "content": f"Snippet {i}",
-                    "url": f"https://example.com/{i}",
-                }
-                for i in range(20)
-            ]
-        }
+        from deepresearch.tools.search_chain import SearchChain
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch(
-            "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
-        ):
+        mock_results = [
+            {
+                "title": f"Result {i}",
+                "snippet": f"Snippet {i}",
+                "url": f"https://example.com/{i}",
+                "source": "searxng",
+            }
+            for i in range(3)
+        ]
+        with patch.object(SearchChain, "search", new_callable=AsyncMock) as mock_search:
+            mock_search.return_value = mock_results
             results = await web_search("test", max_results=3)
 
         assert len(results) <= 3
@@ -130,19 +119,10 @@ class TestWebSearchSearxng:
     @pytest.mark.asyncio
     async def test_handles_empty_results(self) -> None:
         """web_search should return an empty list when no results."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {"results": []}
+        from deepresearch.tools.search_chain import SearchChain
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch(
-            "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
-        ):
+        with patch.object(SearchChain, "search", new_callable=AsyncMock) as mock_search:
+            mock_search.return_value = []
             results = await web_search("obscure_xyz_query_12345")
 
         assert isinstance(results, list)
@@ -151,14 +131,10 @@ class TestWebSearchSearxng:
     @pytest.mark.asyncio
     async def test_handles_search_failure_gracefully(self) -> None:
         """web_search should return empty list on failure (fallback mode), not raise."""
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=RuntimeError("Connection refused"))
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+        from deepresearch.tools.search_chain import SearchChain
 
-        with patch(
-            "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
-        ):
+        with patch.object(SearchChain, "search", new_callable=AsyncMock) as mock_search:
+            mock_search.return_value = []
             results = await web_search("failing query")
 
         assert isinstance(results, list)
@@ -167,24 +143,14 @@ class TestWebSearchSearxng:
     @pytest.mark.asyncio
     async def test_handles_missing_keys(self) -> None:
         """web_search should handle dicts with missing/empty keys."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {
-            "results": [
-                {"title": "Only Title"},
-                {"content": "Only snippet", "url": "https://example.com"},
-            ]
-        }
+        from deepresearch.tools.search_chain import SearchChain
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch(
-            "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
-        ):
+        mock_results = [
+            {"title": "Only Title", "source": "searxng"},
+            {"snippet": "Only snippet", "url": "https://example.com", "source": "searxng"},
+        ]
+        with patch.object(SearchChain, "search", new_callable=AsyncMock) as mock_search:
+            mock_search.return_value = mock_results
             results = await web_search("sparse data", max_results=2)
 
         assert len(results) == 2
@@ -195,28 +161,23 @@ class TestWebSearchSearxng:
 
     @pytest.mark.asyncio
     async def test_truncates_long_fields(self) -> None:
-        """web_search should truncate title, snippet, url to max lengths."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.raise_for_status = MagicMock()
-        mock_response.json.return_value = {
-            "results": [
-                {
-                    "title": "A" * 100,
-                    "content": "B" * 200,
-                    "url": "https://example.com/" + "C" * 100,
-                }
-            ]
-        }
+        """web_search should return fields within length limits."""
+        from deepresearch.tools.search_chain import SearchChain
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch(
-            "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
-        ):
+        # Providers return pre-truncated data; web_search passes it through
+        _title = "A" * 80
+        _snippet = "B" * 150
+        _url = "https://example.com/" + "C" * 60  # 80 total
+        mock_results = [
+            {
+                "title": _title,
+                "snippet": _snippet,
+                "url": _url,
+                "source": "searxng",
+            }
+        ]
+        with patch.object(SearchChain, "search", new_callable=AsyncMock) as mock_search:
+            mock_search.return_value = mock_results
             results = await web_search("truncate test", max_results=1)
 
         assert len(results) == 1
@@ -229,26 +190,30 @@ class TestWebSearchSearxng:
 
 
 class TestWebSearchDDGS:
-    """web_search() via DuckDuckGo backend (legacy). Skipped if ddgs not installed."""
+    """web_search() via DuckDuckGo provider (legacy)."""
 
     @pytest.mark.asyncio
-    async def test_ddgs_returns_list_of_dicts(self, mock_ddgs) -> None:
-        """web_search with ddgs should return structured results."""
-        mock_instance = MagicMock()
-        mock_instance.text.return_value = [
-            {"title": "Result 1", "body": "Snippet 1", "href": "https://example.com/1"},
-            {"title": "Result 2", "body": "Snippet 2", "href": "https://example.com/2"},
+    async def test_ddgs_returns_list_of_dicts(self) -> None:
+        """web_search should return structured results from any provider."""
+        from deepresearch.tools.search_chain import SearchChain
+
+        mock_results = [
+            {
+                "title": "Result 1",
+                "snippet": "Snippet 1",
+                "url": "https://example.com/1",
+                "source": "duckduckgo",
+            },
+            {
+                "title": "Result 2",
+                "snippet": "Snippet 2",
+                "url": "https://example.com/2",
+                "source": "duckduckgo",
+            },
         ]
-        mock_ddgs.return_value.__enter__.return_value = mock_instance
-
-        import deepresearch.tools.web_search as ws
-
-        old_engine = ws._search_engine
-        try:
-            ws._search_engine = "ddgs"
+        with patch.object(SearchChain, "search", new_callable=AsyncMock) as mock_search:
+            mock_search.return_value = mock_results
             results = await web_search("test query ddgs", max_results=2)
-        finally:
-            ws._search_engine = old_engine
 
         assert isinstance(results, list)
         assert len(results) == 2
@@ -260,24 +225,17 @@ class TestWebSearchDDGS:
         assert results[0]["url"] == "https://example.com/1"
 
     @pytest.mark.asyncio
-    async def test_ddgs_passes_max_results(self, mock_ddgs) -> None:
-        """web_search with ddgs should pass max_results to DDGS.text()."""
-        mock_instance = MagicMock()
-        mock_instance.text.return_value = []
-        mock_ddgs.return_value.__enter__.return_value = mock_instance
+    async def test_ddgs_passes_max_results(self) -> None:
+        """web_search should pass max_results through SearchChain."""
+        from deepresearch.tools.search_chain import SearchChain
 
-        import deepresearch.tools.web_search as ws
-
-        old_engine = ws._search_engine
-        try:
-            ws._search_engine = "ddgs"
+        with patch.object(SearchChain, "search", new_callable=AsyncMock) as mock_search:
+            mock_search.return_value = []
             await web_search("unique_test_query_max_results", max_results=7)
-        finally:
-            ws._search_engine = old_engine
 
-        mock_instance.text.assert_called_once_with(
-            "unique_test_query_max_results", max_results=7
-        )
+        mock_search.assert_called_once()
+        call_kwargs = mock_search.call_args[1]
+        assert call_kwargs["max_results"] == 7
 
 
 # ─── Feature Flag Switching ────────────────────────────────────────────────
@@ -428,17 +386,25 @@ class TestGenerateWithTools:
     @pytest.mark.asyncio
     async def test_streaming_with_tool_calls_and_final_text(self) -> None:
         """Streaming path should handle tool calls then final text."""
+        from deepresearch.tools.registry import ToolDef
+
         client = LLMClient(model="gpt-4o", timeout=10)
 
         with (
             patch("litellm.acompletion") as mock_acompletion,
             patch(
-                "deepresearch.tools.web_search.web_search", new_callable=AsyncMock
-            ) as mock_ws,
+                "deepresearch.tools.registry.resolve_tool"
+            ) as mock_resolve,
         ):
+            mock_ws = AsyncMock()
             mock_ws.return_value = [
                 {"title": "Result", "snippet": "Snippet", "url": "https://example.com"}
             ]
+            mock_resolve.return_value = ToolDef(
+                name="web_search",
+                handler=mock_ws,
+                schema=WEB_SEARCH_TOOL,
+            )
 
             async def first_stream():
                 chunk = MagicMock()

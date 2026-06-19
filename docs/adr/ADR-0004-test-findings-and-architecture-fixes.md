@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 **Version:** 1.0
 **Last Updated:** 2026-06-14

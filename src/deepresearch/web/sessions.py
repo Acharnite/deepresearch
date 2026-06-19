@@ -200,17 +200,34 @@ class MultiSessionManager:
                 "No model configured. Set 'model' in request body or configure a default."
             )
         try:
-            from deepresearch.llm.client import LLMClient
-
-            test_client = LLMClient(model=test_model, timeout=10)
-            await asyncio.wait_for(
-                test_client.generate(
-                    system_prompt="Respond with exactly one word: ok",
-                    user_prompt="Test",
-                    max_tokens=5,
-                ),
-                timeout=15,
-            )
+            # Use direct Ollama API for local models to bypass LiteLLM's
+            # broken model-info lookup (constructs /api/generate/api/show which 404s).
+            if test_model and test_model.startswith("ollama/"):
+                import httpx
+                model_name = test_model.split("/", 1)[1]
+                payload = {
+                    "model": model_name,
+                    "messages": [{"role": "user", "content": "Say ok"}],
+                    "stream": False,
+                    "options": {"num_predict": 256},
+                }
+                async with httpx.AsyncClient(timeout=15) as hc:
+                    r = await hc.post("http://localhost:11434/api/chat", json=payload)
+                    if r.status_code != 200:
+                        raise ConnectionError(
+                            f"Ollama returned HTTP {r.status_code}: {r.text[:100]}"
+                        )
+            else:
+                from deepresearch.llm.client import LLMClient
+                test_client = LLMClient(model=test_model, timeout=10)
+                await asyncio.wait_for(
+                    test_client.generate(
+                        system_prompt="Respond with exactly one word: ok",
+                        user_prompt="Test",
+                        max_tokens=5,
+                    ),
+                    timeout=15,
+                )
         except Exception as e:
             info.status = "error"
             info.error = f"Model connectivity check failed for '{test_model}': {e}"

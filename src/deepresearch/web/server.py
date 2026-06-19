@@ -309,6 +309,33 @@ async def start_research(req: RunRequest) -> JSONResponse:
         )
 
     try:
+        # Pre-flight check: verify Ollama is running if selected model uses it
+        if req.selected_model and req.selected_model.startswith("ollama/"):
+            try:
+                async with httpx.AsyncClient(timeout=5) as hc:
+                    r = await hc.get("http://localhost:11434/api/tags")
+                    if r.status_code != 200:
+                        _session_semaphore.release()
+                        return JSONResponse(
+                            {"error": f"Ollama is not responding (HTTP {r.status_code}). Make sure Ollama is running."},
+                            status_code=503,
+                        )
+                    # Check if the specific model exists
+                    model_name = req.selected_model.split("/", 1)[1]
+                    models = r.json().get("models", [])
+                    if not any(model_name in (m.get("name") or "") for m in models):
+                        _session_semaphore.release()
+                        return JSONResponse(
+                            {"error": f"Model '{model_name}' not found in Ollama. Run 'ollama pull {model_name}' first."},
+                            status_code=400,
+                        )
+            except (httpx.ConnectError, httpx.TimeoutException) as e:
+                _session_semaphore.release()
+                return JSONResponse(
+                    {"error": f"Cannot connect to Ollama on localhost:11434. Is Ollama running? ({e})"},
+                    status_code=503,
+                )
+        
         scribe_model = settings_manager.get_scribe_model()
         info = await multi_session_manager.create_session(
             topic=req.topic,
@@ -332,8 +359,9 @@ async def start_research(req: RunRequest) -> JSONResponse:
                 "model_mode": info.model_mode,
             }
         )
-    except RuntimeError as e:
+    except Exception as e:
         _session_semaphore.release()
+        logger.warning("Session creation failed, semaphore released: %s", e)
         return JSONResponse({"error": str(e)}, status_code=409)
 
 

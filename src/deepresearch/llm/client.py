@@ -83,6 +83,7 @@ PROVIDER_ROUTES: dict[str, dict[str, Any]] = {
     "gemini": {
         "api_base": "https://generativelanguage.googleapis.com",
         "api_key_env": "GEMINI_API_KEY",
+        "openai_compatible": True,
     },
     "anthropic": {
         "api_base": "https://api.anthropic.com",
@@ -276,6 +277,7 @@ class LLMClient:
         event_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         max_tokens: int | None = None,
         tracker: TokenTracker | None = None,
+        force_text_parsing: bool = False,
     ) -> None:
         """Initialize the LLM client.
 
@@ -293,6 +295,9 @@ class LLMClient:
             max_tokens: Default max output tokens per LLM call. Used as
                 fallback when ``generate()``, ``generate_stream()``, or
                 ``generate_with_tools()`` are called with ``max_tokens=None``.
+            force_text_parsing: When ``True``, skip native tool calling
+                and parse tool calls from text output instead (useful for
+                models without reliable native function calling).
         """
         self.model = model
         self.timeout = timeout
@@ -327,6 +332,7 @@ class LLMClient:
 
         self.api_key = self._resolve_api_key(self.provider) if self.provider else None
         self.max_tokens: int | None = max_tokens
+        self.force_text_parsing: bool = force_text_parsing
         self.tracker: TokenTracker | None = tracker
         self.total_input_tokens: int = 0
         self.total_output_tokens: int = 0
@@ -366,6 +372,18 @@ class LLMClient:
 
             # Handle local backends with dynamic address resolution
             if route.get("local_backend"):
+                # Ollama does NOT use /v1 prefix (its API is at /api/chat).
+                if provider == "ollama":
+                    port = route.get("local_backend_port")
+                    try:
+                        from deepresearch.web.settings_manager import local_backend_manager
+                        custom_addr = local_backend_manager.get_address(provider)
+                        if custom_addr:
+                            return f"http://{custom_addr}"
+                    except ImportError:
+                        pass
+                    return f"http://localhost:{port}" if port else route.get("api_base")
+
                 port = route.get("local_backend_port")
                 try:
                     from deepresearch.web.settings_manager import local_backend_manager
@@ -595,8 +613,102 @@ class LLMClient:
     ) -> Any:
         """Perform the actual LiteLLM acompletion call (non-streaming).
 
-        Imported lazily to avoid import errors if litellm is not installed.
+        For local backends (ollama, llama-cpp, vllm, lm-studio, local-ai),
+        calls the provider's API directly via httpx to avoid LiteLLM's broken
+        model-info and /api/generate vs /api/chat issues (GitHub issue #100).
+        For all other providers, falls back to LiteLLM's acompletion.
         """
+        import json as _json
+
+        is_ollama = self.provider == "ollama"
+        use_direct = is_ollama or (
+            self.provider and self.provider in PROVIDER_ROUTES
+            and PROVIDER_ROUTES.get(self.provider, {}).get("local_backend")
+        )
+
+        if use_direct and self.api_base:
+            # Build a chat-completion payload for the local backend.
+            # Use the model name without provider prefix (ollama/xyz -> xyz).
+            model_name = self.actual_model
+            if "/" in model_name and not model_name.startswith("http"):
+                _, _, maybe = model_name.partition("/")
+                if maybe:
+                    model_name = maybe
+
+            # Separate system message (first with role=system) from chat history.
+            chat_messages: list[dict] = []
+            system_prompt: str | None = None
+            for msg in messages:
+                if msg.get("role") == "system":
+                    system_prompt = msg.get("content", "")
+                else:
+                    chat_messages.append(msg)
+
+            # Prepend system as first user message if supported.
+            req_messages = chat_messages[:]
+            if system_prompt and is_ollama:
+                # Ollama chat API accepts system in the messages list.
+                req_messages.insert(0, {"role": "system", "content": system_prompt})
+
+            payload: dict = {
+                "model": model_name,
+                "messages": req_messages,
+                "stream": False,
+            }
+            if max_tokens is not None:
+                payload["options"] = {"num_predict": max_tokens}
+
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout or 120) as hc:
+                    if is_ollama:
+                        # Ollama uses /api/chat, NOT /v1/api/chat.
+                        # api_base may contain /v1 (from local_backend_manager),
+                        # so strip it before appending /api/chat.
+                        base = self.api_base.rstrip("/")
+                        if base.endswith("/v1"):
+                            base = base[:-3]
+                        url = f"{base}/api/chat"
+                    else:
+                        # OpenAI-compatible local backends (vllm, lm-studio, etc.)
+                        url = f"{self.api_base.rstrip('/')}/v1/chat/completions"
+                    resp = await hc.post(url, json=payload)
+                    if resp.status_code != 200:
+                        raise LLMError(
+                            f"Local backend returned HTTP {resp.status_code} "
+                            f"({url}): {resp.text[:200]}"
+                        )
+                    data = resp.json()
+                    if is_ollama:
+                        msg = data.get("message", {})
+                        content = msg.get("content", "")
+                    else:
+                        choice = data.get("choices", [{}])[0]
+                        msg = choice.get("message", {})
+                        content = msg.get("content", "")
+                    # Build a fake LiteLLM ModelResponse so the rest of the code works.
+                    from litellm.types.utils import ModelResponse, Choices, Message
+
+                    choice = Choices(
+                        finish_reason="stop",
+                        message=Message(content=content, role="assistant"),
+                        index=0,
+                    )
+                    return ModelResponse(
+                        id=data.get("id", f"local-{model_name}"),
+                        choices=[choice],
+                        model=model_name,
+                        usage=None,
+                    )
+            except httpx.TimeoutException:
+                raise LLMError(
+                    f"Local backend {self.provider} timed out ({self.timeout}s)"
+                )
+            except httpx.ConnectError as e:
+                raise LLMError(
+                    f"Cannot connect to {self.provider} at {self.api_base}: {e}"
+                )
+
+        # Fallback: use LiteLLM's acompletion for non-local providers.
         try:
             from litellm import acompletion
         except ImportError as e:
@@ -753,6 +865,7 @@ class LLMClient:
         max_tool_rounds = 5  # Prevent infinite loops
         collected_tool_results: list[dict[str, Any]] = []
 
+        logger.warning("generate_with_tools: starting with %d tools", len(tools) if tools else 0)
         for tool_round in range(max_tool_rounds):
             # Check cancellation before each tool round.
             if _cancel and _cancel.is_set():
@@ -773,35 +886,135 @@ class LLMClient:
             # Reset full_text for each round — only keep final non-tool output
             _round_text = ""
 
+            # ── If force_text_parsing is set, skip native tools ────────
+            # and fall through to text-based tool call parsing below.
+            use_text_parsing = self.force_text_parsing
+
             # ── Ollama models don't support streaming tool calls ────────
             # (they hang silently with no output). Skip straight to
             # non-streaming for known local-backend providers.
-            if self.provider and PROVIDER_ROUTES.get(self.provider, {}).get(
+            # Use direct HTTP to avoid LiteLLM bugs with Ollama.
+            if not use_text_parsing and self.provider and PROVIDER_ROUTES.get(self.provider, {}).get(
                 "local_backend"
             ):
-                kwargs["stream"] = False
-                response = await acompletion(**kwargs)
+                logger.warning("generate_with_tools: using direct HTTP for %s", self.provider)
+                import json as _json
 
-                text_content = response.choices[0].message.content or ""
-                _round_text = text_content
-                if text_content:
-                    if self.event_callback:
+                is_ollama = self.provider == "ollama"
+                model_name = self.model
+                if "/" in model_name and not model_name.startswith("http"):
+                    _, _, maybe = model_name.partition("/")
+                    if maybe:
+                        model_name = maybe
+
+                chat_messages = []
+                sys_text = None
+                for msg in messages:
+                    if msg.get("role") == "system":
+                        sys_text = msg.get("content", "")
+                    else:
+                        chat_messages.append(msg)
+                if sys_text:
+                    chat_messages.insert(0, {"role": "system", "content": sys_text})
+
+                payload = {"model": model_name, "messages": chat_messages, "stream": False}
+                if effective_max_tokens is not None:
+                    payload["options"] = {"num_predict": effective_max_tokens}
+                if tools:
+                    ollama_tools = []
+                    for t in tools:
+                        fn = t.get("function", {})
+                        ollama_tools.append({
+                            "type": "function",
+                            "function": {
+                                "name": fn.get("name", ""),
+                                "description": fn.get("description", ""),
+                                "parameters": fn.get("parameters", {}),
+                            },
+                        })
+                    payload["tools"] = ollama_tools
+
+                try:
+                    base_url = self.api_base.rstrip("/")
+                    if base_url.endswith("/v1") and is_ollama:
+                        base_url = base_url[:-3]
+                    url = f"{base_url}/api/chat" if is_ollama else f"{base_url}/v1/chat/completions"
+                    async with httpx.AsyncClient(timeout=self.timeout or 120) as hc:
+                        resp = await hc.post(url, json=payload)
+                        if resp.status_code != 200:
+                            raise LLMError(
+                                f"Local backend HTTP {resp.status_code} ({url}): {resp.text[:200]}"
+                            )
+                        data = resp.json()
+
+                    if is_ollama:
+                        msg = data.get("message", {})
+                        text_content = msg.get("content", "") or ""
+                        _round_text = text_content
+                        if text_content and self.event_callback:
+                            await self.event_callback({"type": "stream", "text": text_content})
+                        raw_tc = msg.get("tool_calls", [])
+                        for idx, tc in enumerate(raw_tc):
+                            while len(tool_calls) <= idx:
+                                tool_calls.append(("", "", ""))
+                            fn_info = tc.get("function", {})
+                            tool_calls[idx] = (
+                                f"call_{idx}",
+                                fn_info.get("name", ""),
+                                _json.dumps(fn_info.get("arguments", {})),
+                            )
+                    else:
+                        choice = data.get("choices", [{}])[0]
+                        msg = choice.get("message", {})
+                        text_content = msg.get("content", "") or ""
+                        _round_text = text_content
+                        if text_content and self.event_callback:
+                            await self.event_callback({"type": "stream", "text": text_content})
+                        raw_tc = msg.get("tool_calls", [])
+                        for idx, tc in enumerate(raw_tc):
+                            while len(tool_calls) <= idx:
+                                tool_calls.append(("", "", ""))
+                            fn_info = tc.get("function", {})
+                            tool_calls[idx] = (
+                                tc.get("id", f"call_{idx}"),
+                                fn_info.get("name", ""),
+                                fn_info.get("arguments", ""),
+                            )
+                except httpx.TimeoutException:
+                    raise LLMError(f"Local backend {self.provider} timed out ({self.timeout}s)")
+                except httpx.ConnectError as e:
+                    raise LLMError(f"Cannot connect to {self.provider} at {self.api_base}: {e}")
+            elif use_text_parsing:
+                # Force text parsing mode: call the LLM without native tools
+                # and let the text-based parser extract tool calls from output.
+                text_kwargs = {k: v for k, v in kwargs.items() if k != "tools"}
+                text_kwargs["stream"] = True
+                try:
+                    response = await acompletion(**text_kwargs)
+                    async for chunk in response:
+                        delta = chunk.choices[0].delta if chunk.choices else None
+                        if delta and delta.content:
+                            _round_text += delta.content
+                            if self.event_callback:
+                                await self.event_callback(
+                                    {"type": "stream", "text": delta.content}
+                                )
+                except Exception as e:
+                    logger.warning(
+                        "Text-parsing stream failed (round %d): %s. "
+                        "Falling back to non-streaming.",
+                        tool_round,
+                        e,
+                    )
+                    text_kwargs["stream"] = False
+                    response = await acompletion(**text_kwargs)
+                    text_content = response.choices[0].message.content or ""
+                    _round_text = text_content
+                    if text_content and self.event_callback:
                         await self.event_callback(
                             {"type": "stream", "text": text_content}
                         )
-
-                raw_tool_calls = response.choices[0].message.tool_calls or []
-                for idx, tc in enumerate(raw_tool_calls):
-                    while len(tool_calls) <= idx:
-                        tool_calls.append(("", "", ""))
-                    args_str = tc.function.arguments if tc.function else ""
-                    tool_calls[idx] = (
-                        tc.id,
-                        tc.function.name if tc.function else "",
-                        args_str,
-                    )
-
-                self._track_usage(response)
+                    self._track_usage(response)
             else:
                 try:
                     kwargs["stream"] = True
@@ -899,24 +1112,26 @@ class LLMClient:
             # Handle models that output tool calls as text content
             # (e.g. local models without native function calling support)
             if not tool_calls and _round_text:
-                import re
+                import json as _json
 
-                tool_json_match = re.search(
-                    r'\{\s*"name"\s*:\s*"(\w+)"\s*,\s*"arguments"\s*:\s*(\{.*?\})\s*\}',
-                    _round_text.strip(),
-                    re.DOTALL,
-                )
-                if tool_json_match:
-                    tc_name = tool_json_match.group(1)
-                    tc_args = tool_json_match.group(2)
-                    # Only match known tools
-                    if tc_name in ("web_search",):
-                        logger.debug(
-                            "Detected text-embedded tool call '%s' for model without native function calling",
-                            tc_name,
-                        )
-                        tool_calls.append(("content_detected", tc_name, tc_args))
-                        _round_text = ""  # Not the final response — execute tool
+                from deepresearch.tools.parser import ToolCallParser
+                from deepresearch.tools.registry import resolve_tool
+
+                parser = ToolCallParser()
+                parsed = parser.parse(_round_text)
+                if parsed:
+                    for pc in parsed:
+                        tool_def = resolve_tool(pc.name)
+                        if tool_def:
+                            logger.debug(
+                                "Detected text-embedded tool call '%s' "
+                                "for model without native function calling (format=%s)",
+                                pc.name,
+                                pc.source,
+                            )
+                            args_str = _json.dumps(pc.arguments, ensure_ascii=False)
+                            tool_calls.append((pc.call_id, pc.name, args_str))
+                    _round_text = ""  # Not the final response — execute tool
 
             if not tool_calls:
                 # No tool calls — this is the final response, keep the text
@@ -947,31 +1162,40 @@ class LLMClient:
             # Execute tool calls
             import json
 
-            from deepresearch.tools.web_search import (
-                web_search as _web_search,
-            )
+            from deepresearch.tools.registry import resolve_tool
 
             for tool_id, tool_name, tool_args_str in tool_calls:
                 args = json.loads(tool_args_str) if tool_args_str else {}
 
-                logger.debug(
-                    "Executing tool '%s' (round %d, query='%s')",
-                    tool_name,
-                    tool_round,
-                    args.get("query", ""),
-                )
-                if tool_name == "web_search":
-                    query = args.get("query", "")
-                    max_res = args.get("max_results", 5)
-                    results = await _web_search(query, max_res)
+                tool_def = resolve_tool(tool_name)
+                if tool_def is not None and tool_def.handler is not None:
+                    logger.debug(
+                        "Executing tool '%s' (round %d, args=%s)",
+                        tool_name,
+                        tool_round,
+                        args,
+                    )
+
+                    # If the tool is web_search, specifically handle
+                    # query/max_results parameter extraction for stream display
+                    is_search = tool_def.name == "web_search" if tool_def else False
+
+                    if is_search:
+                        query = args.get("query", "")
+                        max_res = args.get("max_results", 5)
+                        results = await tool_def.handler(query, max_res)
+                    else:
+                        results = await tool_def.handler(**args)
+
                     result_text = json.dumps(results, ensure_ascii=False)
 
                     # Collect search results for source attribution
                     collected_tool_results.extend(results)
 
                     # Stream search activity to the output panel
-                    if self.event_callback and results:
-                        search_summary = f'\n[🔍 Web Search] Query: "{query}"\n'
+                    if is_search and self.event_callback and results:
+                        q = args.get("query", "")
+                        search_summary = f'\n[🔍 Web Search] Query: "{q}"\n'
                         for r in results[:3]:
                             title = (r.get("title", "") or "")[:60]
                             search_summary += f"  • {title}\n"
@@ -988,7 +1212,7 @@ class LLMClient:
                         }
                     )
                 else:
-                    logger.warning("Unknown tool call: %s", tool_name)
+                    logger.warning("Unknown tool call: %s in round %s", tool_name, tool_round)
                     messages.append(
                         {
                             "role": "tool",

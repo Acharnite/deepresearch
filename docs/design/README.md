@@ -1,8 +1,8 @@
 # DeepeResearch — Design Document
-**Version:** 1.2
+**Version:** 1.4
 **Status:** Active
 **Design Authority:** Architects
-**Last Updated:** 2026-06-17
+**Last Updated:** 2026-06-20
 
 ## 1. Purpose & Scope
 
@@ -23,10 +23,10 @@ DeepeResearch is a multi-agent AI research system that generates comprehensive, 
 - Provider prefix routing — model IDs auto-detect API base and key via prefix
 - Provider model auto-discovery — fetches model lists from all configured provider APIs
 - Model connectivity pre-flight check — tests model before session start
+- Multi-provider web search (SearXNG, DuckDuckGo, Brave, Google PSE, Tavily, Serper) with tool calling, parallel content fetching, and search caching — initially via ADR-0006, enhanced per ADR-0017
 
 **Out of scope:**
 - Persistent cross-session agent memory (agents are stateless per session)
-- External web search or live data fetching (agents use LLM knowledge only)
 - Multi-language output (English only in v1.0)
 - Citation or bibliography generation from external sources
 
@@ -414,6 +414,9 @@ The LLMClient automatically detects the provider from the model ID using `PROVID
 - Cost estimation (per-model input/output cost rates, including Opencode AI at 0.0 cost)
 - Model capability inference (supports vision, tool use, etc.)
 
+**Tool Calling & Web Search:**
+The LLMClient provides `generate_with_tools()` for tool-calling, supporting three execution paths: native LiteLLM streaming with `tools=` for API models, direct HTTP for local backends (Ollama, llama-cpp, vllm), and regex text fallback for non-streaming output. Multi-provider web search chains across SearXNG, DuckDuckGo, Brave, Google PSE, Tavily, and Serper, with parallel content fetching, result enrichment (TL;DR, key points, quotes), search caching, time-filter auto-detection, and tool alias mapping. See ADR-0017 for the full design.
+
 ## 5. Data Model
 
 ### Pydantic Models
@@ -772,22 +775,23 @@ A single test that runs the full pipeline (with mock LLM) and validates the PDF 
 
 | # | Title | Status |
 |---|-------|--------|
-| ADR-0001 | Multi-Agent Research Architecture | Proposed |
-| ADR-0002 | Agent Personality & Model Selection | Proposed |
-| ADR-0003 | Web Frontend & Multi-Session Architecture | Proposed |
-| ADR-0004 | Test Findings and Architecture Fixes | Proposed |
-| ADR-0005 | Auto-Install and Auto-Discover Local LLM Backends | Proposed |
-| ADR-0006 | Web Search and Tool Calling Integration | Proposed |
-| ADR-0007 | Clarification Protocol and Refinement Phase | Proposed |
-| ADR-0008 | Dashboard Enhancements | Proposed |
-| ADR-0009 | CI/CD Pipeline, npm Wrapper, and Docker Distribution | Proposed |
-| ADR-0010 | Dynamic Research Rounds | Proposed |
-| ADR-0011 | Concurrency Limits and Web Search Throttling | Proposed |
-| ADR-0012 | Replace DuckDuckGo with SearXNG for Web Search | Proposed |
-| ADR-0013 | SearXNG Engine Optimization — Remove Problematic Backends, Tune Timeouts | Proposed |
-| ADR-0014 | Enforce Time Budget and Correct UI Labels | Proposed |
-| ADR-0015 | Fix JSON Parsing and Topic Drift | Proposed |
+| ADR-0001 | Multi-Agent Research Architecture | Accepted |
+| ADR-0002 | Agent Personality & Model Selection | Accepted |
+| ADR-0003 | Web Frontend & Multi-Session Architecture | Accepted |
+| ADR-0004 | Test Findings and Architecture Fixes | Accepted |
+| ADR-0005 | Auto-Install and Auto-Discover Local LLM Backends | Accepted |
+| ADR-0006 | Web Search and Tool Calling Integration | Accepted |
+| ADR-0007 | Clarification Protocol and Refinement Phase | Accepted |
+| ADR-0008 | Dashboard Enhancements | Accepted |
+| ADR-0009 | CI/CD Pipeline, npm Wrapper, and Docker Distribution | Accepted |
+| ADR-0010 | Dynamic Research Rounds | Accepted |
+| ADR-0011 | Concurrency Limits and Web Search Throttling | Accepted |
+| ADR-0012 | Replace DuckDuckGo with SearXNG for Web Search | Accepted |
+| ADR-0013 | SearXNG Engine Optimization — Remove Problematic Backends, Tune Timeouts | Accepted |
+| ADR-0014 | Enforce Time Budget and Correct UI Labels | Accepted |
+| ADR-0015 | Fix JSON Parsing and Topic Drift | Accepted |
 | ADR-0016 | Epic Tracker — Code Review Handlingsplan (2026-06-17) | Accepted |
+| ADR-0017 | Enhanced Tool Calling with Multi-Provider Search | Accepted |
 
 ## 10. Open Questions
 
@@ -808,6 +812,8 @@ A single test that runs the full pipeline (with mock LLM) and validates the PDF 
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.4 | 2026-06-20 | Batch doc fixes: all 17 ADR statuses updated to Accepted in index; version bump |
+| 1.3 | 2026-06-19 | Added ADR-0017 (Enhanced Tool Calling with Multi-Provider Search) to ADR index and inline references; updated Scope to reflect web search is in scope |
 | 1.2 | 2026-06-17 | Batch 1 doc fixes: full ADR index (16 items), adaptive FSM description for dynamic rounds, version bump |
 | 1.1 | 2026-06-13 | Added Opencode AI as default provider, provider prefix routing, model connectivity check, model selector UI, session deletion, provider model auto-discovery, web module in project structure |
 | 1.0 | 2026-06-13 | Initial design document |

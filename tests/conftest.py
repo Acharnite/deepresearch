@@ -27,21 +27,12 @@ def mock_llm_client() -> None:
 
 @pytest.fixture(autouse=True)
 def mock_searxng():
-    """Autouse fixture that patches httpx for SearXNG so tests don't call a real instance."""
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.raise_for_status = MagicMock()
-    mock_response.json.return_value = {"results": []}
+    """Autouse fixture that patches SearchChain so tests don't call real providers."""
+    from deepresearch.tools.search_chain import SearchChain
 
-    mock_client = AsyncMock()
-    mock_client.get = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
-    with patch(
-        "deepresearch.tools.web_search.httpx.AsyncClient", return_value=mock_client
-    ):
-        yield
+    with patch.object(SearchChain, "search", new_callable=AsyncMock) as mock_search:
+        mock_search.return_value = []
+        yield mock_search
 
 
 @pytest.fixture()
@@ -61,3 +52,59 @@ def mock_ddgs():
         mock_instance.text.return_value = []
         mock_ddgs_cls.return_value.__enter__.return_value = mock_instance
         yield mock_ddgs_cls
+
+
+@pytest.fixture()
+def mock_httpx_get():
+    """Mock httpx.AsyncClient.get for content_fetcher tests.
+
+    Usage::
+        mock_get, set_response = mock_httpx_get
+        set_response("https://example.com", text="<html>...</html>")
+        results = await fetch_page_content(["https://example.com"])
+    """
+    responses: dict[str, MagicMock] = {}
+
+    def set_response(
+        url: str,
+        status_code: int = 200,
+        text: str = "",
+        json_data: dict | None = None,
+    ):
+        mock_resp = MagicMock()
+        mock_resp.status_code = status_code
+        mock_resp.text = text
+        if json_data:
+            mock_resp.json = MagicMock(return_value=json_data)
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock()
+        responses[url] = mock_resp
+        return mock_resp
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        async def side_effect(url, **kwargs):
+            if url in responses:
+                return responses[url]
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.text = "<html><body>default page</body></html>"
+            return resp
+
+        mock_get.side_effect = side_effect
+        yield (mock_get, set_response)
+
+
+@pytest.fixture()
+def no_fetch_or_cache():
+    """Disable content fetching and caching for unit tests.
+
+    Uses ``patch`` instead of monkeypatch because the module-level
+    constants are evaluated at import time, so ``setenv`` has no effect.
+    """
+    import deepresearch.tools.web_search as _ws_mod
+
+    with (
+        patch.object(_ws_mod, "_SEARCH_FETCH_CONTENT", False),
+        patch.object(_ws_mod, "_SEARCH_CACHE_ENABLED", False),
+    ):
+        yield
