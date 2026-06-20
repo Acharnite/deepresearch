@@ -1472,7 +1472,7 @@ async def get_model_recommendations() -> JSONResponse:
         return JSONResponse({"available": False, "message": "llmfit not installed"})
     try:
         result = subprocess.run(
-            ["llmfit", "recommend", "-n", "20", "--json"],
+            ["llmfit", "recommend", "-n", "20", "--capability", "tool_use", "--min-fit", "good", "--json"],
             capture_output=True,
             text=True,
             timeout=30,
