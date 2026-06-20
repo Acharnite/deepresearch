@@ -196,6 +196,23 @@ class MultiSessionManager:
             except Exception:
                 test_model = None
         if not test_model:
+            # Fallback: try llmfit's top research-optimized model
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["llmfit", "recommend", "-n", "1", "--capability", "tool_use",
+                     "--min-fit", "good", "--json"],
+                    capture_output=True, text=True, timeout=15,
+                )
+                if result.returncode == 0:
+                    import json
+                    data = json.loads(result.stdout)
+                    models = data.get("models", [])
+                    if models:
+                        test_model = models[0]["name"]
+            except Exception:
+                pass
+        if not test_model:
             raise ValueError(
                 "No model configured. Set 'model' in request body or configure a default."
             )
