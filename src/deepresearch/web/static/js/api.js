@@ -317,3 +317,8 @@ export async function getBackendAddress(name) {
   if (!resp.ok) return { address: null };
   return resp.json();
 }
+
+export async function deleteOllamaModel(modelName) {
+  const resp = await fetch(`/api/local-backends/models/${encodeURIComponent(modelName)}`, { method: 'DELETE' });
+  return resp.json();
+}

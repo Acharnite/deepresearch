@@ -12,7 +12,8 @@ import {
   installLlmfit, uninstallLlmfit,
   startOllama, stopOllama, uninstallOllama,
   getPullModelURL, getDownloadModelURL, getLlmfitInstallURL, getOllamaUninstallURL,
-  fetchLocalBackends, testLocalBackend, setBackendAddress, getBackendAddress
+  fetchLocalBackends, testLocalBackend, setBackendAddress, getBackendAddress,
+  deleteOllamaModel
 } from '../api.js';
 import { ModelPicker } from '../model-picker.js';
 
@@ -96,6 +97,7 @@ async function loadDiscoveredModels() {
           '<span class="endpoint-url">' + esc(m.endpoint) + '</span>' +
           '<span class="endpoint-type">Ollama</span>' +
           (m.size ? '<span class="text-muted" style="font-size:11px;">' + formatSize(m.size) + '</span>' : '') +
+          '<button class="btn btn-sm btn-danger" style="margin-left:8px;font-size:11px;padding:1px 6px;" onclick="window.deleteOllamaModelAction(\'' + esc(m.name) + '\')">\uD83D\uDDD1\uFE0F</button>' +
         '</div>';
       }
     }
@@ -106,6 +108,21 @@ async function loadDiscoveredModels() {
     if (el) el.innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">Could not scan for local models.</div>';
   }
 }
+
+window.deleteOllamaModelAction = async function(modelName) {
+  if (!confirm(`Delete model "${modelName}"? This will remove it from Ollama.`)) return;
+  try {
+    const result = await deleteOllamaModel(modelName);
+    if (result.status === 'ok') {
+      showToast(`Model "${modelName}" deleted`, 'success');
+      loadDiscoveredModels();
+    } else {
+      showToast(result.message || 'Failed to delete model', 'error');
+    }
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
+};
 
 async function loadEndpointList() {
   try {
@@ -242,9 +259,27 @@ async function loadModelRecommendations() {
       return;
     }
 
-    if (statusEl) statusEl.textContent = '\u2705 ' + (data.models || []).length + ' models';
-
     const models = (data.models || []).sort((a, b) => (b.score || 0) - (a.score || 0));
+
+    // Filter: only show models downloadable via installed backends
+    const filteredModels = models.filter(m => {
+      if (ollamaInstalled && m.ollama_name) return true;
+      if (llmfitInstalled && m.gguf_sources && m.gguf_sources.length > 0) return true;
+      return false;
+    });
+
+    if (statusEl) statusEl.textContent = '\u2705 ' + filteredModels.length + '/' + models.length + ' models';
+
+    if (filteredModels.length === 0) {
+      if (statusEl) statusEl.textContent = '\u274C';
+      container.innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">' +
+        'No downloadable models found. ' +
+        (!ollamaInstalled ? 'Install <a href="#" onclick="document.querySelector(\'[data-tab=ollama]\')?.click()">Ollama</a> ' : '') +
+        (!llmfitInstalled ? 'or <a href="#" onclick="document.querySelector(\'[data-tab=hardware]\')?.click()">llmfit</a> ' : '') +
+        'to see downloadable model recommendations.' +
+        '</div>';
+      return;
+    }
 
     let html = '<div style="overflow-x:auto;padding:4px 0;"><table style="width:100%;border-collapse:collapse;font-size:12px;">' +
       '<thead><tr style="border-bottom:1px solid var(--border);">' +
@@ -259,14 +294,7 @@ async function loadModelRecommendations() {
       '<th style="padding:8px 6px;text-align:center;">Download</th>' +
       '</tr></thead><tbody>';
 
-    // Check if llmfit is installed for download method decision
-    let llmfitInstalled = false;
-    try {
-      const tools = await fetchToolStatus();
-      llmfitInstalled = !!(tools.llmfit && tools.llmfit.installed);
-    } catch (e) {}
-
-    for (const m of models) {
+    for (const m of filteredModels) {
       const score = m.score || 0;
       const scoreBadge = score >= 90
         ? '<span style="background:#1a6d1a;color:#fff;padding:2px 6px;border-radius:3px;font-weight:600;font-size:11px;">' + score + '</span>'
@@ -300,9 +328,7 @@ async function loadModelRecommendations() {
           downloadBtn = '<button class="btn btn-sm btn-primary" style="font-size:11px;padding:2px 6px;" onclick="window.downloadModel(\'' + modelName + '\', null)">\u2B07 Pull (Ollama)</button>';
         }
       } else {
-        // Try direct Ollama pull as fallback
-        var modelName = esc(m.name);
-        downloadBtn = '<button class="btn btn-sm btn-secondary" style="font-size:11px;padding:2px 6px;" onclick="window.downloadModel(\'' + modelName + '\', null)">\u2B07 Try Pull</button>';
+        downloadBtn = '\u2014';
       }
 
       const warningIcon = m._warning

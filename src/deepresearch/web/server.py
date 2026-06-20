@@ -1417,11 +1417,14 @@ async def test_search_engine(req: SearchTestRequest | None = None) -> JSONRespon
 
 @app.get("/api/tools/status")
 async def get_tools_status() -> JSONResponse:
-    """Check if llmfit is installed and return version."""
+    """Check which tools are installed (llmfit, Ollama)."""
     import shutil
     import subprocess
 
-    result: dict[str, dict[str, bool | str]] = {"llmfit": {"installed": False}}
+    result: dict[str, dict[str, bool | str]] = {}
+
+    # llmfit check
+    result["llmfit"] = {"installed": False}
     if shutil.which("llmfit"):
         result["llmfit"]["installed"] = True  # type: ignore[assignment]
         try:
@@ -1433,6 +1436,26 @@ async def get_tools_status() -> JSONResponse:
             )
         except Exception:
             result["llmfit"]["version"] = "unknown"
+
+    # Ollama check
+    result["ollama"] = {"installed": False, "running": False}
+    if shutil.which("ollama"):
+        result["ollama"]["installed"] = True  # type: ignore[assignment]
+        try:
+            ver = subprocess.run(
+                ["ollama", "--version"], capture_output=True, text=True, timeout=5
+            )
+            result["ollama"]["version"] = ver.stdout.strip() or ver.stderr.strip()
+        except Exception:
+            result["ollama"]["version"] = "unknown"
+        # Check if running
+        try:
+            async with httpx.AsyncClient(timeout=2) as client:
+                resp = await client.get("http://localhost:11434/api/tags")
+                result["ollama"]["running"] = resp.status_code == 200  # type: ignore[assignment]
+        except Exception:
+            result["ollama"]["running"] = False
+
     return JSONResponse(result)
 
 
@@ -1463,7 +1486,7 @@ async def get_hardware_info() -> JSONResponse:
 
 @app.get("/api/tools/recommendations")
 async def get_model_recommendations() -> JSONResponse:
-    """Return model recommendations via llmfit recommend --json (if installed).
+    """Return model recommendations via llmfit fit --json (if installed).
     Filters models based on available hardware (RAM/VRAM)."""
     import shutil
     import subprocess
@@ -1472,7 +1495,7 @@ async def get_model_recommendations() -> JSONResponse:
         return JSONResponse({"available": False, "message": "llmfit not installed"})
     try:
         result = subprocess.run(
-            ["llmfit", "recommend", "-n", "20", "--capability", "tool_use", "--min-fit", "good", "--json"],
+            ["llmfit", "fit", "--tool-use", "-n", "30", "--json"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -1574,17 +1597,10 @@ async def get_model_recommendations() -> JSONResponse:
                     )
                 filtered_models.append(m)
 
-            # Filter to only models with downloadable sources (ollama_name or gguf_sources)
-            # This prevents the frontend from showing "Try Pull" buttons that always fail.
-            filtered_models = [
-                m for m in filtered_models
-                if m.get("ollama_name") or (m.get("gguf_sources") and len(m.get("gguf_sources", [])) > 0)
-            ]
-
             return JSONResponse(
                 {
                     "available": True,
-                    "models": filtered_models[:15],
+                    "models": filtered_models[:30],
                     "system": data.get("system", {}),
                     "hardware": hw_info if hw_info else None,
                 }
@@ -2884,6 +2900,31 @@ async def download_model(
             _download_process = None
 
     return EventSourceResponse(generate(), ping=15)
+
+
+@app.delete("/api/local-backends/models/{model_name}")
+async def delete_ollama_model(model_name: str) -> JSONResponse:
+    """Delete an Ollama model via 'ollama rm'."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("ollama"):
+        return JSONResponse({"status": "error", "message": "Ollama is not installed"}, status_code=400)
+
+    try:
+        result = subprocess.run(
+            ["ollama", "rm", model_name],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode == 0:
+            return JSONResponse({"status": "ok", "message": f"Model '{model_name}' deleted"})
+        else:
+            return JSONResponse(
+                {"status": "error", "message": result.stderr.strip() or "Failed to delete model"},
+                status_code=500
+            )
+    except subprocess.TimeoutExpired:
+        return JSONResponse({"status": "error", "message": "Delete timed out"}, status_code=500)
 
 
 # ── Standalone launcher ─────────────────────────────────────────────────

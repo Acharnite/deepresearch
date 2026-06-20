@@ -73,5 +73,11 @@ tests/test_orchestrator.py
 tests/test_pdf_generation.py
 tests/test_polish.py
 tests/test_system.py
+tests/test_tool_cache.py
+tests/test_tool_content_fetcher.py
+tests/test_tool_parser.py
+tests/test_tool_providers.py
+tests/test_tool_registry.py
+tests/test_tool_time_filter.py
 tests/test_tools.py
 tests/test_web.py
