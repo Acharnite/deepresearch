@@ -1515,7 +1515,7 @@ async def get_model_recommendations() -> JSONResponse:
             # Filter and annotate models
             filtered_models = []
             for m in models[:20]:
-                required_ram = m.get("required_ram_gb") or m.get("min_ram_gb") or 0
+                required_ram = m.get("memory_required_gb") or m.get("required_ram_gb") or m.get("min_ram_gb") or 0
                 if hw_info and required_ram > usable_memory_gb:
                     m["_warning"] = (
                         f"Requires {required_ram}GB RAM, "
@@ -1523,6 +1523,13 @@ async def get_model_recommendations() -> JSONResponse:
                     )
                 # Annotate with capability info for frontend filtering
                 m["supports_tool_use"] = "tool_use" in (m.get("capability_ids") or [])
+                # MoE detection: if total_memory_gb >> memory_required_gb, it's a MoE model
+                mem_req = m.get("memory_required_gb", 0) or 0
+                mem_total = m.get("total_memory_gb", 0) or 0
+                if mem_req > 0 and mem_total > mem_req * 2:
+                    m["_moe_annotation"] = (
+                        f"MoE: {mem_req:.1f} GB VRAM + {mem_total - mem_req:.0f} GB system RAM"
+                    )
                 filtered_models.append(m)
 
             return JSONResponse(
@@ -2456,6 +2463,20 @@ async def pull_ollama_model(
                 line_str = line.decode("utf-8", errors="replace").rstrip()
                 if not line_str:
                     continue
+                # Detect model-not-found errors (HF repo IDs in Ollama registry)
+                if "file does not exist" in line_str.lower():
+                    yield {
+                        "event": "install_error",
+                        "data": json.dumps({
+                            "status": "error",
+                            "message": f"Model '{req.model}' not found in Ollama library. "
+                                       f"Ollama's registry is separate from HuggingFace. "
+                                       f"Check available models at https://ollama.com/library",
+                            "code": "MODEL_NOT_FOUND",
+                        }),
+                    }
+                    process.terminate()
+                    return
                 line_count += 1
                 progress = min(10 + line_count * 2, 95)
                 yield {
@@ -2813,7 +2834,7 @@ async def download_model(
             _download_state["active"] = False
             _download_process = None
 
-    return EventSourceResponse(generate())
+    return EventSourceResponse(generate(), ping=15)
 
 
 # ── Standalone launcher ─────────────────────────────────────────────────
