@@ -250,6 +250,7 @@ async function loadModelRecommendations() {
       '<thead><tr style="border-bottom:1px solid var(--border);">' +
       '<th style="padding:8px 6px;text-align:left;">Score</th>' +
       '<th style="padding:8px 6px;text-align:left;">Model</th>' +
+      '<th style="padding:8px 6px;text-align:left;">Research</th>' +
       '<th style="padding:8px 6px;text-align:left;">Category</th>' +
       '<th style="padding:8px 6px;text-align:left;">Fit</th>' +
       '<th style="padding:8px 6px;text-align:right;">Speed</th>' +
@@ -307,6 +308,10 @@ async function loadModelRecommendations() {
       const warningIcon = m._warning
         ? '<span style="margin-left:4px;cursor:help;color:#ff9800;" title="' + esc(m._warning) + '">\u26A0\uFE0F</span>'
         : '';
+      const rScore = m.research_score || 0;
+      const rTags = m.research_tags || [];
+      const rBadgeColor = rScore >= 60 ? '#1a6d1a' : rScore >= 40 ? '#b8860b' : '#555';
+      const researchBadge = '<span style="background:' + rBadgeColor + ';color:#fff;padding:2px 6px;border-radius:3px;font-weight:600;font-size:11px;" title="' + esc(rTags.join(', ')) + '">' + rScore + '</span>';
       const moeNote = m._moe_annotation
         ? '<br><span style="font-size:10px;color:#64b5f6;">' + esc(m._moe_annotation) + '</span>'
         : '';
@@ -314,6 +319,7 @@ async function loadModelRecommendations() {
       html += '<tr style="border-bottom:1px solid var(--border);">' +
         '<td style="padding:6px;">' + scoreBadge + '</td>' +
         '<td style="padding:6px;font-weight:500;">' + esc(m.name || '?') + warningIcon + moeNote + '</td>' +
+        '<td style="padding:6px;text-align:center;">' + researchBadge + '</td>' +
         '<td style="padding:6px;color:var(--text-secondary);">' + esc(m.category || '—') + '</td>' +
         '<td style="padding:6px;">' + fitBadge + '</td>' +
         '<td style="padding:6px;text-align:right;font-variant-numeric:tabular-nums;">' + speed + '</td>' +

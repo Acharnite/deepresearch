@@ -1512,6 +1512,48 @@ async def get_model_recommendations() -> JSONResponse:
             else:
                 usable_memory_gb = float("inf")
 
+            # Calculate research-optimized score for each model
+            # Weights: tool_use capability (+30), context length >= 32K (+20),
+            # speed > 20 tok/s (+10), ideal fit (+10), good fit (+5)
+            for m in models[:20]:
+                rscore = 0
+                tags = []
+                # tool_use capability — critical for web search
+                if "tool_use" in (m.get("capability_ids") or []):
+                    rscore += 30
+                    tags.append("tool_use")
+                # Context length — need at least 32K for research
+                ctx = m.get("effective_context_length", 0) or 0
+                if ctx >= 128000:
+                    rscore += 25
+                    tags.append("128K ctx")
+                elif ctx >= 32000:
+                    rscore += 20
+                    tags.append("32K ctx")
+                elif ctx >= 16000:
+                    rscore += 10
+                    tags.append("16K ctx")
+                # Speed — fast models preferred
+                tps = m.get("estimated_tps", 0) or 0
+                if tps > 100:
+                    rscore += 15
+                    tags.append("fast")
+                elif tps > 40:
+                    rscore += 10
+                elif tps > 20:
+                    rscore += 5
+                # Fit level bonus
+                fit = m.get("fit_level", "")
+                if fit == "ideal":
+                    rscore += 10
+                elif fit == "good":
+                    rscore += 5
+                m["research_score"] = rscore
+                m["research_tags"] = tags
+
+            # Sort by research_score (primary), then llmfit score (tiebreaker)
+            models.sort(key=lambda m: (m.get("research_score", 0), m.get("score", 0)), reverse=True)
+
             # Filter and annotate models
             filtered_models = []
             for m in models[:20]:
