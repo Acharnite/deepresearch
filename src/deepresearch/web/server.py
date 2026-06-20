@@ -1574,6 +1574,13 @@ async def get_model_recommendations() -> JSONResponse:
                     )
                 filtered_models.append(m)
 
+            # Filter to only models with downloadable sources (ollama_name or gguf_sources)
+            # This prevents the frontend from showing "Try Pull" buttons that always fail.
+            filtered_models = [
+                m for m in filtered_models
+                if m.get("ollama_name") or (m.get("gguf_sources") and len(m.get("gguf_sources", [])) > 0)
+            ]
+
             return JSONResponse(
                 {
                     "available": True,
