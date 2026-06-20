@@ -37,14 +37,20 @@ class EventBus:
         self._lock = asyncio.Lock()
         self._history = history
 
-    async def publish(self, event: dict[str, Any]) -> None:
+    async def publish(self, event: dict[str, Any], state: str | None = None) -> None:
         """Publish an event to all active subscribers.
 
         Each subscriber's queue receives the event dict.  A
         ``_server_timestamp`` field is added at publish time for
         observability.  If a ``history`` list was provided at
         construction time, the event is also appended to it.
+
+        If *state* is provided, ``event["state"]`` is set to it (overwriting
+        any existing ``state`` key).  The frontend uses ``data.state`` to
+        update the pipeline indicator (session-detail.js:357).
         """
+        if state is not None:
+            event["state"] = state
         event["_server_timestamp"] = datetime.now().isoformat()
         # Auto-record to history if wired
         if self._history is not None:

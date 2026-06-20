@@ -42,7 +42,8 @@ async def configure(
     orchestrator.state = "CONFIGURING"
     if orchestrator._event_bus:
         await orchestrator._event_bus.publish(
-            {"event_type": "config_validated", "topic": topic_str}
+            {"event_type": "config_validated", "topic": topic_str},
+            state=orchestrator.state,
         )
 
     # --- load configs (from override or from file) ---
@@ -120,7 +121,8 @@ async def configure(
     orchestrator.session_config = config
     if orchestrator._event_bus:
         await orchestrator._event_bus.publish(
-            {"event_type": "models_assigned", "assignments": agent_models}
+            {"event_type": "models_assigned", "assignments": agent_models},
+            state=orchestrator.state,
         )
     return config
 

@@ -201,7 +201,8 @@ class Orchestrator:
         logger.info("Session started — topic: %s", topic)
         if self._event_bus:
             await self._event_bus.publish(
-                {"event_type": "session_start", "topic": topic}
+                {"event_type": "session_start", "topic": topic},
+                state=self.state,
             )
         console.print("\n[bold]🚀 DeepeResearch — Multi-Agent Research System[/bold]")
         console.print(f"[yellow]Topic:[/yellow] {topic}")
@@ -326,7 +327,8 @@ class Orchestrator:
                 )
                 if self._event_bus:
                     await self._event_bus.publish(
-                        {"event_type": "round_start", "round": round_num}
+                        {"event_type": "round_start", "round": round_num},
+                        state=self.state,
                     )
 
                 if round_num == 1:
@@ -363,7 +365,8 @@ class Orchestrator:
                     logger.error("ALL agents failed in round %d — stopping", round_num)
                     if self._event_bus:
                         await self._event_bus.publish(
-                            {"event_type": "all_agents_failed", "round": round_num}
+                            {"event_type": "all_agents_failed", "round": round_num},
+                            state=self.state,
                         )
                     console.print("[red]All agents failed — stopping research[/red]")
                     break
@@ -395,7 +398,8 @@ class Orchestrator:
                             {
                                 "event_type": "collaboration_phase",
                                 "shared_agent_count": len(results),
-                            }
+                            },
+                            state=self.state,
                         )
 
                     self.state = "FOLLOWUP"
@@ -407,7 +411,8 @@ class Orchestrator:
                             {
                                 "event_type": "followup_start",
                                 "active_agents": len(active_agents()),
-                            }
+                            },
+                            state=self.state,
                         )
                     followup_results = (
                         await self.round_runner.collect_followup_questions(
@@ -434,14 +439,16 @@ class Orchestrator:
                                 "results": len(followup_results),
                                 "questions": questions_dict,
                                 "targets": targets_dict,
-                            }
+                            },
+                            state=self.state,
                         )
 
                     self.state = "REFINING"
                     console.print("\n[bold]Refinement:[/bold] Agents refining findings")
                     if self._event_bus:
                         await self._event_bus.publish(
-                            {"event_type": "refinement_start"}
+                            {"event_type": "refinement_start"},
+                            state=self.state,
                         )
                     refined = await self.round_runner._run_refinement(
                         agents,
@@ -456,7 +463,8 @@ class Orchestrator:
                             {
                                 "event_type": "refinement_complete",
                                 "refined_agents": len(refined),
-                            }
+                            },
+                            state=self.state,
                         )
 
                 if round_num > 1:
@@ -475,12 +483,15 @@ class Orchestrator:
                 ):
                     logger.info("Convergence check: stopping after round %d", round_num)
                     if self._event_bus:
+                        budget_key = getattr(config.topic, "time_budget", "unknown")
                         await self._event_bus.publish(
                             {
-                                "event_type": "round_skip",
+                                "event_type": "round2_skip",
                                 "round": round_num,
                                 "reason": "convergence",
-                            }
+                                "budget": budget_key,
+                            },
+                            state=self.state,
                         )
                     break
 
@@ -519,7 +530,8 @@ class Orchestrator:
                             len(str(r)) for r in all_reports.values()
                         ),
                         "model": "unknown",
-                    }
+                    },
+                    state=self.state,
                 )
             paper = await self.scribe_comp.compile(
                 all_reports, scribe, topic=config.topic.question

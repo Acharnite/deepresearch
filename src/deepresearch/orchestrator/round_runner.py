@@ -136,7 +136,8 @@ class RoundRunner:
                                 "event_type": "round_cancelled",
                                 "round": round_num,
                                 "agent_id": agent_id,
-                            }
+                            },
+                            state=self._orch.state,
                         )
                     break
 
@@ -154,7 +155,8 @@ class RoundRunner:
                             "model": agent_model,
                             "timeout": timeout,
                             "agent_state": "researching",
-                        }
+                        },
+                        state=self._orch.state,
                     )
 
                 coro = (
@@ -203,7 +205,8 @@ class RoundRunner:
                                     "round": round_num,
                                     "result_chars": result_size,
                                     "status": "success",
-                                }
+                                },
+                                state=self._orch.state,
                             )
                 except asyncio.TimeoutError:
                     logger.warning(
@@ -258,7 +261,8 @@ class RoundRunner:
                             "event_type": "agent_retry",
                             "agent_id": agent_id,
                             "round": round_num,
-                        }
+                        },
+                        state=self._orch.state,
                     )
 
                 # Publish retry start event so the dashboard shows "Retrying..."
@@ -271,7 +275,8 @@ class RoundRunner:
                             "model": "unknown",
                             "timeout": timeout,
                             "agent_state": "retrying",
-                        }
+                        },
+                        state=self._orch.state,
                     )
 
                 try:
@@ -298,7 +303,8 @@ class RoundRunner:
                                     "result_chars": result_size,
                                     "status": "success",
                                     "attempt": 2,
-                                }
+                                },
+                                state=self._orch.state,
                             )
                         logger.info("Agent '%s' succeeded on retry", agent_id)
                 except asyncio.TimeoutError:
@@ -307,6 +313,7 @@ class RoundRunner:
                     await self.handle_agent_failure(agent_id, f"{e} (retry failed)")
 
             return results
+
 
     @staticmethod
     def _is_empty_result(result: Any) -> bool:
@@ -396,7 +403,8 @@ class RoundRunner:
                             else "unknown",
                             "timeout": timeout,
                             "agent_state": "researching",
-                        }
+                        },
+                        state=self._orch.state,
                     )
 
                 coro = agent_fn(
@@ -435,7 +443,8 @@ class RoundRunner:
                                     "round": round_num,
                                     "result_chars": result_size,
                                     "status": "success",
-                                }
+                                },
+                                state=self._orch.state,
                             )
                 except asyncio.TimeoutError:
                     logger.warning(
@@ -488,7 +497,8 @@ class RoundRunner:
                             "event_type": "agent_retry",
                             "agent_id": agent_id,
                             "round": round_num,
-                        }
+                        },
+                        state=self._orch.state,
                     )
 
                 prev_findings = prev_round.get(agent_id)
@@ -516,7 +526,8 @@ class RoundRunner:
                             "model": "unknown",
                             "timeout": timeout,
                             "agent_state": "retrying",
-                        }
+                        },
+                        state=self._orch.state,
                     )
 
                 try:
@@ -545,7 +556,8 @@ class RoundRunner:
                                     "result_chars": result_size,
                                     "status": "success",
                                     "attempt": 2,
-                                }
+                                },
+                                state=self._orch.state,
                             )
                         logger.info("Agent '%s' succeeded on retry", agent_id)
                 except asyncio.TimeoutError:
@@ -727,7 +739,8 @@ class RoundRunner:
         logger.warning("Agent '%s' failed: %s", agent_id, error)
         if self._event_bus:
             await self._event_bus.publish(
-                {"event_type": "agent_failed", "agent_id": agent_id, "error": error}
+                {"event_type": "agent_failed", "agent_id": agent_id, "error": error},
+                state=self._orch.state,
             )
         console.print(
             f"  [yellow]⚠ Agent '{agent_id}' failed: {error}[/yellow]"

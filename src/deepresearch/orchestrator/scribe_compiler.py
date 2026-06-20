@@ -178,7 +178,8 @@ class ScribeCompiler:
                                     self._orch.state = "CLARIFYING"
                             if self._event_bus:
                                 await self._event_bus.publish(
-                                    {"event_type": "scribe_clarifying", "step": status}
+                                    {"event_type": "scribe_clarifying", "step": status},
+                                    state=self._orch.state,
                                 )
 
                         paper = await scribe.compile(
@@ -198,7 +199,10 @@ class ScribeCompiler:
                     paper = await scribe(reports)
 
                 if self._event_bus:
-                    await self._event_bus.publish({"event_type": "scribe_end"})
+                    await self._event_bus.publish(
+                        {"event_type": "scribe_end"},
+                        state=self._orch.state,
+                    )
                 logger.info(
                     "Scribe compilation successful — %d sections",
                     len(paper.sections) if paper.sections else 0,
@@ -291,7 +295,8 @@ class ScribeCompiler:
                         "event_type": "agent_output",
                         "agent_id": agent_id,
                         "text": data.get("text", ""),
-                    }
+                    },
+                    state=self._orch.state,
                 )
             if data.get("type") == "search":
                 await self._event_bus.publish(
@@ -300,7 +305,8 @@ class ScribeCompiler:
                         "agent_id": agent_id,
                         "text": f"\n[🔍 Searching: {data.get('query', '')}]\n",
                         "agent_state": "searching",
-                    }
+                    },
+                    state=self._orch.state,
                 )
             if data.get("type") == "agent_state":
                 await self._event_bus.publish(
@@ -309,7 +315,8 @@ class ScribeCompiler:
                         "agent_id": agent_id,
                         "agent_state": data.get("state", ""),
                         "text": "",
-                    }
+                    },
+                    state=self._orch.state,
                 )
 
         return callback
@@ -350,7 +357,8 @@ class ScribeCompiler:
             )
             if self._event_bus:
                 await self._event_bus.publish(
-                    {"event_type": "pdf_generated", "path": str(pdf_path)}
+                    {"event_type": "pdf_generated", "path": str(pdf_path)},
+                    state=self._orch.state,
                 )
             console.print(f"\n[bold green]✓ PDF generated: {pdf_path}[/bold green]")
             # Verify PDF size — mark as underweight if below threshold
@@ -367,7 +375,8 @@ class ScribeCompiler:
                                 "event_type": "pdf_underweight",
                                 "size": pdf_size,
                                 "threshold": PDF_MIN_HEALTHY_BYTES,
-                            }
+                            },
+                            state=self._orch.state,
                         )
                 else:
                     self._orch._pdf_underweight = False
@@ -387,7 +396,8 @@ class ScribeCompiler:
                 pdf_path = html_path
                 if self._event_bus:
                     await self._event_bus.publish(
-                        {"event_type": "pdf_generated", "path": str(html_path)}
+                        {"event_type": "pdf_generated", "path": str(html_path)},
+                        state=self._orch.state,
                     )
                 console.print(
                     f"\n[yellow]⚠ PDF generation failed, HTML saved: "
@@ -409,7 +419,10 @@ class ScribeCompiler:
 
         self._orch.state = "COMPLETE"
         if self._event_bus:
-            await self._event_bus.publish({"event_type": "session_end"})
+            await self._event_bus.publish(
+                {"event_type": "session_end"},
+                state=self._orch.state,
+            )
         agent_count = len(self._config.agent_profiles if self._config else [])
         console.print("\n[bold green]✓ Research complete![/bold green]")
         console.print(f"  Output: {pdf_path}")
@@ -434,7 +447,8 @@ class ScribeCompiler:
                         ).total_seconds(),
                         1,
                     ),
-                }
+                },
+                state=self._orch.state,
             )
 
         return Path(pdf_path)

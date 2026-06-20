@@ -26,7 +26,7 @@ export function addEvent(eventType, data) {
   else if (eventType === 'collaboration_phase') msg = 'Collaboration phase (' + (data.shared_agent_count || '?') + ' agents)';
   else if (eventType === 'session_end') msg = 'Session completed';
   else if (eventType === 'session_error') msg = 'Session failed: ' + (data.error || '');
-  else if (eventType === 'session_timeout') msg = 'Session timed out after ' + (data.timeout || '?') + 's';
+  else if (eventType === 'session_timeout') msg = 'Session timed out after ' + (data.timeout || '?') + 's';  // Reserved for future use
   else if (eventType === 'pdf_generated') msg = 'PDF generated: ' + (data.path || '');
   else if (eventType === 'scribe_start') msg = 'Scribe compiling final paper';
   else if (eventType === 'scribe_end') msg = 'Scribe compilation complete';
@@ -35,7 +35,11 @@ export function addEvent(eventType, data) {
   else if (eventType === 'followup_start') msg = 'Follow-up phase started (' + (data.active_agents || '?') + ' agents)';
   else if (eventType === 'followup_complete') msg = 'Follow-up complete (' + (data.results || '?') + ' responses)';
   else if (eventType === 'round2_skip') msg = 'Round 2 skipped (' + (data.budget || '?') + ' mode)';
+  else if (eventType === 'all_agents_failed') msg = '❌ All agents failed — ' + (data.reason || 'no reason');
+  else if (eventType === 'round_cancelled') msg = '⏹️ Round cancelled — ' + (data.reason || '');
+  else if (eventType === 'pdf_underweight') msg = '📄 PDF underweight (' + (data.size || '?') + ' bytes)';
   else if (eventType === 'reports_collected') msg = 'Reports collected from ' + (data.count || '?') + ' agents';
+  // Reserved for future use: session_timeout, reports_collected
   else if (eventType === 'pipeline_summary') msg = '📊 Pipeline complete: ' + (data.total_agents || '?') + ' agents, ' + (data.failed_agents ? data.failed_agents.length + ' failed' : '0 failed') + ', ' + data.elapsed + 's';
   else if (eventType === 'refinement_start') msg = 'Refinement phase started — agents refining findings';
   else if (eventType === 'refinement_complete') msg = 'Refinement complete (' + (data.refined_agents || '0') + ' agents refined)';
