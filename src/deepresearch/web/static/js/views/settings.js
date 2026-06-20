@@ -307,10 +307,13 @@ async function loadModelRecommendations() {
       const warningIcon = m._warning
         ? '<span style="margin-left:4px;cursor:help;color:#ff9800;" title="' + esc(m._warning) + '">\u26A0\uFE0F</span>'
         : '';
+      const moeNote = m._moe_annotation
+        ? '<br><span style="font-size:10px;color:#64b5f6;">' + esc(m._moe_annotation) + '</span>'
+        : '';
 
       html += '<tr style="border-bottom:1px solid var(--border);">' +
         '<td style="padding:6px;">' + scoreBadge + '</td>' +
-        '<td style="padding:6px;font-weight:500;">' + esc(m.name || '?') + warningIcon + '</td>' +
+        '<td style="padding:6px;font-weight:500;">' + esc(m.name || '?') + warningIcon + moeNote + '</td>' +
         '<td style="padding:6px;color:var(--text-secondary);">' + esc(m.category || '—') + '</td>' +
         '<td style="padding:6px;">' + fitBadge + '</td>' +
         '<td style="padding:6px;text-align:right;font-variant-numeric:tabular-nums;">' + speed + '</td>' +

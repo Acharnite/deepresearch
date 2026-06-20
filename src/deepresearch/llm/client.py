@@ -1196,9 +1196,37 @@ class LLMClient:
                     if is_search and self.event_callback and results:
                         q = args.get("query", "")
                         search_summary = f'\n[🔍 Web Search] Query: "{q}"\n'
-                        for r in results[:3]:
-                            title = (r.get("title", "") or "")[:60]
-                            search_summary += f"  • {title}\n"
+                        
+                        # Show time_filter from first result if available
+                        tf = results[0].get("time_filter") if results else None
+                        if tf:
+                            search_summary += f"   Time filter: {tf}\n"
+                        # Show provider source + number of results
+                        sources = set(r.get("source", "") for r in results if r.get("source"))
+                        if sources:
+                            search_summary += f"   Providers: {', '.join(sorted(sources))}\n"
+                        
+                        # Show tl_dr if available (enriched search - ADR-0017)
+                        tl_dr = results[0].get("tl_dr") if results else None
+                        if tl_dr:
+                            search_summary += f"   TL;DR: {tl_dr[:200]}\n"
+                        
+                        # Show content stats
+                        content_count = sum(1 for r in results if r.get("content"))
+                        if content_count > 0:
+                            total_chars = sum(len(r.get("content", "") or "") for r in results)
+                            search_summary += f"   Fetched content: {total_chars:,} chars from {content_count} pages\n"
+                        
+                        # Show result titles
+                        for r in results[:5]:
+                            title = (r.get("title", "") or "")[:80]
+                            source = r.get("source", "")
+                            src_tag = f" [{source}]" if source else ""
+                            search_summary += f"  • {title}{src_tag}\n"
+                        
+                        if len(results) > 5:
+                            search_summary += f"  ... and {len(results) - 5} more results\n"
+                        
                         await self.event_callback(
                             {"type": "stream", "text": search_summary}
                         )
