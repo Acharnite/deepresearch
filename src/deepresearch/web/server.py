@@ -99,6 +99,16 @@ _download_state: dict[str, Any] = {
 _download_process: asyncio.subprocess.Process | None = None
 _download_task: asyncio.Task | None = None
 
+# ── llama.cpp process tracking ──────────────────────────
+_llamacpp_process: asyncio.subprocess.Process | None = None
+_llamacpp_config: dict = {
+    "port": 8080,
+    "installed": False,
+}
+_llamacpp_shutting_down: bool = False
+_llamacpp_restart_attempts: int = 0
+MAX_RESTART_ATTEMPTS: int = 3
+
 # ── Load .env keys into os.environ at startup ──────────────────────────
 # This ensures LLMClient (which reads from os.environ) can find API keys
 # that were persisted to .env via dashboard settings across server restarts.
@@ -132,6 +142,20 @@ async def _lifespan(app: FastAPI):
         logger.warning("Session state saved successfully")
     except Exception as e:
         logger.error("Failed to save sessions during shutdown: %s", e)
+
+    # Shutdown: stop llama.cpp if running
+    global _llamacpp_process, _llamacpp_shutting_down
+    _llamacpp_shutting_down = True
+    if _llamacpp_process is not None and _llamacpp_process.returncode is None:
+        logger.warning("Stopping llama.cpp...")
+        _llamacpp_process.terminate()
+        try:
+            await asyncio.wait_for(_llamacpp_process.wait(), timeout=5)
+            logger.warning("llama.cpp stopped")
+        except asyncio.TimeoutError:
+            _llamacpp_process.kill()
+            await _llamacpp_process.wait()
+            logger.warning("llama.cpp killed (force)")
 
 
 app = FastAPI(title="DeepeResearch Dashboard", lifespan=_lifespan)
@@ -1456,6 +1480,24 @@ async def get_tools_status() -> JSONResponse:
         except Exception:
             result["ollama"]["running"] = False
 
+    # llama.cpp check
+    result["llamacpp"] = {"installed": False, "running": False}
+    if shutil.which("llama-server"):
+        result["llamacpp"]["installed"] = True  # type: ignore[assignment]
+        try:
+            ver = subprocess.run(
+                ["llama-server", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            result["llamacpp"]["version"] = ver.stdout.strip() or ver.stderr.strip()
+        except Exception:
+            result["llamacpp"]["version"] = "unknown"
+        result["llamacpp"]["running"] = (
+            _llamacpp_process is not None and _llamacpp_process.returncode is None
+        )
+
     return JSONResponse(result)
 
 
@@ -1636,7 +1678,7 @@ BACKEND_DEFINITIONS = [
         "description": "Lightweight CPU/GPU inference",
         "port": 8080,
         "path": "/v1/models",
-        "binary": None,
+        "binary": "llama-server",
     },
     {
         "name": "vllm",
@@ -1817,6 +1859,711 @@ async def set_backend_address(name: str, req: BackendAddressRequest) -> JSONResp
 
     local_backend_manager.set_address(name, req.address)
     return JSONResponse({"status": "ok", "name": name, "address": req.address})
+
+
+# ── llama.cpp: Platform Detection ────────────────────────────────────────
+
+
+def _detect_llamacpp_platform() -> dict:
+    """Return download info for the current platform.
+
+    Platform detection priority for Linux: ROCm > Vulkan > NVIDIA (CPU binary
+    with -ngl N for GPU offload) > plain CPU.
+    """
+    import platform as _platform
+    import shutil as _shutil
+
+    system = _platform.system().lower()
+    machine = _platform.machine().lower()
+
+    if system == "darwin":
+        if machine == "arm64":
+            return {"asset": "macos-arm64", "ext": "tar.gz"}
+        return {"asset": "macos-x64", "ext": "tar.gz"}
+
+    if system == "linux":
+        if machine == "aarch64":
+            return {"asset": "ubuntu-arm64", "ext": "tar.gz"}
+        # GPU detection priority: ROCm > Vulkan > NVIDIA (CPU binary + -ngl)
+        if _shutil.which("rocm-smi"):
+            return {"asset": "ubuntu-rocm-7.2-x64", "ext": "tar.gz"}
+        if _shutil.which("nvidia-smi"):
+            # CPU binary with -ngl N for GPU offload
+            return {"asset": "ubuntu-x64", "ext": "tar.gz"}
+        return {"asset": "ubuntu-x64", "ext": "tar.gz"}
+
+    if system == "windows":
+        return {"asset": "win-cpu-x64", "ext": "zip"}
+
+    raise RuntimeError(f"Unsupported platform: {system} {machine}")
+
+
+async def _get_latest_llamacpp_tag() -> str:
+    """Resolve the latest release tag from GitHub API."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest",
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data["tag_name"]  # e.g. "b9739"
+
+
+def _build_llamacpp_download_url(tag: str, platform_info: dict) -> str:
+    asset = platform_info["asset"]
+    ext = platform_info["ext"]
+    return (
+        f"https://github.com/ggml-org/llama.cpp/releases/download/"
+        f"{tag}/llama-{tag}-bin-{asset}.{ext}"
+    )
+
+
+# ── llama.cpp: Status, Install, Uninstall, Start, Stop, Restart ──────────
+
+
+@app.get("/api/local-backends/llamacpp/status")
+async def get_llamacpp_status() -> JSONResponse:
+    """Check if llama-server is installed and running."""
+    import shutil
+    import subprocess
+
+    installed = shutil.which("llama-server") is not None
+    version = None
+    running = False
+
+    if installed:
+        try:
+            result = subprocess.run(
+                ["llama-server", "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            version = result.stdout.strip() or result.stderr.strip()
+        except Exception:
+            version = "unknown"
+
+    # Check if our tracked process is alive
+    global _llamacpp_process
+    running = (
+        _llamacpp_process is not None and _llamacpp_process.returncode is None
+    )
+
+    return JSONResponse(
+        {
+            "installed": installed,
+            "running": running,
+            "version": version,
+        }
+    )
+
+
+@app.post("/api/local-backends/llamacpp/install")
+async def install_llamacpp(request: Request) -> EventSourceResponse:
+    """Download and install llama-server binary with SSE streaming."""
+    import shutil
+    import tarfile
+    import tempfile
+    import os as _os
+
+    # Pre-check: already installed?
+    if shutil.which("llama-server"):
+        return EventSourceResponse(
+            _install_error_generator("llama.cpp is already installed")
+        )
+
+    async def generate() -> AsyncGenerator[str, None]:
+        try:
+            # ── Step 1: Detect platform ──────────────────────────────
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "detect",
+                        "message": "Detecting platform...",
+                        "progress": 5,
+                    }
+                ),
+            }
+            platform_info = _detect_llamacpp_platform()
+
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "detect",
+                        "message": f"Platform: {platform_info['asset']}",
+                        "progress": 10,
+                    }
+                ),
+            }
+
+            # ── Step 2: Get latest tag ───────────────────────────────
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "tag",
+                        "message": "Resolving latest release...",
+                        "progress": 15,
+                    }
+                ),
+            }
+            tag = await _get_latest_llamacpp_tag()
+
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "tag",
+                        "message": f"Latest release: {tag}",
+                        "progress": 20,
+                    }
+                ),
+            }
+
+            # ── Step 3: Download binary ──────────────────────────────
+            download_url = _build_llamacpp_download_url(tag, platform_info)
+
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "download",
+                        "message": f"Downloading {download_url}...",
+                        "progress": 25,
+                    }
+                ),
+            }
+
+            ext = platform_info["ext"]
+            tmp_fd, tmp_path = tempfile.mkstemp(suffix=f".{ext}")
+            _os.close(tmp_fd)
+
+            try:
+                async with httpx.AsyncClient(timeout=60) as client:
+                    async with client.stream("GET", download_url) as resp:
+                        resp.raise_for_status()
+                        total = int(resp.headers.get("content-length", 0))
+                        downloaded = 0
+                        with open(tmp_path, "wb") as f:
+                            async for chunk in resp.aiter_bytes():
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if total > 0:
+                                    pct = 25 + int(downloaded / total * 50)
+                                    yield {
+                                        "event": "install_log",
+                                        "data": json.dumps(
+                                            {
+                                                "step": "download",
+                                                "message": (
+                                                    f"Downloaded "
+                                                    f"{downloaded // 1024} / "
+                                                    f"{total // 1024} KB"
+                                                ),
+                                                "progress": min(pct, 75),
+                                            }
+                                        ),
+                                    }
+
+                                if await request.is_disconnected():
+                                    _os.remove(tmp_path)
+                                    return
+            except Exception as exc:
+                _os.remove(tmp_path)
+                raise
+
+            # ── Step 4: Extract binary ──────────────────────────────
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "extract",
+                        "message": "Extracting llama-server binary...",
+                        "progress": 80,
+                    }
+                ),
+            }
+
+            install_dir = _os.path.expanduser("~/.local/bin")
+            _os.makedirs(install_dir, exist_ok=True)
+
+            if ext == "tar.gz":
+                # Strip the versioned top-level directory (llama-b9739/)
+                import tarfile as _tarfile
+
+                with _tarfile.open(tmp_path, "r:gz") as tar:
+                    # Find llama-server inside the tarball
+                    members = tar.getmembers()
+                    for m in members:
+                        # Match paths like: llama-b9739/llama-server
+                        parts = _os.path.split(m.name)
+                        if len(parts) >= 2 and parts[-1] == "llama-server":
+                            m.name = _os.path.basename(m.name)
+                            tar.extract(m, path=install_dir)
+                            break
+                    else:
+                        raise RuntimeError(
+                            "llama-server binary not found in archive"
+                        )
+            elif ext == "zip":
+                import zipfile as _zipfile
+
+                with _zipfile.ZipFile(tmp_path) as zf:
+                    for name in zf.namelist():
+                        if name.endswith("llama-server.exe") or name.endswith(
+                            "llama-server"
+                        ):
+                            zf.extract(name, install_dir)
+                            # Move to correct name if nested
+                            src = _os.path.join(install_dir, name)
+                            dst = _os.path.join(
+                                install_dir, _os.path.basename(name)
+                            )
+                            if src != dst:
+                                _os.rename(src, dst)
+                            break
+                    else:
+                        raise RuntimeError(
+                            "llama-server binary not found in archive"
+                        )
+
+            # Clean up temp file
+            _os.remove(tmp_path)
+
+            # Make executable
+            binary_path = _os.path.join(install_dir, "llama-server")
+            if _os.path.exists(binary_path):
+                _os.chmod(binary_path, 0o755)
+
+            # ── Step 5: Verify ──────────────────────────────────────
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "verify",
+                        "message": "Verifying installation...",
+                        "progress": 90,
+                    }
+                ),
+            }
+
+            import subprocess as _subprocess
+
+            if not shutil.which("llama-server"):
+                raise RuntimeError(
+                    "llama-server binary not found in PATH after install"
+                )
+
+            version = "unknown"
+            try:
+                result = _subprocess.run(
+                    ["llama-server", "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                version = result.stdout.strip() or result.stderr.strip()
+            except Exception:
+                pass
+
+            _llamacpp_config["installed"] = True
+
+            yield {
+                "event": "install_complete",
+                "data": json.dumps(
+                    {
+                        "status": "success",
+                        "version": version,
+                        "path": shutil.which("llama-server")
+                        or _os.path.join(install_dir, "llama-server"),
+                    }
+                ),
+            }
+
+        except Exception as e:
+            yield {
+                "event": "install_error",
+                "data": json.dumps(
+                    {
+                        "status": "error",
+                        "message": str(e),
+                        "code": "UNEXPECTED_ERROR",
+                    }
+                ),
+            }
+
+    return EventSourceResponse(generate())
+
+
+@app.post("/api/local-backends/llamacpp/uninstall")
+async def uninstall_llamacpp(request: Request) -> EventSourceResponse:
+    """Uninstall llama-server binary with SSE streaming."""
+    import shutil
+    import os as _os
+
+    # Pre-check: installed?
+    if not shutil.which("llama-server"):
+        return EventSourceResponse(
+            _install_error_generator("llama.cpp is not installed", "NOT_INSTALLED")
+        )
+
+    async def generate() -> AsyncGenerator[str, None]:
+        try:
+            # ── Step 1: Stop if running ─────────────────────────────
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "stop",
+                        "message": "Stopping llama.cpp if running...",
+                        "progress": 10,
+                    }
+                ),
+            }
+
+            global _llamacpp_process
+            if _llamacpp_process is not None and _llamacpp_process.returncode is None:
+                _llamacpp_process.terminate()
+                try:
+                    await asyncio.wait_for(_llamacpp_process.wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    _llamacpp_process.kill()
+                    await _llamacpp_process.wait()
+                _llamacpp_process = None
+                yield {
+                    "event": "install_log",
+                    "data": json.dumps(
+                        {
+                            "step": "stop",
+                            "message": "llama.cpp stopped",
+                            "progress": 20,
+                        }
+                    ),
+                }
+            else:
+                yield {
+                    "event": "install_log",
+                    "data": json.dumps(
+                        {
+                            "step": "stop",
+                            "message": "Not running",
+                            "progress": 20,
+                        }
+                    ),
+                }
+
+            # ── Step 2: Remove binary from ~/.local/bin ─────────────
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "remove_binary",
+                        "message": "Removing llama-server binary...",
+                        "progress": 30,
+                    }
+                ),
+            }
+
+            binary_path = shutil.which("llama-server")
+            if binary_path:
+                try:
+                    _os.remove(binary_path)
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps(
+                            {
+                                "step": "remove_binary",
+                                "message": f"Removed {binary_path}",
+                                "progress": 50,
+                            }
+                        ),
+                    }
+                except Exception as ex:
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps(
+                            {
+                                "step": "remove_binary",
+                                "message": f"Could not remove {binary_path}: {ex}",
+                                "progress": 50,
+                            }
+                        ),
+                    }
+
+            # Also check ~/.local/bin directly
+            local_bin = _os.path.expanduser("~/.local/bin/llama-server")
+            if _os.path.exists(local_bin) and (
+                not binary_path or local_bin != binary_path
+            ):
+                try:
+                    _os.remove(local_bin)
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps(
+                            {
+                                "step": "remove_binary",
+                                "message": f"Removed {local_bin}",
+                                "progress": 55,
+                            }
+                        ),
+                    }
+                except Exception:
+                    pass
+
+            # ── Step 3: Remove state directory ──────────────────────
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "remove_state",
+                        "message": "Removing state directory...",
+                        "progress": 60,
+                    }
+                ),
+            }
+
+            state_dir = _os.path.expanduser("~/.local/share/llama-server")
+            if _os.path.exists(state_dir):
+                import shutil as _shutil
+
+                _shutil.rmtree(state_dir, ignore_errors=True)
+                yield {
+                    "event": "install_log",
+                    "data": json.dumps(
+                        {
+                            "step": "remove_state",
+                            "message": f"Removed {state_dir}",
+                            "progress": 70,
+                        }
+                    ),
+                }
+
+            # ── Step 4: Verify removal ──────────────────────────────
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "verify",
+                        "message": "Verifying removal...",
+                        "progress": 85,
+                    }
+                ),
+            }
+
+            if shutil.which("llama-server"):
+                yield {
+                    "event": "install_error",
+                    "data": json.dumps(
+                        {
+                            "status": "error",
+                            "message": "llama-server still found after removal attempt",
+                            "code": "REMOVAL_FAILED",
+                        }
+                    ),
+                }
+                return
+
+            _llamacpp_config["installed"] = False
+
+            yield {
+                "event": "install_complete",
+                "data": json.dumps(
+                    {
+                        "status": "success",
+                        "message": "llama.cpp uninstalled",
+                    }
+                ),
+            }
+
+        except Exception as e:
+            yield {
+                "event": "install_error",
+                "data": json.dumps(
+                    {
+                        "status": "error",
+                        "message": str(e),
+                        "code": "UNEXPECTED_ERROR",
+                    }
+                ),
+            }
+
+    return EventSourceResponse(generate())
+
+
+@app.post("/api/local-backends/llamacpp/start")
+async def start_llamacpp() -> JSONResponse:
+    """Start llama-server as a managed subprocess.
+    
+    ponytail: Phase 1 starts llama-server without -m flag (no model serving yet).
+    Phase 2 will add model selection + -m flag. See ADR-0018 Phase 2.
+    """
+    import socket
+    import shutil
+    import httpx as _httpx
+
+    if not shutil.which("llama-server"):
+        return JSONResponse(
+            {"status": "error", "message": "llama.cpp is not installed"},
+            status_code=400,
+        )
+
+    global _llamacpp_process, _llamacpp_config
+
+    # Already running?
+    if _llamacpp_process is not None and _llamacpp_process.returncode is None:
+        return JSONResponse(
+            {"status": "ok", "message": "llama.cpp is already running"}
+        )
+
+    port = _llamacpp_config["port"]
+
+    # ── Port conflict detection ──────────────────────────────────────────
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex(("127.0.0.1", port)) == 0:
+            return JSONResponse(
+                {"status": "error", "message": f"Port {port} is already in use"},
+                status_code=409,
+            )
+
+    try:
+        _llamacpp_process = await asyncio.create_subprocess_exec(
+            "llama-server",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+    except Exception as e:
+        _llamacpp_process = None
+        return JSONResponse(
+            {"status": "error", "message": f"Failed to start llama.cpp: {e}"},
+            status_code=500,
+        )
+
+    # Brief health check
+    # ponytail: 2s sleep before health check is fragile; Phase 2 should poll with timeout
+    await asyncio.sleep(2)
+    try:
+        async with _httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"http://localhost:{port}/v1/models")
+            if resp.status_code == 200:
+                _llamacpp_config["installed"] = True
+                _llamacpp_restart_attempts = 0  # Reset restart counter on successful start
+                # Start background monitor
+                asyncio.ensure_future(_monitor_llamacpp_process())
+                return JSONResponse(
+                    {
+                        "status": "ok",
+                        "message": f"llama.cpp started on port {port}",
+                    }
+                )
+    except Exception:
+        pass
+
+    # Process started but health check failed — still return ok, just warn
+    asyncio.ensure_future(_monitor_llamacpp_process())
+    return JSONResponse(
+        {
+            "status": "ok",
+            "message": f"llama.cpp process started on port {port} (health check pending)",
+        }
+    )
+
+
+async def _monitor_llamacpp_process() -> None:
+    """Background task: monitor llama-server and restart if needed.
+
+    ponytail: Phase 1 monitors process only; Phase 2 adds model loading + /v1/models health check.
+    """
+    global _llamacpp_process, _llamacpp_shutting_down, _llamacpp_restart_attempts
+
+    if _llamacpp_process is None:
+        return
+
+    try:
+        await _llamacpp_process.wait()
+    except Exception:
+        pass
+
+    if _llamacpp_shutting_down:
+        return
+
+    logger.warning("llama-server process exited (returncode=%s)", _llamacpp_process.returncode)
+    _llamacpp_process = None
+
+    # Auto-restart with exponential backoff if not shutting down
+    if not _llamacpp_shutting_down and _llamacpp_restart_attempts < MAX_RESTART_ATTEMPTS:
+        backoff = (2 ** _llamacpp_restart_attempts) * 5  # 5s, 10s, 20s
+        _llamacpp_restart_attempts += 1
+        logger.info(
+            "Auto-restarting llama-server in %ds (attempt %d/%d)...",
+            backoff,
+            _llamacpp_restart_attempts,
+            MAX_RESTART_ATTEMPTS,
+        )
+        await asyncio.sleep(backoff)
+        try:
+            _llamacpp_process = await asyncio.create_subprocess_exec(
+                "llama-server",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(_llamacpp_config["port"]),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            logger.info("llama-server auto-restarted (attempt %d)", _llamacpp_restart_attempts)
+        except Exception as e:
+            logger.error("Failed to auto-restart llama-server: %s", e)
+    elif not _llamacpp_shutting_down:
+        logger.warning(
+            "llama-server exceeded max restart attempts (%d); giving up",
+            MAX_RESTART_ATTEMPTS,
+        )
+
+
+@app.post("/api/local-backends/llamacpp/stop")
+async def stop_llamacpp() -> JSONResponse:
+    """Stop the managed llama-server subprocess."""
+    global _llamacpp_process
+
+    if _llamacpp_process is None or _llamacpp_process.returncode is not None:
+        return JSONResponse(
+            {"status": "ok", "message": "llama.cpp is not running"}
+        )
+
+    try:
+        _llamacpp_process.terminate()
+        try:
+            await asyncio.wait_for(_llamacpp_process.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            _llamacpp_process.kill()
+            await _llamacpp_process.wait()
+    except Exception as e:
+        return JSONResponse(
+            {"status": "error", "message": f"Failed to stop llama.cpp: {e}"},
+            status_code=500,
+        )
+
+    _llamacpp_process = None
+    return JSONResponse({"status": "ok", "message": "llama.cpp stopped"})
+
+
+@app.post("/api/local-backends/llamacpp/restart")
+async def restart_llamacpp() -> JSONResponse:
+    """Restart the managed llama-server subprocess."""
+    # Stop
+    stop_result = await stop_llamacpp()
+    if stop_result.status_code != 200:
+        return stop_result
+
+    # Start
+    return await start_llamacpp()
 
 
 @app.get("/api/local-backends/{name}/address")

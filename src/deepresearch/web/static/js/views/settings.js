@@ -260,6 +260,14 @@ async function loadModelRecommendations() {
     }
 
     const models = (data.models || []).sort((a, b) => (b.score || 0) - (a.score || 0));
+    // Check which backends are installed for model filtering
+    let ollamaInstalled = false;
+    let llmfitInstalled = false;
+    try {
+      const tools = await fetchToolStatus();
+      llmfitInstalled = !!(tools.llmfit && tools.llmfit.installed);
+      ollamaInstalled = !!(tools.ollama && tools.ollama.installed);
+    } catch (e) {}
 
     // Filter: only show models downloadable via installed backends
     const filteredModels = models.filter(m => {
@@ -584,6 +592,192 @@ window.confirmUninstallOllama = function() {
       setTimeout(checkOllamaStatus, 1000);
     }
   };
+};
+
+// ── llama.cpp Management ──────────────────────────────
+let llamacppInstallState = 'IDLE';
+let llamacppEventSource = null;
+
+async function checkLlamaCppStatus() {
+  try {
+    const status = await fetchLlamaCppStatus();
+    const statusEl = document.getElementById('llamacppStatus');
+    const installBtn = document.getElementById('installLlamaCppBtn');
+    const actionRow = document.getElementById('llamacppActions');
+
+    if (!statusEl && !installBtn) return;
+
+    if (status.installed) {
+      if (statusEl) statusEl.textContent = '\u2705 llama.cpp ' + (status.version || '');
+      if (installBtn) {
+        installBtn.style.display = 'none';
+      }
+      if (actionRow) {
+        actionRow.innerHTML =
+          (status.running
+            ? '<button class="btn btn-sm btn-warning" onclick="window.manageLlamaCpp(\'stop\')">\u23F9 Stop</button>'
+            : '<button class="btn btn-sm btn-success" onclick="window.manageLlamaCpp(\'start\')">\u25B6 Start</button>') +
+          '<button class="btn btn-sm btn-danger" onclick="window.confirmUninstallLlamaCpp()">\uD83D\uDDD1\uFE0F Uninstall</button>' +
+          '<span class="text-muted" style="font-size:11px;margin-left:8px;">' +
+          (status.running ? '\u2705 Running on port 8080' : '\u26A0\uFE0F Not running') +
+          '</span>';
+      }
+    } else {
+      if (statusEl) statusEl.textContent = '\u274C Not installed';
+      if (installBtn) {
+        installBtn.style.display = 'inline-block';
+        installBtn.textContent = '\u2B07 Install llama.cpp';
+        installBtn.disabled = false;
+        installBtn.style.opacity = '1';
+      }
+      if (actionRow) {
+        actionRow.innerHTML = '<span class="text-muted" style="font-size:11px;">Install llama.cpp to serve GGUF models locally.</span>';
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to check llama.cpp status:', err);
+  }
+}
+
+window.installLlamaCpp = async function() {
+  if (llamacppInstallState === 'INSTALLING') return;
+
+  const btn = document.getElementById('installLlamaCppBtn');
+  const logContainer = document.getElementById('ollamaInstallLog');
+  const logOutput = document.getElementById('ollamaInstallOutput');
+  if (!logContainer || !logOutput) return;
+
+  logContainer.classList.remove('hidden');
+  logOutput.innerHTML = '';
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+  llamacppInstallState = 'INSTALLING';
+
+  const eventSource = new EventSource(getLlamaCppInstallURL() + '?_method=POST');
+
+  eventSource.addEventListener('install_log', function(e) {
+    try {
+      const data = JSON.parse(e.data);
+      const line = document.createElement('div');
+      line.className = 'log-line';
+      const icon = data.progress >= 80 ? '\u2705' : data.progress >= 50 ? '\u23F3' : '\u2B07';
+      line.innerHTML = '<span class="log-icon">' + icon + '</span> <span class="log-msg">' + esc(data.message || '') + '</span>';
+      logOutput.appendChild(line);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    } catch (err) {}
+  });
+
+  eventSource.addEventListener('install_complete', function(e) {
+    try {
+      const data = JSON.parse(e.data);
+      const line = document.createElement('div');
+      line.className = 'log-line log-success';
+      line.innerHTML = '<span class="log-icon">\u2705</span> <strong>llama.cpp installed!</strong> Version: ' + esc(data.version || '');
+      logOutput.appendChild(line);
+      const statusEl = document.getElementById('llamacppStatus');
+      if (statusEl) statusEl.textContent = '\u2705 llama.cpp ' + esc(data.version || '');
+    } catch (err) {}
+    eventSource.close();
+    llamacppInstallState = 'SUCCESS';
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+    setTimeout(checkLlamaCppStatus, 1000);
+  });
+
+  eventSource.addEventListener('install_error', function(e) {
+    try {
+      const data = JSON.parse(e.data);
+      const line = document.createElement('div');
+      line.className = 'log-line log-error';
+      line.innerHTML = '<span class="log-icon">\u274C</span> <strong>Error:</strong> ' + esc(data.message || 'Installation failed');
+      logOutput.appendChild(line);
+    } catch (err) {}
+    eventSource.close();
+    llamacppInstallState = 'ERROR';
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+  });
+
+  eventSource.onerror = function() {
+    if (eventSource.readyState === EventSource.CLOSED) {
+      if (llamacppInstallState === 'INSTALLING') {
+        llamacppInstallState = 'ERROR';
+      }
+      if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+      setTimeout(checkLlamaCppStatus, 1000);
+    }
+  };
+};
+
+window.confirmUninstallLlamaCpp = function() {
+  if (!confirm('\u26A0\uFE0F Are you sure you want to uninstall llama.cpp? This will remove the binary from ~/.local/bin/.')) return;
+
+  const logContainer = document.getElementById('ollamaInstallLog');
+  const logOutput = document.getElementById('ollamaInstallOutput');
+  if (!logContainer || !logOutput) return;
+
+  logContainer.classList.remove('hidden');
+  logOutput.innerHTML = '';
+
+  const eventSource = new EventSource(getLlamaCppUninstallURL() + '?_method=POST');
+
+  eventSource.addEventListener('install_log', function(e) {
+    try {
+      const data = JSON.parse(e.data);
+      const line = document.createElement('div');
+      line.className = 'log-line';
+      line.innerHTML = '<span class="log-icon">\u2139\uFE0F</span> <span class="log-msg">' + esc(data.message || '') + '</span>';
+      logOutput.appendChild(line);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    } catch (err) {}
+  });
+
+  eventSource.addEventListener('install_complete', function(e) {
+    const line = document.createElement('div');
+    line.className = 'log-line log-success';
+    line.innerHTML = '<span class="log-icon">\u2705</span> <strong>llama.cpp uninstalled successfully.</strong>';
+    logOutput.appendChild(line);
+    eventSource.close();
+    setTimeout(checkLlamaCppStatus, 1000);
+  });
+
+  eventSource.addEventListener('install_error', function(e) {
+    try {
+      const data = JSON.parse(e.data);
+      const line = document.createElement('div');
+      line.className = 'log-line log-error';
+      line.innerHTML = '<span class="log-icon">\u274C</span> <strong>Error:</strong> ' + esc(data.message || 'Uninstall failed');
+      logOutput.appendChild(line);
+    } catch (err) {}
+    eventSource.close();
+  });
+
+  eventSource.onerror = function() {
+    if (eventSource.readyState === EventSource.CLOSED) {
+      setTimeout(checkLlamaCppStatus, 1000);
+    }
+  };
+};
+
+window.manageLlamaCpp = async function(action) {
+  const actionRow = document.getElementById('llamacppActions');
+  if (!actionRow) return;
+
+  actionRow.innerHTML = '<span class="text-muted" style="font-size:11px;">' + action + 'ing llama.cpp...</span>';
+
+  try {
+    let resp;
+    if (action === 'start') resp = await startLlamaCpp();
+    else if (action === 'stop') resp = await stopLlamaCpp();
+    else if (action === 'restart') resp = await restartLlamaCpp();
+    const data = await resp.json();
+    if (resp.ok) {
+      showToast(data.message || action + ' successful', 'success');
+    } else {
+      showToast('Error: ' + (data.message || action + ' failed'), 'error');
+    }
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
+
+  setTimeout(checkLlamaCppStatus, 1500);
 };
 
 // ── llmfit Install ──────────────────────────────────
@@ -1250,6 +1444,7 @@ export function loadSettingsView() {
   loadMaxTokens();
   loadContextWindows();
   checkOllamaStatus();
+  checkLlamaCppStatus();
   loadLocalBackends();
   checkDownloadProgress();
 }

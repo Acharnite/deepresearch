@@ -338,6 +338,16 @@
         <div id="ollamaInstallOutput"></div>
       </div>
 
+      <!-- llama.cpp card -->
+      <div class="card-header" style="border:1px solid var(--border);border-radius:6px;margin:12px 0 8px;">
+        <span>🔧 llama.cpp</span>
+        <span id="llamacppStatus" style="font-size:12px;font-weight:400;margin-left:8px;"></span>
+      </div>
+      <div id="llamacppActions" style="padding:8px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);">
+        <button id="installLlamaCppBtn" class="btn btn-primary btn-sm" style="display:none;" onclick="window.installLlamaCpp()">⬇ Install llama.cpp</button>
+        <span class="text-muted" style="font-size:11px;" id="llamacppActionHint">Checking llama.cpp status...</span>
+      </div>
+
       <div class="card-header" style="border:1px solid var(--border);border-radius:6px;margin-bottom:12px;">
         <span>🖥️ Hardware</span>
         <span id="llmfitStatus" style="font-size:12px;font-weight:400;margin-left:8px;"></span>

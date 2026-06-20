@@ -1,5 +1,5 @@
 # DeepeResearch — Design Document
-**Version:** 1.4
+**Version:** 1.5
 **Status:** Active
 **Design Authority:** Architects
 **Last Updated:** 2026-06-20
@@ -417,6 +417,22 @@ The LLMClient automatically detects the provider from the model ID using `PROVID
 **Tool Calling & Web Search:**
 The LLMClient provides `generate_with_tools()` for tool-calling, supporting three execution paths: native LiteLLM streaming with `tools=` for API models, direct HTTP for local backends (Ollama, llama-cpp, vllm), and regex text fallback for non-streaming output. Multi-provider web search chains across SearXNG, DuckDuckGo, Brave, Google PSE, Tavily, and Serper, with parallel content fetching, result enrichment (TL;DR, key points, quotes), search caching, time-filter auto-detection, and tool alias mapping. See ADR-0017 for the full design.
 
+### 4.6 llama.cpp Backend Management
+
+A native llama.cpp backend has been added for managing the `llama-server` binary lifecycle and serving downloaded GGUF models. The implementation follows the Ollama management pattern (ADR-0005) and is defined in ADR-0018.
+
+**Phase 1 (current):** Binary lifecycle management via new API endpoints:
+- `GET /api/local-backends/llamacpp/status` — installed + version + running
+- `POST /api/local-backends/llamacpp/install` — download from GitHub releases (SSE)
+- `POST /api/local-backends/llamacpp/uninstall` — remove binary (SSE)
+- `POST /api/local-backends/llamacpp/start` — subprocess launch with health check
+- `POST /api/local-backends/llamacpp/stop` — SIGTERM → SIGKILL
+- `POST /api/local-backends/llamacpp/restart` — stop + start
+- Platform detection: Linux (ROCm/Vulkan/NVIDIA/CPU), macOS (ARM/x64), Windows (CPU)
+- Process tracking via global asyncio variable + FastAPI lifespan cleanup
+
+**Phases 2-4 (planned):** GGUF model serving, LiteLLM integration, full frontend UI.
+
 ## 5. Data Model
 
 ### Pydantic Models
@@ -792,6 +808,7 @@ A single test that runs the full pipeline (with mock LLM) and validates the PDF 
 | ADR-0015 | Fix JSON Parsing and Topic Drift | Accepted |
 | ADR-0016 | Epic Tracker — Code Review Handlingsplan (2026-06-17) | Accepted |
 | ADR-0017 | Enhanced Tool Calling with Multi-Provider Search | Accepted |
+| ADR-0018 | Native llama.cpp Backend — Binary Lifecycle, GGUF Serving, and LiteLLM Integration | Proposed |
 
 ## 10. Open Questions
 
@@ -812,6 +829,7 @@ A single test that runs the full pipeline (with mock LLM) and validates the PDF 
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5 | 2026-06-20 | Added ADR-0018 (Native llama.cpp Backend) with full Component Design section (Phase 1: binary lifecycle management, 6 API endpoints, platform detection, process tracking) |
 | 1.4 | 2026-06-20 | Batch doc fixes: all 17 ADR statuses updated to Accepted in index; version bump |
 | 1.3 | 2026-06-19 | Added ADR-0017 (Enhanced Tool Calling with Multi-Provider Search) to ADR index and inline references; updated Scope to reflect web search is in scope |
 | 1.2 | 2026-06-17 | Batch 1 doc fixes: full ADR index (16 items), adaptive FSM description for dynamic rounds, version bump |

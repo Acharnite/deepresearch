@@ -254,6 +254,34 @@ export function getOllamaInstallURL() {
   return '/api/local-backends/ollama/install';
 }
 
+// ── llama.cpp Lifecycle ───────────────────────────────
+
+export async function fetchLlamaCppStatus() {
+  const resp = await fetch('/api/local-backends/llamacpp/status');
+  if (!resp.ok) return { installed: false, running: false };
+  return await resp.json();
+}
+
+export function getLlamaCppInstallURL() {
+  return '/api/local-backends/llamacpp/install';
+}
+
+export function getLlamaCppUninstallURL() {
+  return '/api/local-backends/llamacpp/uninstall';
+}
+
+export async function startLlamaCpp() {
+  return await fetch('/api/local-backends/llamacpp/start', { method: 'POST' });
+}
+
+export async function stopLlamaCpp() {
+  return await fetch('/api/local-backends/llamacpp/stop', { method: 'POST' });
+}
+
+export async function restartLlamaCpp() {
+  return await fetch('/api/local-backends/llamacpp/restart', { method: 'POST' });
+}
+
 // ── Local Backend Management ────────────────────────────
 
 export async function installLlmfit() {
