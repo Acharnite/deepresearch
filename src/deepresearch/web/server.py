@@ -1472,10 +1472,10 @@ async def get_model_recommendations() -> JSONResponse:
         return JSONResponse({"available": False, "message": "llmfit not installed"})
     try:
         result = subprocess.run(
-            ["llmfit", "recommend", "--json"],
+            ["llmfit", "recommend", "-n", "20", "--json"],
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=30,
         )
         if result.returncode == 0:
             data = json.loads(result.stdout)
@@ -1515,7 +1515,7 @@ async def get_model_recommendations() -> JSONResponse:
             # Calculate research-optimized score for each model
             # Weights: tool_use capability (+30), context length >= 32K (+20),
             # speed > 20 tok/s (+10), ideal fit (+10), good fit (+5)
-            for m in models[:20]:
+            for m in models[:40]:
                 rscore = 0
                 tags = []
                 # tool_use capability — critical for web search
@@ -1556,7 +1556,7 @@ async def get_model_recommendations() -> JSONResponse:
 
             # Filter and annotate models
             filtered_models = []
-            for m in models[:20]:
+            for m in models[:40]:
                 required_ram = m.get("memory_required_gb") or m.get("required_ram_gb") or m.get("min_ram_gb") or 0
                 if hw_info and required_ram > usable_memory_gb:
                     m["_warning"] = (
@@ -1577,7 +1577,7 @@ async def get_model_recommendations() -> JSONResponse:
             return JSONResponse(
                 {
                     "available": True,
-                    "models": filtered_models[:10],
+                    "models": filtered_models[:15],
                     "system": data.get("system", {}),
                     "hardware": hw_info if hw_info else None,
                 }
