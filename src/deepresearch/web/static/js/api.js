@@ -282,6 +282,32 @@ export async function restartLlamaCpp() {
   return await fetch('/api/local-backends/llamacpp/restart', { method: 'POST' });
 }
 
+// ── llama.cpp GGUF Models + Config ───────────────────
+export async function fetchGgufModels() {
+  const resp = await fetch('/api/local-backends/models/gguf');
+  return await resp.json();
+}
+
+export async function serveGgufModel(model, config = {}) {
+  return await fetch('/api/local-backends/llamacpp/serve', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, ...config })
+  });
+}
+
+export async function stopLlamacppServing() {
+  return await fetch('/api/local-backends/llamacpp/stop', { method: 'POST' });
+}
+
+export async function updateLlamacppConfig(config) {
+  return await fetch('/api/local-backends/llamacpp/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config)
+  });
+}
+
 // ── Local Backend Management ────────────────────────────
 
 export async function installLlmfit() {

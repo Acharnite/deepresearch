@@ -27,6 +27,23 @@ def client() -> TestClient:
     return TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def _reset_llamacpp_globals():
+    """Reset llamacpp global state to prevent cross-test leakage."""
+    import deepresearch.web.server as srv
+
+    srv._llamacpp_process = None
+    srv._llamacpp_config = {"port": 8080, "installed": False, "gpu_layers": 0, "context_size": 8192, "flash_attn": False}
+    srv._llamacpp_shutting_down = False
+    srv._llamacpp_serving_model = None
+    yield
+    # Clean up any address set by start/serve endpoints
+    from deepresearch.web.settings_manager import local_backend_manager
+    overrides = local_backend_manager._load()
+    overrides.pop("llama-cpp", None)
+    local_backend_manager._save(overrides)
+
+
 class TestBackendRoutes:
     """Local-backend, tools, and hardware route registration."""
 
@@ -462,6 +479,7 @@ class TestLlamaCppInstallEndpoint:
         mock_tar.__exit__ = MagicMock(return_value=None)
         mock_member = MagicMock()
         mock_member.name = "llama-b9999/llama-server"
+        mock_member.isdir.return_value = False
         mock_tar.getmembers.return_value = [mock_member]
 
         # Mock subprocess for version check after install
@@ -590,6 +608,8 @@ class TestLlamaCppStartEndpoint:
         with (
             patch("shutil.which", return_value="/usr/bin/llama-server"),
             patch.object(server_mod, "_llamacpp_process", None),
+            patch.object(server_mod, "_llamacpp_serving_model", "/path/to/model.gguf"),
+            patch.object(server_mod, "_is_port_available", return_value=True),
             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_process)),
             patch("asyncio.sleep", AsyncMock()),
             patch("httpx.AsyncClient", return_value=mock_http_client),
@@ -670,6 +690,8 @@ class TestLlamaCppRestartEndpoint:
 
         with (
             patch.object(server_mod, "_llamacpp_process", mock_process),
+            patch.object(server_mod, "_llamacpp_serving_model", "/path/to/model.gguf"),
+            patch.object(server_mod, "_is_port_available", return_value=True),
             patch("shutil.which", return_value="/usr/bin/llama-server"),
             patch("asyncio.wait_for", AsyncMock()),
             patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_process)),

@@ -348,6 +348,26 @@
         <span class="text-muted" style="font-size:11px;" id="llamacppActionHint">Checking llama.cpp status...</span>
       </div>
 
+      <!-- GGUF Models -->
+      <div id="ggufModelsSection" style="padding:8px 12px;border-bottom:1px solid var(--border);display:none;">
+        <div style="font-size:12px;font-weight:600;margin-bottom:6px;">📦 Downloaded GGUF Models</div>
+        <div id="ggufModelList" style="font-size:12px;">
+          <span class="text-muted">Loading...</span>
+        </div>
+      </div>
+
+      <!-- llama.cpp Config -->
+      <div id="llamacppConfigSection" style="padding:8px 12px;border-bottom:1px solid var(--border);display:none;">
+        <div style="font-size:12px;font-weight:600;margin-bottom:6px;">⚙️ Configuration</div>
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;">
+          <label>Port: <input type="number" id="llamacppPortInput" value="8080" min="1024" max="65535" style="width:70px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
+          <label>GPU Layers: <input type="number" id="llamacppGpuLayersInput" value="0" min="-1" max="128" style="width:60px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
+          <label>Context: <input type="number" id="llamacppCtxInput" value="8192" min="512" max="131072" step="1024" style="width:80px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
+          <label>Batch: <input type="number" id="llamacppBatchInput" value="512" min="64" max="4096" step="64" style="width:80px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
+          <button class="btn btn-sm btn-outline" onclick="window.saveLlamacppConfig()">💾 Save</button>
+        </div>
+      </div>
+
       <div class="card-header" style="border:1px solid var(--border);border-radius:6px;margin-bottom:12px;">
         <span>🖥️ Hardware</span>
         <span id="llmfitStatus" style="font-size:12px;font-weight:400;margin-left:8px;"></span>

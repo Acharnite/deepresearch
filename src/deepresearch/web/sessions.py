@@ -202,7 +202,7 @@ class MultiSessionManager:
                 result = subprocess.run(
                     ["llmfit", "recommend", "-n", "1", "--capability", "tool_use",
                      "--min-fit", "good", "--json"],
-                    capture_output=True, text=True, timeout=15,
+                    capture_output=True, text=True, timeout=45,
                 )
                 if result.returncode == 0:
                     import json
@@ -236,14 +236,14 @@ class MultiSessionManager:
                         )
             else:
                 from deepresearch.llm.client import LLMClient
-                test_client = LLMClient(model=test_model, timeout=10)
+                test_client = LLMClient(model=test_model, timeout=30)
                 await asyncio.wait_for(
                     test_client.generate(
                         system_prompt="Respond with exactly one word: ok",
                         user_prompt="Test",
                         max_tokens=5,
                     ),
-                    timeout=15,
+                    timeout=45,
                 )
         except Exception as e:
             info.status = "error"

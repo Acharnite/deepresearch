@@ -133,7 +133,7 @@ class SearchChain:
             if order_env:
                 provider_order = [p.strip() for p in order_env.split(",") if p.strip()]
                 logger.debug("Using SEARCH_PROVIDER_ORDER from env: %s", provider_order)
-        self._provider_order = provider_order or _DEFAULT_ORDER
+        self._provider_order = provider_order if provider_order and provider_order is not _UNSET else _DEFAULT_ORDER
         self._per_provider_timeout = per_provider_timeout
         self._max_retries = max_retries
         # Per-provider semaphore for independent rate limiting

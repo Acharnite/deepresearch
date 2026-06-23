@@ -21,6 +21,55 @@ from deepresearch.observability.tracing import tracer
 
 logger = logging.getLogger(__name__)
 
+# ── Auto-detection cache for llama-cpp port probing ──────────────────────
+_llamacpp_detected_url: str | None = None
+_llamacpp_detected_at: float = 0.0
+_LLAMACPP_PROBE_TIMEOUT: float = 1.5
+_LLAMACPP_CACHE_TTL: float = 60.0
+_LLAMACPP_PROBE_PORTS: list[int] = [8080, 7501, 8000, 1234]
+
+
+def _detect_llamacpp_address() -> str | None:
+    """Probe common ports for a running llama-server, return ``http://localhost:{port}/v1``.
+
+    Checks ``/health`` on each candidate port.  The configured default port
+    (from ``PROVIDER_ROUTES``) is tried first, followed by common llama.cpp /
+    local-backend ports.  Results are cached for ``_LLAMACPP_CACHE_TTL``
+    seconds to avoid repeated probes.
+    """
+    global _llamacpp_detected_url, _llamacpp_detected_at
+
+    now = time.monotonic()
+    if _llamacpp_detected_url is not None and (now - _llamacpp_detected_at) < _LLAMACPP_CACHE_TTL:
+        return _llamacpp_detected_url
+
+    # Build candidate list: configured default port first, then others
+    default_port = PROVIDER_ROUTES.get("llama-cpp", {}).get("local_backend_port", 8080)
+    candidate_ports = [default_port]
+    for p in _LLAMACPP_PROBE_PORTS:
+        if p not in candidate_ports:
+            candidate_ports.append(p)
+
+    for port in candidate_ports:
+        try:
+            resp = httpx.get(
+                f"http://localhost:{port}/health",
+                timeout=_LLAMACPP_PROBE_TIMEOUT,
+            )
+            if resp.status_code == 200:
+                url = f"http://localhost:{port}/v1"
+                _llamacpp_detected_url = url
+                _llamacpp_detected_at = now
+                logger.info("Auto-detected llama-server on port %d", port)
+                return url
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPError):
+            continue
+
+    # Nothing found — clear cache so next call re-probes
+    _llamacpp_detected_url = None
+    _llamacpp_detected_at = now
+    return None
+
 
 # Per-model cost tables (USD per 1K tokens).
 # Source: provider pricing pages as of 2026-06.
@@ -262,9 +311,12 @@ class LLMClient:
     def _get_breaker(self) -> CircuitBreaker:
         """Return the per-model circuit breaker for ``self.model``."""
         if self.model not in self._breakers:
+            # Local backends need higher failure thresholds — timeouts are
+            # often transient (model loading, context pressure).
+            is_local = self._is_local_backend()
             self._breakers[self.model] = CircuitBreaker(
-                failure_threshold=3,
-                reset_timeout=60.0,
+                failure_threshold=5 if is_local else 3,
+                reset_timeout=30.0 if is_local else 60.0,
             )
         return self._breakers[self.model]
 
@@ -302,6 +354,13 @@ class LLMClient:
         self.model = model
         self.timeout = timeout
         self.provider = provider or self._detect_provider(model)
+
+        # Local backends (especially quantized models) need more time for
+        # complex prompts.  Bump timeout to 180s if the caller used the
+        # default 60s and this is a local backend.
+        if self.timeout == 60 and self.provider and PROVIDER_ROUTES.get(self.provider, {}).get("local_backend"):
+            self.timeout = 180
+
         self.api_base: str | None = None
         self.endpoint: str | None = None
         self.actual_model: str = model
@@ -340,6 +399,12 @@ class LLMClient:
         self.call_count: int = 0
         self.cancel_event: asyncio.Event | None = None
         self.last_tool_results: list[dict[str, Any]] = []
+
+    def _is_local_backend(self) -> bool:
+        """Return True if the current provider is a local backend (ollama, llama-cpp, etc.)."""
+        if not self.provider or self.provider not in PROVIDER_ROUTES:
+            return False
+        return bool(PROVIDER_ROUTES[self.provider].get("local_backend"))
 
     # ── Provider routing helpers ───────────────────────────────────────
 
@@ -392,7 +457,21 @@ class LLMClient:
                     if custom_addr:
                         return f"http://{custom_addr}/v1"
                 except ImportError:
-                    pass  # Fall through to default
+                    pass  # Fall through to auto-detect
+
+                # Auto-detect: probe common ports for a running llama-server
+                detected = _detect_llamacpp_address()
+                if detected:
+                    try:
+                        from deepresearch.web.settings_manager import local_backend_manager
+                        # Persist so future calls skip the probe
+                        local_backend_manager.set_address(
+                            provider,
+                            detected.replace("http://", "").removesuffix("/v1"),
+                        )
+                    except ImportError:
+                        pass
+                    return detected
 
                 # Fall back to standard port
                 if port:
@@ -605,110 +684,246 @@ class LLMClient:
 
         return kwargs
 
+    async def _local_backend_request(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int | None,
+        stream: bool = False,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> dict:
+        """Make a direct HTTP request to a local backend API.
+
+        Handles both Ollama (/api/chat) and OpenAI-compatible backends (/v1/chat/completions).
+        Returns the raw JSON response dict.
+        """
+        is_ollama = self.provider == "ollama"
+        model_name = self.actual_model
+        if "/" in model_name and not model_name.startswith("http"):
+            _, _, maybe = model_name.partition("/")
+            if maybe:
+                model_name = maybe
+
+        # Separate system message from chat history
+        chat_messages: list[dict] = []
+        system_prompt: str | None = None
+        for msg in messages:
+            if msg.get("role") == "system":
+                system_prompt = msg.get("content", "")
+            else:
+                chat_messages.append(msg)
+
+        req_messages = chat_messages[:]
+        if system_prompt:
+            req_messages.insert(0, {"role": "system", "content": system_prompt})
+
+        payload: dict = {
+            "model": model_name,
+            "messages": req_messages,
+            "stream": stream,
+        }
+        if max_tokens is not None:
+            if is_ollama:
+                payload["options"] = {"num_predict": max_tokens}
+            else:
+                payload["max_tokens"] = max_tokens
+
+        # Add tools if provided (for generate_with_tools)
+        if tools:
+            if is_ollama:
+                ollama_tools = []
+                for t in tools:
+                    fn = t.get("function", {})
+                    ollama_tools.append({
+                        "type": "function",
+                        "function": {
+                            "name": fn.get("name", ""),
+                            "description": fn.get("description", ""),
+                            "parameters": fn.get("parameters", {}),
+                        },
+                    })
+                payload["tools"] = ollama_tools
+            else:
+                payload["tools"] = tools
+
+        # Suppress reasoning for llama-cpp backends — Qwen3 reasoning mode
+        # puts all output into reasoning_content, leaving content empty and
+        # making JSON parsing fail. chat_template_kwargs tells the Qwen3
+        # template to skip thinking.
+        if not is_ollama:
+            if "Qwen" in model_name and "3" in model_name:
+                payload["chat_template_kwargs"] = {"enable_thinking": False}
+            else:
+                payload["chat_template_kwargs"] = {}
+
+        # Build URL
+        base = self.api_base.rstrip("/")
+        if is_ollama and base.endswith("/v1"):
+            base = base[:-3]
+        if is_ollama:
+            url = f"{base}/api/chat"
+        else:
+            if not base.endswith("/v1"):
+                url = f"{base}/v1/chat/completions"
+            else:
+                url = f"{base}/chat/completions"
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout or 120) as hc:
+                resp = await hc.post(url, json=payload)
+                if resp.status_code != 200:
+                    raise LLMError(
+                        f"Local backend returned HTTP {resp.status_code} "
+                        f"({url}): {resp.text[:200]}"
+                    )
+                if stream:
+                    # For streaming, return the raw response for SSE parsing
+                    return {"_raw_response": resp, "_is_ollama": is_ollama}
+                return resp.json()
+        except httpx.TimeoutException:
+            raise LLMError(f"Local backend {self.provider} timed out ({self.timeout}s)")
+        except httpx.ConnectError as e:
+            raise LLMError(f"Cannot connect to {self.provider} at {self.api_base}: {e}")
+
+    async def _local_backend_stream(
+        self,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int | None,
+        event_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+    ) -> str:
+        """Stream a response from a local backend via httpx SSE.
+
+        Parses SSE chunks from the streaming response and yields text via callback.
+        Falls back to reasoning_content for reasoning models.
+        """
+        import json as _json
+
+        is_ollama = self.provider == "ollama"
+        model_name = self.actual_model
+        if "/" in model_name and not model_name.startswith("http"):
+            _, _, maybe = model_name.partition("/")
+            if maybe:
+                model_name = maybe
+
+        chat_messages: list[dict] = []
+        system_prompt: str | None = None
+        for msg in messages:
+            if msg.get("role") == "system":
+                system_prompt = msg.get("content", "")
+            else:
+                chat_messages.append(msg)
+
+        req_messages = chat_messages[:]
+        if system_prompt:
+            req_messages.insert(0, {"role": "system", "content": system_prompt})
+
+        payload: dict = {
+            "model": model_name,
+            "messages": req_messages,
+            "stream": True,
+        }
+        if max_tokens is not None:
+            if is_ollama:
+                payload["options"] = {"num_predict": max_tokens}
+            else:
+                payload["max_tokens"] = max_tokens
+
+        base = self.api_base.rstrip("/")
+        if is_ollama and base.endswith("/v1"):
+            base = base[:-3]
+        if is_ollama:
+            url = f"{base}/api/chat"
+        else:
+            url = f"{base}/v1/chat/completions" if not base.endswith("/v1") else f"{base}/chat/completions"
+
+        full_text = ""
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout or 120) as hc:
+                async with hc.stream("POST", url, json=payload) as resp:
+                    if resp.status_code != 200:
+                        body = await resp.aread()
+                        raise LLMError(
+                            f"Local backend returned HTTP {resp.status_code} "
+                            f"({url}): {body[:200]}"
+                        )
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data_str = line[6:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk = _json.loads(data_str)
+                        except _json.JSONDecodeError:
+                            continue
+
+                        if is_ollama:
+                            delta = chunk.get("message", {})
+                            text = delta.get("content", "")
+                        else:
+                            choices = chunk.get("choices", [{}])
+                            delta = choices[0].get("delta", {}) if choices else {}
+                            text = delta.get("content", "") or ""
+                            # Reasoning model fallback
+                            if not text:
+                                text = delta.get("reasoning_content", "")
+
+                        if text:
+                            full_text += text
+                            if event_callback:
+                                await event_callback({"type": "stream", "text": text})
+        except httpx.TimeoutException:
+            raise LLMError(f"Local backend {self.provider} timed out ({self.timeout}s)")
+        except httpx.ConnectError as e:
+            raise LLMError(f"Cannot connect to {self.provider} at {self.api_base}: {e}")
+
+        return full_text
+
     async def _acompletion(
         self,
         messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int | None,
     ) -> Any:
-        """Perform the actual LiteLLM acompletion call (non-streaming).
+        """Perform the actual completion call (non-streaming).
 
-        For local backends (ollama, llama-cpp, vllm, lm-studio, local-ai),
-        calls the provider's API directly via httpx to avoid LiteLLM's broken
-        model-info and /api/generate vs /api/chat issues (GitHub issue #100).
+        For local backends, calls the provider's API directly via httpx.
         For all other providers, falls back to LiteLLM's acompletion.
         """
-        import json as _json
+        if self._is_local_backend() and self.api_base:
+            data = await self._local_backend_request(
+                messages, temperature, max_tokens, stream=False
+            )
 
-        is_ollama = self.provider == "ollama"
-        use_direct = is_ollama or (
-            self.provider and self.provider in PROVIDER_ROUTES
-            and PROVIDER_ROUTES.get(self.provider, {}).get("local_backend")
-        )
+            is_ollama = self.provider == "ollama"
+            if is_ollama:
+                msg = data.get("message", {})
+                content = msg.get("content", "")
+            else:
+                choice = data.get("choices", [{}])[0]
+                msg = choice.get("message", {})
+                content = msg.get("content", "") or ""
+                # Reasoning model fallback: check reasoning_content if content is empty
+                if not content:
+                    content = msg.get("reasoning_content", "")
 
-        if use_direct and self.api_base:
-            # Build a chat-completion payload for the local backend.
-            # Use the model name without provider prefix (ollama/xyz -> xyz).
-            model_name = self.actual_model
-            if "/" in model_name and not model_name.startswith("http"):
-                _, _, maybe = model_name.partition("/")
-                if maybe:
-                    model_name = maybe
+            # Build a fake LiteLLM ModelResponse so the rest of the code works
+            from litellm.types.utils import ModelResponse, Choices, Message
 
-            # Separate system message (first with role=system) from chat history.
-            chat_messages: list[dict] = []
-            system_prompt: str | None = None
-            for msg in messages:
-                if msg.get("role") == "system":
-                    system_prompt = msg.get("content", "")
-                else:
-                    chat_messages.append(msg)
+            choice_obj = Choices(
+                finish_reason="stop",
+                message=Message(content=content, role="assistant"),
+                index=0,
+            )
+            return ModelResponse(
+                id=data.get("id", f"local-{self.actual_model}"),
+                choices=[choice_obj],
+                model=self.actual_model,
+                usage=None,
+            )
 
-            # Prepend system as first user message if supported.
-            req_messages = chat_messages[:]
-            if system_prompt and is_ollama:
-                # Ollama chat API accepts system in the messages list.
-                req_messages.insert(0, {"role": "system", "content": system_prompt})
-
-            payload: dict = {
-                "model": model_name,
-                "messages": req_messages,
-                "stream": False,
-            }
-            if max_tokens is not None:
-                payload["options"] = {"num_predict": max_tokens}
-
-            try:
-                async with httpx.AsyncClient(timeout=self.timeout or 120) as hc:
-                    if is_ollama:
-                        # Ollama uses /api/chat, NOT /v1/api/chat.
-                        # api_base may contain /v1 (from local_backend_manager),
-                        # so strip it before appending /api/chat.
-                        base = self.api_base.rstrip("/")
-                        if base.endswith("/v1"):
-                            base = base[:-3]
-                        url = f"{base}/api/chat"
-                    else:
-                        # OpenAI-compatible local backends (vllm, lm-studio, etc.)
-                        url = f"{self.api_base.rstrip('/')}/v1/chat/completions"
-                    resp = await hc.post(url, json=payload)
-                    if resp.status_code != 200:
-                        raise LLMError(
-                            f"Local backend returned HTTP {resp.status_code} "
-                            f"({url}): {resp.text[:200]}"
-                        )
-                    data = resp.json()
-                    if is_ollama:
-                        msg = data.get("message", {})
-                        content = msg.get("content", "")
-                    else:
-                        choice = data.get("choices", [{}])[0]
-                        msg = choice.get("message", {})
-                        content = msg.get("content", "")
-                    # Build a fake LiteLLM ModelResponse so the rest of the code works.
-                    from litellm.types.utils import ModelResponse, Choices, Message
-
-                    choice = Choices(
-                        finish_reason="stop",
-                        message=Message(content=content, role="assistant"),
-                        index=0,
-                    )
-                    return ModelResponse(
-                        id=data.get("id", f"local-{model_name}"),
-                        choices=[choice],
-                        model=model_name,
-                        usage=None,
-                    )
-            except httpx.TimeoutException:
-                raise LLMError(
-                    f"Local backend {self.provider} timed out ({self.timeout}s)"
-                )
-            except httpx.ConnectError as e:
-                raise LLMError(
-                    f"Cannot connect to {self.provider} at {self.api_base}: {e}"
-                )
-
-        # Fallback: use LiteLLM's acompletion for non-local providers.
+        # Fallback: use LiteLLM's acompletion for non-local providers
         try:
             from litellm import acompletion
         except ImportError as e:
@@ -761,6 +976,13 @@ class LLMClient:
             raise CircuitBreakerOpenError(f"Circuit breaker open for {self.model}")
 
         try:
+            if self._is_local_backend() and self.api_base:
+                result = await self._local_backend_stream(
+                    messages, temperature, effective_max_tokens, self.event_callback
+                )
+                breaker.record_success()
+                return result
+
             from litellm import acompletion
 
             kwargs = self._build_acompletion_kwargs(
@@ -890,100 +1112,54 @@ class LLMClient:
             # and fall through to text-based tool call parsing below.
             use_text_parsing = self.force_text_parsing
 
-            # ── Ollama models don't support streaming tool calls ────────
-            # (they hang silently with no output). Skip straight to
-            # non-streaming for known local-backend providers.
-            # Use direct HTTP to avoid LiteLLM bugs with Ollama.
-            if not use_text_parsing and self.provider and PROVIDER_ROUTES.get(self.provider, {}).get(
-                "local_backend"
-            ):
+            # ── Local backends don't support streaming tool calls ──────
+            # (they hang silently with no output). Use direct HTTP to
+            # avoid LiteLLM bugs with Ollama and other local providers.
+            if not use_text_parsing and self._is_local_backend():
                 logger.warning("generate_with_tools: using direct HTTP for %s", self.provider)
                 import json as _json
 
+                data = await self._local_backend_request(
+                    messages, temperature, effective_max_tokens, stream=False, tools=tools
+                )
+
                 is_ollama = self.provider == "ollama"
-                model_name = self.model
-                if "/" in model_name and not model_name.startswith("http"):
-                    _, _, maybe = model_name.partition("/")
-                    if maybe:
-                        model_name = maybe
-
-                chat_messages = []
-                sys_text = None
-                for msg in messages:
-                    if msg.get("role") == "system":
-                        sys_text = msg.get("content", "")
-                    else:
-                        chat_messages.append(msg)
-                if sys_text:
-                    chat_messages.insert(0, {"role": "system", "content": sys_text})
-
-                payload = {"model": model_name, "messages": chat_messages, "stream": False}
-                if effective_max_tokens is not None:
-                    payload["options"] = {"num_predict": effective_max_tokens}
-                if tools:
-                    ollama_tools = []
-                    for t in tools:
-                        fn = t.get("function", {})
-                        ollama_tools.append({
-                            "type": "function",
-                            "function": {
-                                "name": fn.get("name", ""),
-                                "description": fn.get("description", ""),
-                                "parameters": fn.get("parameters", {}),
-                            },
-                        })
-                    payload["tools"] = ollama_tools
-
-                try:
-                    base_url = self.api_base.rstrip("/")
-                    if base_url.endswith("/v1") and is_ollama:
-                        base_url = base_url[:-3]
-                    url = f"{base_url}/api/chat" if is_ollama else f"{base_url}/v1/chat/completions"
-                    async with httpx.AsyncClient(timeout=self.timeout or 120) as hc:
-                        resp = await hc.post(url, json=payload)
-                        if resp.status_code != 200:
-                            raise LLMError(
-                                f"Local backend HTTP {resp.status_code} ({url}): {resp.text[:200]}"
-                            )
-                        data = resp.json()
-
-                    if is_ollama:
-                        msg = data.get("message", {})
-                        text_content = msg.get("content", "") or ""
-                        _round_text = text_content
-                        if text_content and self.event_callback:
-                            await self.event_callback({"type": "stream", "text": text_content})
-                        raw_tc = msg.get("tool_calls", [])
-                        for idx, tc in enumerate(raw_tc):
-                            while len(tool_calls) <= idx:
-                                tool_calls.append(("", "", ""))
-                            fn_info = tc.get("function", {})
-                            tool_calls[idx] = (
-                                f"call_{idx}",
-                                fn_info.get("name", ""),
-                                _json.dumps(fn_info.get("arguments", {})),
-                            )
-                    else:
-                        choice = data.get("choices", [{}])[0]
-                        msg = choice.get("message", {})
-                        text_content = msg.get("content", "") or ""
-                        _round_text = text_content
-                        if text_content and self.event_callback:
-                            await self.event_callback({"type": "stream", "text": text_content})
-                        raw_tc = msg.get("tool_calls", [])
-                        for idx, tc in enumerate(raw_tc):
-                            while len(tool_calls) <= idx:
-                                tool_calls.append(("", "", ""))
-                            fn_info = tc.get("function", {})
-                            tool_calls[idx] = (
-                                tc.get("id", f"call_{idx}"),
-                                fn_info.get("name", ""),
-                                fn_info.get("arguments", ""),
-                            )
-                except httpx.TimeoutException:
-                    raise LLMError(f"Local backend {self.provider} timed out ({self.timeout}s)")
-                except httpx.ConnectError as e:
-                    raise LLMError(f"Cannot connect to {self.provider} at {self.api_base}: {e}")
+                if is_ollama:
+                    msg = data.get("message", {})
+                    text_content = msg.get("content", "") or ""
+                    _round_text = text_content
+                    if text_content and self.event_callback:
+                        await self.event_callback({"type": "stream", "text": text_content})
+                    raw_tc = msg.get("tool_calls", [])
+                    for idx, tc in enumerate(raw_tc):
+                        while len(tool_calls) <= idx:
+                            tool_calls.append(("", "", ""))
+                        fn_info = tc.get("function", {})
+                        tool_calls[idx] = (
+                            f"call_{idx}",
+                            fn_info.get("name", ""),
+                            _json.dumps(fn_info.get("arguments", {})),
+                        )
+                else:
+                    choice = data.get("choices", [{}])[0]
+                    msg = choice.get("message", {})
+                    text_content = msg.get("content", "") or ""
+                    # Reasoning model fallback
+                    if not text_content:
+                        text_content = msg.get("reasoning_content", "") or ""
+                    _round_text = text_content
+                    if text_content and self.event_callback:
+                        await self.event_callback({"type": "stream", "text": text_content})
+                    raw_tc = msg.get("tool_calls", [])
+                    for idx, tc in enumerate(raw_tc):
+                        while len(tool_calls) <= idx:
+                            tool_calls.append(("", "", ""))
+                        fn_info = tc.get("function", {})
+                        tool_calls[idx] = (
+                            tc.get("id", f"call_{idx}"),
+                            fn_info.get("name", ""),
+                            fn_info.get("arguments", ""),
+                        )
             elif use_text_parsing:
                 # Force text parsing mode: call the LLM without native tools
                 # and let the text-based parser extract tool calls from output.
@@ -1279,9 +1455,16 @@ class LLMClient:
             logger.debug("Failed to track token usage", exc_info=True)
 
     def _extract_content(self, response: Any) -> str:
-        """Extract the text content from the LLM response."""
+        """Extract the text content from the LLM response.
+
+        For reasoning models, falls back to reasoning_content if content is empty.
+        """
         try:
-            return response.choices[0].message.content or ""
+            content = response.choices[0].message.content or ""
+            if not content:
+                # Reasoning model fallback
+                content = getattr(response.choices[0].message, "reasoning_content", "") or ""
+            return content
         except (AttributeError, IndexError, KeyError) as e:
             raise LLMError(f"Failed to extract content from response: {e}") from e
 

@@ -4,8 +4,8 @@
 
 Accepted
 
-**Version:** 1.0
-**Last Updated:** 2026-06-20
+**Version:** 1.2
+**Last Updated:** 2026-06-21
 
 ## Context
 
@@ -562,6 +562,33 @@ Known gotchas:
 - GPU offload uses `-ngl N` (layers), with `-1` meaning "all layers"
 - On macOS, Metal is enabled by default — no special flag needed
 
+### Recommended Model for Research Agent
+
+**Recommended: Meta Llama 3.1 8B Instruct (Q6_K quantization)**
+
+Rationale:
+
+1. **No thinking/tool conflict** — Llama 3.1 has no reasoning/thinking mode, so tool calling works natively without the `enable_thinking` workaround that breaks Qwen3.
+2. **Native tool calling** — llama.cpp has a dedicated tool calling handler for Llama 3.1 with 89% accuracy on ToolBench.
+3. **VRAM fit** — Q6_K is ~6GB, plus ~2.7GB for 16K context = ~8.7GB total, well within 11GB VRAM.
+4. **Proven** — Most widely tested model with llama.cpp's OpenAI-compatible server.
+
+**Models to avoid for research agent use:**
+
+| Model | Problem |
+|-------|---------|
+| Qwen3 8B | `enable_thinking=true` puts tool calls in `reasoning_content` (empty `content`). `enable_thinking=false` prevents tool calls entirely. Upstream bug (#20837, #21158, #20809). |
+| Gemma 4 | Same thinking+tools conflict — forces reasoning trace by default. |
+| Qwen 3.5 | Same thinking+tools conflict despite top benchmarks. |
+
+**Alternative options (if Llama 3.1 doesn't meet quality needs):**
+
+- Qwen 2.5 7B — No reasoning mode, Hermes-style tool format, well-supported
+- Mistral Nemo 12B — Native llama.cpp handler, ~8GB VRAM at Q4
+- Hermes 2/3 — Purpose-built for function calling
+
+**Key code change needed:** When serving Llama 3.1 8B, the `chat_template_kwargs: {"enable_thinking": false}` in `client.py:749-754` is unnecessary (Llama 3.1 ignores it) but harmless. It should be conditioned on the model family in the future.
+
 ## Related Issues
 
 - ADR-0005: Local LLM Backends — Auto-Discovery, Installation, and LiteLLM Routing (parent context)
@@ -582,3 +609,5 @@ Known gotchas:
 | Date | Version | Changes |
 |------|---------|---------|
 | 2026-06-20 | 1.0 | Initial version |
+| 2026-06-21 | 1.1 | Phase 2+3 implemented: GGUF model listing, llama-server serve endpoint, config management, /api/models registration |
+| 2026-06-23 | 1.2 | Added recommended model section (Llama 3.1 8B Q6_K). Documented thinking+tools conflict for Qwen3/Gemma4. |

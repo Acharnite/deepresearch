@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 from fastapi.staticfiles import StaticFiles
@@ -104,9 +104,13 @@ _llamacpp_process: asyncio.subprocess.Process | None = None
 _llamacpp_config: dict = {
     "port": 8080,
     "installed": False,
+    "gpu_layers": 0,
+    "context_size": 8192,
+    "flash_attn": False,
 }
 _llamacpp_shutting_down: bool = False
 _llamacpp_restart_attempts: int = 0
+_llamacpp_serving_model: str | None = None  # Path to currently served GGUF model
 MAX_RESTART_ATTEMPTS: int = 3
 
 # ── Load .env keys into os.environ at startup ──────────────────────────
@@ -168,7 +172,7 @@ if STATIC_DIR.exists():
 logger.info(
     "DeepeResearch %s starting on port %d",
     VERSION,
-    __import__("os").environ.get("PORT", 7500),
+    int(__import__("os").environ.get("PORT", 7500)),
 )
 
 # ── CORS (allow browser-based access from any origin) ──────────────────
@@ -815,6 +819,26 @@ async def get_models() -> JSONResponse:
             # Avoid duplicates.
             if not any(m.get("id") == d["id"] for m in models):
                 models.append(d)
+
+        # Add running llamacpp model if available.
+        if (
+            _llamacpp_process is not None
+            and _llamacpp_process.returncode is None
+            and _llamacpp_serving_model
+        ):
+            model_name = os.path.basename(_llamacpp_serving_model).replace(
+                ".gguf", ""
+            )
+            llamacpp_entry = {
+                "id": f"llama-cpp/{model_name}",
+                "provider": "llama-cpp",
+                "display_name": f"llama-cpp/{model_name} (local)",
+                "local": True,
+                "context_length": _llamacpp_config.get("context_size", 8192),
+                "command": "",
+            }
+            if not any(m.get("id") == llamacpp_entry["id"] for m in models):
+                models.append(llamacpp_entry)
 
         # NEW: Auto-discover models from ALL configured API-keyed providers.
         provider_models = await _discover_provider_models()
@@ -1867,8 +1891,8 @@ async def set_backend_address(name: str, req: BackendAddressRequest) -> JSONResp
 def _detect_llamacpp_platform() -> dict:
     """Return download info for the current platform.
 
-    Platform detection priority for Linux: ROCm > Vulkan > NVIDIA (CPU binary
-    with -ngl N for GPU offload) > plain CPU.
+    Platform detection priority for Linux: ROCm > Vulkan/NVIDIA (Vulkan binary
+    for GPU offload via -ngl) > plain CPU.
     """
     import platform as _platform
     import shutil as _shutil
@@ -1884,12 +1908,12 @@ def _detect_llamacpp_platform() -> dict:
     if system == "linux":
         if machine == "aarch64":
             return {"asset": "ubuntu-arm64", "ext": "tar.gz"}
-        # GPU detection priority: ROCm > Vulkan > NVIDIA (CPU binary + -ngl)
+        # GPU detection priority: ROCm > Vulkan/NVIDIA (Vulkan binary for -ngl)
         if _shutil.which("rocm-smi"):
             return {"asset": "ubuntu-rocm-7.2-x64", "ext": "tar.gz"}
         if _shutil.which("nvidia-smi"):
-            # CPU binary with -ngl N for GPU offload
-            return {"asset": "ubuntu-x64", "ext": "tar.gz"}
+            # Vulkan binary for NVIDIA GPU support (-ngl offloads layers via Vulkan)
+            return {"asset": "ubuntu-vulkan-x64", "ext": "tar.gz"}
         return {"asset": "ubuntu-x64", "ext": "tar.gz"}
 
     if system == "windows":
@@ -1900,14 +1924,20 @@ def _detect_llamacpp_platform() -> dict:
 
 async def _get_latest_llamacpp_tag() -> str:
     """Resolve the latest release tag from GitHub API."""
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest",
-            timeout=10,
+    proc = await asyncio.create_subprocess_exec(
+        "curl", "-fsSL",
+        "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"Failed to fetch latest llama.cpp tag: "
+            f"{stderr.decode('utf-8', errors='replace').strip()}"
         )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["tag_name"]  # e.g. "b9739"
+    data = json.loads(stdout.decode("utf-8"))
+    return data["tag_name"]  # e.g. "b9739"
 
 
 def _build_llamacpp_download_url(tag: str, platform_info: dict) -> str:
@@ -1920,6 +1950,14 @@ def _build_llamacpp_download_url(tag: str, platform_info: dict) -> str:
 
 
 # ── llama.cpp: Status, Install, Uninstall, Start, Stop, Restart ──────────
+
+
+def _is_port_available(port: int) -> bool:
+    """Check if a TCP port is available (not in use)."""
+    import socket as _socket
+
+    with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+        return s.connect_ex(("127.0.0.1", port)) != 0
 
 
 @app.get("/api/local-backends/llamacpp/status")
@@ -1950,16 +1988,33 @@ async def get_llamacpp_status() -> JSONResponse:
         _llamacpp_process is not None and _llamacpp_process.returncode is None
     )
 
-    return JSONResponse(
-        {
-            "installed": installed,
-            "running": running,
-            "version": version,
-        }
-    )
+    response: dict = {
+        "installed": installed,
+        "running": running,
+        "version": version,
+    }
+
+    # Phase 2: include active model and config details when running
+    if running:
+        response["port"] = _llamacpp_config.get("port", 8080)
+        response["binary_path"] = shutil.which("llama-server")
+        response["gpu_layers"] = _llamacpp_config.get("gpu_layers", 0)
+        response["context_size"] = _llamacpp_config.get("context_size", 8192)
+        response["batch_size"] = _llamacpp_config.get("batch_size", 512)
+        if _llamacpp_process is not None:
+            response["pid"] = _llamacpp_process.pid
+        if _llamacpp_serving_model:
+            import os as _os
+            model_name = _os.path.splitext(_os.path.basename(_llamacpp_serving_model))[0]
+            response["active_model"] = {
+                "path": _llamacpp_serving_model,
+                "name": model_name,
+            }
+
+    return JSONResponse(response)
 
 
-@app.post("/api/local-backends/llamacpp/install")
+@app.api_route("/api/local-backends/llamacpp/install", methods=["GET", "POST"])
 async def install_llamacpp(request: Request) -> EventSourceResponse:
     """Download and install llama-server binary with SSE streaming."""
     import shutil
@@ -2042,38 +2097,37 @@ async def install_llamacpp(request: Request) -> EventSourceResponse:
             _os.close(tmp_fd)
 
             try:
-                async with httpx.AsyncClient(timeout=60) as client:
-                    async with client.stream("GET", download_url) as resp:
-                        resp.raise_for_status()
-                        total = int(resp.headers.get("content-length", 0))
-                        downloaded = 0
-                        with open(tmp_path, "wb") as f:
-                            async for chunk in resp.aiter_bytes():
-                                f.write(chunk)
-                                downloaded += len(chunk)
-                                if total > 0:
-                                    pct = 25 + int(downloaded / total * 50)
-                                    yield {
-                                        "event": "install_log",
-                                        "data": json.dumps(
-                                            {
-                                                "step": "download",
-                                                "message": (
-                                                    f"Downloaded "
-                                                    f"{downloaded // 1024} / "
-                                                    f"{total // 1024} KB"
-                                                ),
-                                                "progress": min(pct, 75),
-                                            }
-                                        ),
-                                    }
-
-                                if await request.is_disconnected():
-                                    _os.remove(tmp_path)
-                                    return
+                curl_proc = await asyncio.create_subprocess_exec(
+                    "curl", "-fSL", "-o", tmp_path, download_url,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await asyncio.wait_for(
+                    curl_proc.communicate(), timeout=300
+                )
+                if await request.is_disconnected():
+                    curl_proc.kill()
+                    _os.remove(tmp_path)
+                    return
+                if curl_proc.returncode != 0:
+                    raise RuntimeError(
+                        f"curl failed (exit {curl_proc.returncode}): "
+                        f"{stderr.decode('utf-8', errors='replace').strip()}"
+                    )
             except Exception as exc:
                 _os.remove(tmp_path)
                 raise
+
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "download",
+                        "message": "Download complete",
+                        "progress": 75,
+                    }
+                ),
+            }
 
             # ── Step 4: Extract binary ──────────────────────────────
             yield {
@@ -2095,16 +2149,25 @@ async def install_llamacpp(request: Request) -> EventSourceResponse:
                 import tarfile as _tarfile
 
                 with _tarfile.open(tmp_path, "r:gz") as tar:
-                    # Find llama-server inside the tarball
+                    # Extract all files, stripping top-level directory prefix
+                    # e.g. llama-b9739/llama-server -> llama-server
+                    #       llama-b9739/libllama-server-impl.so -> libllama-server-impl.so
                     members = tar.getmembers()
+                    found_binary = False
                     for m in members:
-                        # Match paths like: llama-b9739/llama-server
-                        parts = _os.path.split(m.name)
-                        if len(parts) >= 2 and parts[-1] == "llama-server":
-                            m.name = _os.path.basename(m.name)
-                            tar.extract(m, path=install_dir)
-                            break
-                    else:
+                        if m.isdir():
+                            continue
+                        parts = m.name.split("/")
+                        if len(parts) >= 2:
+                            # Strip top-level dir: llama-b9739/anything -> anything
+                            m.name = "/".join(parts[1:])
+                        elif len(parts) == 1:
+                            # Already flat - keep as-is
+                            pass
+                        if parts[-1] == "llama-server" or parts[-1] == "llama-server.exe":
+                            found_binary = True
+                        tar.extract(m, path=install_dir)
+                    if not found_binary:
                         raise RuntimeError(
                             "llama-server binary not found in archive"
                         )
@@ -2112,20 +2175,26 @@ async def install_llamacpp(request: Request) -> EventSourceResponse:
                 import zipfile as _zipfile
 
                 with _zipfile.ZipFile(tmp_path) as zf:
-                    for name in zf.namelist():
-                        if name.endswith("llama-server.exe") or name.endswith(
-                            "llama-server"
+                    # Extract all files, stripping top-level directory prefix
+                    found_binary = False
+                    for info in zf.infolist():
+                        if info.is_dir():
+                            continue
+                        parts = info.filename.split("/")
+                        if len(parts) >= 2:
+                            # Strip top-level dir
+                            flat_name = "/".join(parts[1:])
+                        else:
+                            flat_name = info.filename
+                        if (
+                            parts[-1] == "llama-server"
+                            or parts[-1] == "llama-server.exe"
                         ):
-                            zf.extract(name, install_dir)
-                            # Move to correct name if nested
-                            src = _os.path.join(install_dir, name)
-                            dst = _os.path.join(
-                                install_dir, _os.path.basename(name)
-                            )
-                            if src != dst:
-                                _os.rename(src, dst)
-                            break
-                    else:
+                            found_binary = True
+                        # Extract with stripped path
+                        info.filename = flat_name
+                        zf.extract(info, install_dir)
+                    if not found_binary:
                         raise RuntimeError(
                             "llama-server binary not found in archive"
                         )
@@ -2198,7 +2267,7 @@ async def install_llamacpp(request: Request) -> EventSourceResponse:
     return EventSourceResponse(generate())
 
 
-@app.post("/api/local-backends/llamacpp/uninstall")
+@app.api_route("/api/local-backends/llamacpp/uninstall", methods=["GET", "POST"])
 async def uninstall_llamacpp(request: Request) -> EventSourceResponse:
     """Uninstall llama-server binary with SSE streaming."""
     import shutil
@@ -2396,9 +2465,9 @@ async def uninstall_llamacpp(request: Request) -> EventSourceResponse:
 @app.post("/api/local-backends/llamacpp/start")
 async def start_llamacpp() -> JSONResponse:
     """Start llama-server as a managed subprocess.
-    
-    ponytail: Phase 1 starts llama-server without -m flag (no model serving yet).
-    Phase 2 will add model selection + -m flag. See ADR-0018 Phase 2.
+
+    Uses _llamacpp_serving_model and _llamacpp_config to pass model/config flags.
+    If no model is configured, returns 400 asking the user to select a model first.
     """
     import socket
     import shutil
@@ -2418,25 +2487,43 @@ async def start_llamacpp() -> JSONResponse:
             {"status": "ok", "message": "llama.cpp is already running"}
         )
 
-    port = _llamacpp_config["port"]
+    # Phase 2: require a configured model
+    if not _llamacpp_serving_model:
+        return JSONResponse(
+            {"status": "error", "message": "No model configured. Use POST /llamacpp/serve to select a GGUF model first."},
+            status_code=400,
+        )
+
+    port = _llamacpp_config.get("port", 8080)
+    gpu_layers = _llamacpp_config.get("gpu_layers", 0)
+    context_size = _llamacpp_config.get("context_size", 8192)
+    flash_attn = _llamacpp_config.get("flash_attn", False)
 
     # ── Port conflict detection ──────────────────────────────────────────
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        if s.connect_ex(("127.0.0.1", port)) == 0:
-            return JSONResponse(
-                {"status": "error", "message": f"Port {port} is already in use"},
-                status_code=409,
-            )
+    if not _is_port_available(port):
+        return JSONResponse(
+            {"status": "error", "message": f"Port {port} is already in use"},
+            status_code=409,
+        )
+
+    # Build command with model + config flags
+    cmd = [
+        "llama-server",
+        "--host", "127.0.0.1",
+        "--port", str(port),
+        "-m", _llamacpp_serving_model,
+    ]
+    if gpu_layers != 0:
+        cmd.extend(["-ngl", str(gpu_layers)])
+    cmd.extend(["-c", str(context_size)])
+    if flash_attn and gpu_layers > 0:
+        cmd.extend(["--flash-attn", "1"])
 
     try:
         _llamacpp_process = await asyncio.create_subprocess_exec(
-            "llama-server",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
+            *cmd,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
+            stderr=asyncio.subprocess.PIPE,
         )
     except Exception as e:
         _llamacpp_process = None
@@ -2445,25 +2532,30 @@ async def start_llamacpp() -> JSONResponse:
             status_code=500,
         )
 
-    # Brief health check
-    # ponytail: 2s sleep before health check is fragile; Phase 2 should poll with timeout
-    await asyncio.sleep(2)
-    try:
-        async with _httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(f"http://localhost:{port}/v1/models")
-            if resp.status_code == 200:
-                _llamacpp_config["installed"] = True
-                _llamacpp_restart_attempts = 0  # Reset restart counter on successful start
-                # Start background monitor
-                asyncio.ensure_future(_monitor_llamacpp_process())
-                return JSONResponse(
-                    {
-                        "status": "ok",
-                        "message": f"llama.cpp started on port {port}",
-                    }
-                )
-    except Exception:
-        pass
+    # Poll health check with timeout instead of fixed sleep
+    _health_ok = False
+    for _attempt in range(10):
+        await asyncio.sleep(0.5)
+        try:
+            async with _httpx.AsyncClient(timeout=2) as client:
+                resp = await client.get(f"http://localhost:{port}/v1/models")
+                if resp.status_code == 200:
+                    _health_ok = True
+                    break
+        except Exception:
+            continue
+
+    if _health_ok:
+        _llamacpp_config["installed"] = True
+        _llamacpp_restart_attempts = 0
+        local_backend_manager.set_address("llama-cpp", f"localhost:{port}")
+        asyncio.ensure_future(_monitor_llamacpp_process())
+        return JSONResponse(
+            {
+                "status": "ok",
+                "message": f"llama.cpp started on port {port}",
+            }
+        )
 
     # Process started but health check failed — still return ok, just warn
     asyncio.ensure_future(_monitor_llamacpp_process())
@@ -2478,23 +2570,42 @@ async def start_llamacpp() -> JSONResponse:
 async def _monitor_llamacpp_process() -> None:
     """Background task: monitor llama-server and restart if needed.
 
-    ponytail: Phase 1 monitors process only; Phase 2 adds model loading + /v1/models health check.
+    Reads stderr for model loading progress logs. Clears _llamacpp_serving_model
+    on unexpected exit so stale state doesn't linger.
     """
-    global _llamacpp_process, _llamacpp_shutting_down, _llamacpp_restart_attempts
+    global _llamacpp_process, _llamacpp_shutting_down, _llamacpp_restart_attempts, _llamacpp_serving_model
 
     if _llamacpp_process is None:
         return
+
+    # Read stderr in background if available (serve endpoint uses PIPE for stderr)
+    stderr_task = None
+    if _llamacpp_process.stderr is not None:
+        async def _drain_stderr():
+            try:
+                async for line in _llamacpp_process.stderr:  # type: ignore[union-attr]
+                    text = line.decode("utf-8", errors="replace").rstrip()
+                    if text:
+                        logger.debug("llama-server stderr: %s", text)
+            except Exception:
+                pass
+        stderr_task = asyncio.ensure_future(_drain_stderr())
 
     try:
         await _llamacpp_process.wait()
     except Exception:
         pass
 
+    if stderr_task is not None:
+        stderr_task.cancel()
+
     if _llamacpp_shutting_down:
         return
 
     logger.warning("llama-server process exited (returncode=%s)", _llamacpp_process.returncode)
     _llamacpp_process = None
+    # Clear serving model on unexpected exit
+    _llamacpp_serving_model = None
 
     # Auto-restart with exponential backoff if not shutting down
     if not _llamacpp_shutting_down and _llamacpp_restart_attempts < MAX_RESTART_ATTEMPTS:
@@ -2566,6 +2677,349 @@ async def restart_llamacpp() -> JSONResponse:
     return await start_llamacpp()
 
 
+# ── llama.cpp Phase 2: GGUF Model Listing, Serve, Config ────────────────
+
+
+@app.get("/api/local-backends/models/gguf")
+async def list_gguf_models() -> JSONResponse:
+    """List all .gguf files under ~/.cache/llmfit/models/ recursively."""
+    import os as _os
+
+    models_dir = _os.path.expanduser("~/.cache/llmfit/models/")
+    models: list[dict] = []
+
+    if not _os.path.isdir(models_dir):
+        return JSONResponse({"models": []})
+
+    for dirpath, _dirnames, filenames in _os.walk(models_dir):
+        for fname in filenames:
+            if not fname.endswith(".gguf"):
+                continue
+            full_path = _os.path.join(dirpath, fname)
+            try:
+                size_bytes = _os.path.getsize(full_path)
+            except OSError:
+                size_bytes = 0
+            # Derive display name: strip .gguf, keep subdirectory prefix if any
+            rel_path = _os.path.relpath(full_path, models_dir)
+            name = rel_path.replace(_os.sep, "/").removesuffix(".gguf")
+            serving = (
+                _llamacpp_serving_model is not None
+                and _os.path.realpath(_llamacpp_serving_model) == _os.path.realpath(full_path)
+            )
+            models.append({
+                "name": name,
+                "path": full_path,
+                "size_bytes": size_bytes,
+                "serving": serving,
+            })
+
+    # Sort by size descending (largest first)
+    models.sort(key=lambda m: m["size_bytes"], reverse=True)
+    return JSONResponse({"models": models})
+
+
+@app.api_route("/api/local-backends/llamacpp/serve", methods=["GET", "POST"])
+async def serve_llamacpp_model(request: Request) -> EventSourceResponse:
+    """Start llama-server with a specific GGUF model. Streams loading progress via SSE.
+
+    Request body:
+        model: filename or full path to .gguf file
+        port: optional (default from _llamacpp_config)
+        gpu_layers: optional (default 0)
+        context_size: optional (default 8192)
+        flash_attn: optional (default true if gpu_layers > 0)
+    """
+    global _llamacpp_config, _llamacpp_serving_model, _llamacpp_process
+
+    import os as _os
+    import shutil
+    import socket
+    import httpx as _httpx
+
+    # Support both JSON body (POST) and query params (GET via EventSource)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    qp = dict(request.query_params)
+    model_input = body.get("model") or qp.get("model", "")
+    port = int(body.get("port") or qp.get("port", _llamacpp_config.get("port", 8080)))
+    gpu_layers = int(body.get("gpu_layers") or qp.get("gpu_layers", 0))
+    context_size = int(body.get("context_size") or qp.get("context_size", 8192))
+    flash_attn = body.get("flash_attn", gpu_layers > 0)
+    batch_size = int(body.get("batch_size") or qp.get("batch_size", 512))
+
+    if not shutil.which("llama-server"):
+        return EventSourceResponse(
+            _install_error_generator("llama.cpp is not installed", "NOT_INSTALLED")
+        )
+
+    if not model_input:
+        return EventSourceResponse(
+            _install_error_generator("No model specified", "NO_MODEL")
+        )
+
+    # Resolve model path
+    model_path: str | None = None
+    if _os.path.isfile(model_input):
+        model_path = _os.path.abspath(model_input)
+    elif model_input.endswith(".gguf"):
+        # Look in ~/.cache/llmfit/models/
+        models_dir = _os.path.expanduser("~/.cache/llmfit/models/")
+        candidate = _os.path.join(models_dir, model_input)
+        if _os.path.isfile(candidate):
+            model_path = _os.path.abspath(candidate)
+        else:
+            # Try recursive search
+            for dirpath, _d, filenames in _os.walk(models_dir):
+                if model_input in filenames:
+                    model_path = _os.path.abspath(_os.path.join(dirpath, model_input))
+                    break
+    else:
+        # Maybe it's a name without .gguf — try adding it
+        name_with_ext = model_input if model_input.endswith(".gguf") else f"{model_input}.gguf"
+        models_dir = _os.path.expanduser("~/.cache/llmfit/models/")
+        for dirpath, _d, filenames in _os.walk(models_dir):
+            if name_with_ext in filenames:
+                model_path = _os.path.abspath(_os.path.join(dirpath, name_with_ext))
+                break
+
+    if not model_path or not _os.path.isfile(model_path):
+        return EventSourceResponse(
+            _install_error_generator(f"Model file not found: {model_input}", "MODEL_NOT_FOUND")
+        )
+
+    # Store config
+    _llamacpp_config["port"] = port
+    _llamacpp_config["gpu_layers"] = gpu_layers
+    _llamacpp_config["context_size"] = context_size
+    _llamacpp_config["flash_attn"] = flash_attn
+    _llamacpp_config["batch_size"] = batch_size
+
+    # Stop existing process if running
+    if _llamacpp_process is not None and _llamacpp_process.returncode is None:
+        _llamacpp_process.terminate()
+        try:
+            await asyncio.wait_for(_llamacpp_process.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            _llamacpp_process.kill()
+            await _llamacpp_process.wait()
+        _llamacpp_process = None
+
+    # Port conflict check
+    if not _is_port_available(port):
+        return EventSourceResponse(
+            _install_error_generator(f"Port {port} is already in use", "PORT_IN_USE")
+        )
+
+    # Build command
+    cmd = [
+        "llama-server",
+        "--host", "127.0.0.1",
+        "--port", str(port),
+        "-m", model_path,
+    ]
+    if gpu_layers != 0:
+        cmd.extend(["-ngl", str(gpu_layers)])
+    cmd.extend(["-c", str(context_size)])
+    if flash_attn and gpu_layers > 0:
+        cmd.extend(["--flash-attn", "1"])
+    if batch_size != 512:
+        cmd.extend(["--batch-size", str(batch_size)])
+
+    async def generate() -> AsyncGenerator[str, None]:
+        global _llamacpp_process, _llamacpp_serving_model
+
+        try:
+            yield {
+                "event": "install_log",
+                "data": json.dumps({
+                    "step": "start",
+                    "message": f"Starting llama-server with {_os.path.basename(model_path)}...",
+                    "progress": 5,
+                }),
+            }
+
+            _llamacpp_process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            _llamacpp_serving_model = model_path
+
+            yield {
+                "event": "install_log",
+                "data": json.dumps({
+                    "step": "loading",
+                    "message": "Loading model...",
+                    "progress": 10,
+                }),
+            }
+
+            # Parse stderr for loading progress
+            assert _llamacpp_process.stderr is not None
+            progress = 10
+            async for raw_line in _llamacpp_process.stderr:
+                line = raw_line.decode("utf-8", errors="replace").rstrip()
+                if not line:
+                    continue
+
+                if "loading model from" in line.lower():
+                    progress = max(progress, 15)
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps({
+                            "step": "loading",
+                            "message": "Loading model into memory...",
+                            "progress": progress,
+                        }),
+                    }
+                elif "offloading" in line.lower() and "layers" in line.lower():
+                    progress = min(progress + 15, 60)
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps({
+                            "step": "gpu",
+                            "message": line.strip(),
+                            "progress": progress,
+                        }),
+                    }
+                elif "buffer size" in line.lower() or "model buffer" in line.lower():
+                    progress = min(progress + 20, 80)
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps({
+                            "step": "loaded",
+                            "message": line.strip(),
+                            "progress": progress,
+                        }),
+                    }
+                elif "listening on" in line.lower():
+                    progress = 95
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps({
+                            "step": "ready",
+                            "message": line.strip(),
+                            "progress": progress,
+                        }),
+                    }
+                else:
+                    # Generic progress tick for other lines
+                    progress = min(progress + 2, 90)
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps({
+                            "step": "loading",
+                            "message": line.strip(),
+                            "progress": progress,
+                        }),
+                    }
+
+                if await request.is_disconnected():
+                    _llamacpp_process.terminate()
+                    return
+
+            # Process ended — check health
+            await _llamacpp_process.wait()
+
+            # Health check: poll with retries
+            for _attempt in range(5):
+                await asyncio.sleep(1)
+                try:
+                    async with _httpx.AsyncClient(timeout=2) as client:
+                        resp = await client.get(f"http://localhost:{port}/v1/models")
+                        if resp.status_code == 200:
+                            _llamacpp_config["installed"] = True
+                            local_backend_manager.set_address("llama-cpp", f"localhost:{port}")
+                            asyncio.ensure_future(_monitor_llamacpp_process())
+                            yield {
+                                "event": "install_complete",
+                                "data": json.dumps({
+                                    "status": "success",
+                                    "model": _os.path.basename(model_path),
+                                    "port": port,
+                                }),
+                            }
+                            return
+                except Exception:
+                    continue
+
+            # Health check failed after retries
+            yield {
+                "event": "install_error",
+                "data": json.dumps({
+                    "status": "error",
+                    "message": "llama-server started but health check failed",
+                    "code": "HEALTH_CHECK_FAILED",
+                }),
+            }
+
+        except Exception as e:
+            yield {
+                "event": "install_error",
+                "data": json.dumps({
+                    "status": "error",
+                    "message": str(e),
+                    "code": "UNEXPECTED_ERROR",
+                }),
+            }
+
+    return EventSourceResponse(generate(), ping=15)
+
+
+class LlamacppConfigRequest(BaseModel):
+    """Request body for PUT /api/local-backends/llamacpp/config."""
+    port: int | None = None
+    gpu_layers: int | None = None
+    context_size: int | None = None
+    flash_attn: bool | None = None
+    batch_size: int | None = None
+
+
+@app.put("/api/local-backends/llamacpp/config")
+async def update_llamacpp_config(req: LlamacppConfigRequest) -> JSONResponse:
+    """Update llama.cpp configuration. Returns warning if server is running."""
+    global _llamacpp_config
+
+    running = (
+        _llamacpp_process is not None and _llamacpp_process.returncode is None
+    )
+
+    warning = None
+    if running:
+        warning = "Config changes require restart to take effect"
+
+    if req.port is not None:
+        _llamacpp_config["port"] = req.port
+        local_backend_manager.set_address("llama-cpp", f"localhost:{req.port}")
+    if req.gpu_layers is not None:
+        _llamacpp_config["gpu_layers"] = req.gpu_layers
+    if req.context_size is not None:
+        _llamacpp_config["context_size"] = req.context_size
+    if req.flash_attn is not None:
+        _llamacpp_config["flash_attn"] = req.flash_attn
+    if req.batch_size is not None:
+        _llamacpp_config["batch_size"] = req.batch_size
+
+    response: dict = {
+        "status": "ok",
+        "config": {
+            "port": _llamacpp_config.get("port", 8080),
+            "gpu_layers": _llamacpp_config.get("gpu_layers", 0),
+            "context_size": _llamacpp_config.get("context_size", 8192),
+            "flash_attn": _llamacpp_config.get("flash_attn", False),
+            "batch_size": _llamacpp_config.get("batch_size", 512),
+        },
+    }
+    if warning:
+        response["warning"] = warning
+
+    return JSONResponse(response)
+
+
 @app.get("/api/local-backends/{name}/address")
 async def get_backend_address(name: str) -> JSONResponse:
     """Get the custom address override for a local backend."""
@@ -2625,7 +3079,7 @@ async def get_ollama_status() -> JSONResponse:
     )
 
 
-@app.post("/api/local-backends/ollama/install")
+@app.api_route("/api/local-backends/ollama/install", methods=["GET", "POST"])
 async def install_ollama(request: Request) -> EventSourceResponse:
     """Install Ollama via curl|sh with live SSE log streaming."""
     import shutil
@@ -2762,7 +3216,7 @@ class DownloadModelRequest(BaseModel):
     quant: str | None = None  # Specific quantization (e.g. "Q4_K_M")
 
 
-@app.post("/api/local-backends/llmfit/install")
+@app.api_route("/api/local-backends/llmfit/install", methods=["GET", "POST"])
 async def install_llmfit(request: Request) -> EventSourceResponse:
     """Install llmfit via curl|sh with live SSE log streaming."""
     import shutil
@@ -2883,7 +3337,7 @@ async def install_llmfit(request: Request) -> EventSourceResponse:
     return EventSourceResponse(generate())
 
 
-@app.post("/api/local-backends/llmfit/uninstall")
+@app.api_route("/api/local-backends/llmfit/uninstall", methods=["GET", "POST"])
 async def uninstall_llmfit() -> JSONResponse:
     """Uninstall llmfit by removing the binary."""
     import shutil
@@ -2987,7 +3441,7 @@ async def stop_ollama() -> JSONResponse:
         )
 
 
-@app.post("/api/local-backends/ollama/uninstall")
+@app.api_route("/api/local-backends/ollama/uninstall", methods=["GET", "POST"])
 async def uninstall_ollama(request: Request) -> EventSourceResponse:
     """Uninstall Ollama with live SSE log streaming (dangerous)."""
     import shutil

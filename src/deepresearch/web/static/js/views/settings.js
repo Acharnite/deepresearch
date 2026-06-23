@@ -13,7 +13,10 @@ import {
   startOllama, stopOllama, uninstallOllama,
   getPullModelURL, getDownloadModelURL, getLlmfitInstallURL, getOllamaUninstallURL,
   fetchLocalBackends, testLocalBackend, setBackendAddress, getBackendAddress,
-  deleteOllamaModel
+  deleteOllamaModel,
+  fetchLlamaCppStatus, getLlamaCppInstallURL, getLlamaCppUninstallURL,
+  startLlamaCpp, stopLlamaCpp, restartLlamaCpp,
+  fetchGgufModels, serveGgufModel, stopLlamacppServing, updateLlamacppConfig
 } from '../api.js';
 import { ModelPicker } from '../model-picker.js';
 
@@ -408,9 +411,8 @@ async function checkOllamaStatus() {
         installBtn.disabled = false;
         installBtn.style.opacity = '1';
       }
-      if (actionRow) {
-        actionRow.innerHTML = '<span class="text-muted" style="font-size:11px;">Install Ollama to get started.</span>';
-      }
+      const ollamaHint = document.getElementById('ollamaActionHint');
+      if (ollamaHint) ollamaHint.textContent = 'Install Ollama to get started.';
     }
   } catch (err) {
     console.warn('Failed to check Ollama status:', err);
@@ -585,10 +587,11 @@ window.confirmUninstallOllama = function() {
       logOutput.appendChild(line);
     } catch (err) {}
     eventSource.close();
+    setTimeout(checkOllamaStatus, 1000);
   });
 
   eventSource.onerror = function() {
-    if (eventSource.readyState === EventSource.CLOSED) {
+    if (eventSource.readyState !== EventSource.CONNECTING) {
       setTimeout(checkOllamaStatus, 1000);
     }
   };
@@ -622,6 +625,31 @@ async function checkLlamaCppStatus() {
           (status.running ? '\u2705 Running on port 8080' : '\u26A0\uFE0F Not running') +
           '</span>';
       }
+
+      // Show config section
+      const configSection = document.getElementById('llamacppConfigSection');
+      if (configSection) configSection.style.display = 'block';
+
+      // Load GGUF models
+      loadGgufModels();
+
+      // Update config inputs from status
+      if (status.port) {
+        const portInput = document.getElementById('llamacppPortInput');
+        if (portInput) portInput.value = status.port;
+      }
+      if (status.gpu_layers !== undefined) {
+        const gpuInput = document.getElementById('llamacppGpuLayersInput');
+        if (gpuInput) gpuInput.value = status.gpu_layers;
+      }
+      if (status.context_size) {
+        const ctxInput = document.getElementById('llamacppCtxInput');
+        if (ctxInput) ctxInput.value = status.context_size;
+      }
+      if (status.batch_size) {
+        const batchInput = document.getElementById('llamacppBatchInput');
+        if (batchInput) batchInput.value = status.batch_size;
+      }
     } else {
       if (statusEl) statusEl.textContent = '\u274C Not installed';
       if (installBtn) {
@@ -630,9 +658,13 @@ async function checkLlamaCppStatus() {
         installBtn.disabled = false;
         installBtn.style.opacity = '1';
       }
-      if (actionRow) {
-        actionRow.innerHTML = '<span class="text-muted" style="font-size:11px;">Install llama.cpp to serve GGUF models locally.</span>';
-      }
+      const llamacppHint = document.getElementById('llamacppActionHint');
+      if (llamacppHint) llamacppHint.textContent = 'Install llama.cpp to serve GGUF models locally.';
+      // Hide config and GGUF sections when not installed
+      const configSection = document.getElementById('llamacppConfigSection');
+      const ggufSection = document.getElementById('ggufModelsSection');
+      if (configSection) configSection.style.display = 'none';
+      if (ggufSection) ggufSection.style.display = 'none';
     }
   } catch (err) {
     console.warn('Failed to check llama.cpp status:', err);
@@ -747,10 +779,11 @@ window.confirmUninstallLlamaCpp = function() {
       logOutput.appendChild(line);
     } catch (err) {}
     eventSource.close();
+    setTimeout(checkLlamaCppStatus, 1000);
   });
 
   eventSource.onerror = function() {
-    if (eventSource.readyState === EventSource.CLOSED) {
+    if (eventSource.readyState !== EventSource.CONNECTING) {
       setTimeout(checkLlamaCppStatus, 1000);
     }
   };
@@ -778,6 +811,172 @@ window.manageLlamaCpp = async function(action) {
   }
 
   setTimeout(checkLlamaCppStatus, 1500);
+};
+
+// ── GGUF Model List ──────────────────────────────────
+window.loadGgufModels = async function() {
+  const listEl = document.getElementById('ggufModelList');
+  const sectionEl = document.getElementById('ggufModelsSection');
+  if (!listEl || !sectionEl) return;
+
+  try {
+    const data = await fetchGgufModels();
+    const models = data.models || [];
+
+    if (models.length === 0) {
+      sectionEl.style.display = 'none';
+      return;
+    }
+
+    sectionEl.style.display = 'block';
+    listEl.innerHTML = '';
+
+    models.forEach(m => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);';
+
+      const sizeMB = (m.size_bytes / (1024 * 1024)).toFixed(0);
+      const sizeGB = (m.size_bytes / (1024 * 1024 * 1024)).toFixed(1);
+      const sizeStr = m.size_bytes > 1073741824 ? sizeGB + ' GB' : sizeMB + ' MB';
+
+      if (m.serving) {
+        row.innerHTML =
+          '<span style="color:var(--success);">🟢</span> ' +
+          '<span style="flex:1;font-weight:500;">' + esc(m.name) + '</span> ' +
+          '<span class="text-muted" style="font-size:11px;">' + sizeStr + '</span> ' +
+          '<button class="btn btn-sm btn-warning" onclick="window.stopLlamacppServe()">⏹ Stop</button>';
+      } else {
+        row.innerHTML =
+          '<span style="color:var(--muted);">⚪</span> ' +
+          '<span style="flex:1;">' + esc(m.name) + '</span> ' +
+          '<span class="text-muted" style="font-size:11px;">' + sizeStr + '</span> ' +
+          '<button class="btn btn-sm btn-success" onclick="window.serveGgufModel(\'' + esc(m.name) + '\')">▶ Serve</button>';
+      }
+
+      listEl.appendChild(row);
+    });
+  } catch (err) {
+    console.warn('Failed to load GGUF models:', err);
+    sectionEl.style.display = 'none';
+  }
+};
+
+window.serveGgufModel = async function(modelName) {
+  const logContainer = document.getElementById('ollamaInstallLog');
+  const logOutput = document.getElementById('ollamaInstallOutput');
+  if (!logContainer || !logOutput) return;
+
+  logContainer.classList.remove('hidden');
+  logOutput.innerHTML = '';
+
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = '<span class="log-icon">⏳</span> <span class="log-msg">Starting llama-server with ' + esc(modelName) + '...</span>';
+  logOutput.appendChild(line);
+
+  try {
+    const config = {
+      port: parseInt(document.getElementById('llamacppPortInput')?.value) || 8080,
+      gpu_layers: parseInt(document.getElementById('llamacppGpuLayersInput')?.value) || 0,
+      context_size: parseInt(document.getElementById('llamacppCtxInput')?.value) || 8192,
+      batch_size: parseInt(document.getElementById('llamacppBatchInput')?.value) || 512
+    };
+
+    const eventSource = new EventSource(
+      '/api/local-backends/llamacpp/serve?_method=POST&model=' + encodeURIComponent(modelName) +
+      '&port=' + config.port + '&gpu_layers=' + config.gpu_layers + '&context_size=' + config.context_size +
+      '&batch_size=' + config.batch_size
+    );
+
+    eventSource.addEventListener('install_log', function(e) {
+      try {
+        const data = JSON.parse(e.data);
+        const logLine = document.createElement('div');
+        logLine.className = 'log-line';
+        const icon = data.progress >= 80 ? '✅' : data.progress >= 50 ? '⏳' : '⬇️';
+        logLine.innerHTML = '<span class="log-icon">' + icon + '</span> <span class="log-msg">' + esc(data.message || '') + '</span>';
+        logOutput.appendChild(logLine);
+        logContainer.scrollTop = logContainer.scrollHeight;
+      } catch (err) {}
+    });
+
+    eventSource.addEventListener('install_complete', function(e) {
+      try {
+        const data = JSON.parse(e.data);
+        const logLine = document.createElement('div');
+        logLine.className = 'log-line log-success';
+        logLine.innerHTML = '<span class="log-icon">✅</span> <strong>' + esc(modelName) + ' is now serving!</strong>';
+        logOutput.appendChild(logLine);
+      } catch (err) {}
+      eventSource.close();
+      setTimeout(() => {
+        checkLlamaCppStatus();
+        loadGgufModels();
+      }, 1000);
+    });
+
+    eventSource.addEventListener('install_error', function(e) {
+      try {
+        const data = JSON.parse(e.data);
+        const logLine = document.createElement('div');
+        logLine.className = 'log-line log-error';
+        logLine.innerHTML = '<span class="log-icon">❌</span> <strong>Error:</strong> ' + esc(data.message || 'Serve failed');
+        logOutput.appendChild(logLine);
+      } catch (err) {}
+      eventSource.close();
+    });
+
+    eventSource.onerror = function() {
+      eventSource.close();
+      setTimeout(() => {
+        checkLlamaCppStatus();
+        loadGgufModels();
+      }, 1000);
+    };
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
+};
+
+window.stopLlamacppServe = async function() {
+  try {
+    const resp = await stopLlamacppServing();
+    const data = await resp.json();
+    if (resp.ok) {
+      showToast(data.message || 'Stopped serving', 'success');
+    } else {
+      showToast('Error: ' + (data.message || 'Stop failed'), 'error');
+    }
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
+  setTimeout(() => {
+    checkLlamaCppStatus();
+    loadGgufModels();
+  }, 1000);
+};
+
+// ── Config ───────────────────────────────────────────
+window.saveLlamacppConfig = async function() {
+  const config = {
+    port: parseInt(document.getElementById('llamacppPortInput')?.value) || 8080,
+    gpu_layers: parseInt(document.getElementById('llamacppGpuLayersInput')?.value) || 0,
+    context_size: parseInt(document.getElementById('llamacppCtxInput')?.value) || 8192,
+    batch_size: parseInt(document.getElementById('llamacppBatchInput')?.value) || 512
+  };
+
+  try {
+    const resp = await updateLlamacppConfig(config);
+    const data = await resp.json();
+    if (resp.ok) {
+      showToast('Config saved', 'success');
+      if (data.warning) showToast(data.warning, 'info');
+    } else {
+      showToast('Error: ' + (data.message || 'Save failed'), 'error');
+    }
+  } catch (err) {
+    showToast('Network error', 'error');
+  }
 };
 
 // ── llmfit Install ──────────────────────────────────
