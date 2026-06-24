@@ -19,6 +19,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deepresearch.web.server import app
+from tests.conftest import get_all_paths
 
 
 @pytest.fixture
@@ -49,7 +50,7 @@ class TestBackendRoutes:
 
     def test_new_routes_registered(self, client: TestClient) -> None:
         """All new local-backend, tools, and hardware routes are registered."""
-        routes = [r.path for r in app.routes]
+        routes = get_all_paths(app)
         expected = [
             "/api/local-backends",
             "/api/local-backends/{name}/address",

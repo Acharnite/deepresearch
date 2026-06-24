@@ -31,6 +31,7 @@ from deepresearch.web.server import (
     _get_latest_llamacpp_tag,
     app,
 )
+from tests.conftest import get_all_paths
 
 
 # ─── Fixtures ──────────────────────────────────────────────────────────────
@@ -727,7 +728,7 @@ class TestRouteRegistration:
 
     def test_llamacpp_routes_registered(self, client: TestClient):
         """All 9 llamacpp lifecycle routes are registered."""
-        routes = [r.path for r in app.routes]
+        routes = get_all_paths(app)
         expected = [
             "/api/local-backends/llamacpp/status",
             "/api/local-backends/llamacpp/install",

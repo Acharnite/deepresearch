@@ -108,3 +108,34 @@ def no_fetch_or_cache():
         patch.object(_ws_mod, "_SEARCH_CACHE_ENABLED", False),
     ):
         yield
+
+
+def get_all_paths(app):
+    """Recursively extract all route paths from the FastAPI app.
+
+    After the server.py split into route modules, app.routes contains
+    _IncludedRouter objects (from FastAPI's router includes), not individual
+    Route objects. This helper flattens the route tree to get all paths.
+    """
+    paths = []
+    for route in app.routes:
+        if hasattr(route, "path"):
+            paths.append(route.path)
+        elif hasattr(route, "routes"):
+            # It's a sub-router — recurse
+            for sub_route in route.routes:
+                if hasattr(sub_route, "path"):
+                    paths.append(sub_route.path)
+        elif hasattr(route, "original_router"):
+            # It's an _IncludedRouter — get prefix from include_context
+            prefix = ""
+            if hasattr(route, "include_context") and hasattr(
+                route.include_context, "prefix"
+            ):
+                prefix = route.include_context.prefix
+            # Recurse into original_router's routes
+            if hasattr(route.original_router, "routes"):
+                for sub_route in route.original_router.routes:
+                    if hasattr(sub_route, "path"):
+                        paths.append(prefix + sub_route.path)
+    return paths

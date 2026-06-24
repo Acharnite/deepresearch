@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 
 from deepresearch.web.event_bus import EventBus
 from deepresearch.web.server import app
+from tests.conftest import get_all_paths
 from deepresearch.web.sessions import MultiSessionManager, SessionInfo
 from deepresearch.web.settings_manager import SettingsManager
 from deepresearch.web.state import update_status
@@ -216,7 +217,7 @@ class TestDashboardEndpoints:
 
     def test_all_routes_registered(self, client: TestClient) -> None:
         """All critical routes are registered."""
-        routes = [r.path for r in app.routes]
+        routes = get_all_paths(app)
         expected = [
             "/",
             "/api/status",
