@@ -4,7 +4,7 @@
 
 Proposed
 
-**Version:** 1.0
+**Version:** 1.1
 **Last Updated:** 2026-06-24
 
 ## Context
@@ -55,7 +55,7 @@ The frontend provides:
 
 ### Option A: Alpine.js (~15KB via CDN)
 
-**What it is:** A lightweight reactive framework that adds declarative HTML attributes (`x-data`, `x-show`, `x-for`, `x-on`) to existing HTML. No build step required — include via `<script>` tag.
+**What it is:** A lightweight reactive framework that adds declarative HTML attributes (`x-data`, `x-show`, `x-for`, `x-on`) to existing HTML. No build step required — include via `<script>` tag. Pin to specific version (`3.14.8`) for reproducibility. Add SRI hash in production.
 
 **Pros:**
 - **Directly solves the reactivity problem** — Proxy-based fine-grained DOM patching eliminates `innerHTML` rebuilds
@@ -91,7 +91,12 @@ The frontend provides:
 - **More long-term maintenance** — Custom code that nobody else knows
 - **No ecosystem** — No devtools, no community patterns, no Stack Overflow answers
 - **Harder onboarding** — New contributors must learn custom patterns instead of a well-known framework
-- **The "clever" trap** — Per ADR-0049 (The Ladder), writing a custom reactive framework is the "clever" path. Using a mature 15KB library is the "boring" path. Boring wins.
+
+### Option C: htmx (briefly considered)
+
+**What it is:** A library that lets the backend drive UI via HTML responses. The server returns HTML fragments, htmx swaps them into the DOM.
+
+**Why rejected:** htmx is excellent for server-driven UIs (like Turbo Rails), but deepresearch's frontend has significant client-side state (SSE connections, model picker state, session progress tracking, Q&A graph). htmx assumes the server is the source of truth for all UI state, which doesn't fit this architecture. Alpine.js handles client-side reactivity while htmx would require moving that logic back to the server.
 
 ## Decision
 
@@ -105,9 +110,32 @@ A custom vanilla reactive layer would be 150-300 lines that:
 1. Still requires manual DOM binding (no declarative attributes)
 2. Doesn't match Alpine's performance characteristics
 3. Becomes a maintenance burden with zero community support
-4. Violates ADR-0049's principle: use existing solutions over building your own
 
 Alpine.js is the boring, pragmatic choice. It's 15KB, has no build step, and can be added incrementally. If it doesn't work out, removing it is trivial — it's just `<script>` tags and HTML attributes.
+
+### Ladder Compliance (ADR-0049)
+
+Alpine.js is a new dependency (rung 5). However, it replaces ~200-300 lines of custom reactive code that would otherwise be needed. The net effect is less total code, not more. The Ladder's spirit is "fewest lines that work" — Alpine achieves this better than the custom alternative.
+
+## Documentation
+
+- **URL:** https://alpinejs.dev/
+- **Version:** 3.14.8 (pinned)
+- **CDN:** `https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js`
+- **Key concepts:**
+  - `x-data` — Declares reactive component state
+  - `x-show` / `x-if` — Conditional rendering
+  - `x-for` — List rendering
+  - `x-on` — Event handling (`@click`, `@input`)
+  - `x-text` / `x-html` — Content binding (x-text auto-escapes, x-html does not)
+  - `Alpine.store()` — Global shared reactive state
+  - `x-init` — Component initialization
+  - `$watch` — Reactive property watching
+- **Known gotchas:**
+  - `x-html` is XSS-vulnerable — only use with trusted content
+  - Alpine initializes on DOMContentLoaded — scripts must load before `alpine.min.js` or use `defer`
+  - `x-for` requires a single root element per iteration
+  - Alpine.store() mutations must be direct property assignments (not reassignment)
 
 ### Comparison Matrix
 
@@ -119,7 +147,7 @@ Alpine.js is the boring, pragmatic choice. It's 15KB, has no build step, and can
 | Migration effort | Medium (incremental, view-by-view) | Low (refactor in place) |
 | Learning curve | Low (HTML attributes) | None |
 | Long-term maintenance | Low (framework handles it) | Medium (custom code to maintain) |
-| Debugging | Good (Alpine devtools) | Excellent (no abstraction layer) |
+| Debugging | Good (Alpine devtools, but Proxy internals can obscure) | Excellent (no abstraction, direct DOM access) |
 | Community | 28K+ stars, active | N/A |
 | New contributor onboarding | Easy (well-known framework) | Harder (must learn custom patterns) |
 | Risk of removal | Low (trivially removable) | Low (already have it) |
@@ -129,17 +157,37 @@ Alpine.js is the boring, pragmatic choice. It's 15KB, has no build step, and can
 ## Migration Plan
 
 ### Phase 1: Foundation (1 session)
-- Add Alpine.js CDN to `dashboard.html`
-- Create `Alpine.store('app', { ... })` with shared state (current view, sessions list, settings)
-- Migrate session list view — highest jank impact (innerHTML rebuild every 3s)
-- Verify SSE integration works with Alpine reactivity
+- Add Alpine.js CDN to `dashboard.html` (pinned version 3.14.8)
+- Create `Alpine.store('app', { ... })` with shared state (current view, settings)
+- Verify Alpine initializes correctly alongside existing vanilla JS
 
-### Phase 2: Settings View (1 session)
-- Migrate settings view to Alpine
-- Replace manual API key management with Alpine data binding
-- Migrate model picker to Alpine x-data
+### Phase 2: Session List (2 sessions) — Highest jank impact
+
+**Session 2a: Alpine store + toolbar (1 session)**
+- Create `Alpine.store('sessions', { list: [], filter: '', sort: 'newest', search: '' })`
+- Migrate toolbar (search input, sort dropdown, filter buttons) to Alpine `x-model` bindings
+- Polling writes to store instead of rebuilding DOM
+- Verify: list updates are incremental (no innerHTML rebuild)
+
+**Session 2b: Session rows + operations (1 session)**
+- Replace `renderSessionRow()` loop with `x-for` directive
+- Replace `bindToolbarEvents()` with `x-on:input`, `x-on:change`
+- Migrate bulk operations (select, delete) to Alpine state
+- Migrate session status badges (running/complete/error) to reactive bindings
+- Remove old vanilla rendering code
+
+### SSE-to-Alpine Bridge
+
+The session list currently uses 3-second polling (`startSessionListPolling()`) to rebuild the entire list via `innerHTML`. With Alpine:
+
+1. **Keep polling initially** — Alpine.store holds the sessions array. Polling fetches JSON, updates the store. Alpine reactively patches only changed rows (no innerHTML rebuild).
+2. **Optional SSE upgrade (Phase 3)** — Add a `/api/sessions/events` SSE endpoint that pushes session status changes. Alpine.store updates on each event. Polling can be removed or kept as fallback.
+3. **Session detail SSE** — Already works via `sse.js`. The `processEvent()` handler updates Alpine.store instead of calling `refreshSessionList()` directly.
+
+Key principle: Alpine.store is the single source of truth. Both polling and SSE write to it. DOM updates happen reactively.
 
 ### Phase 3: Remaining Views (1 session)
+- Migrate settings view to Alpine
 - Migrate session detail view
 - Migrate system log view
 - Migrate agent panels / Q&A graph
@@ -151,11 +199,13 @@ Alpine.js is the boring, pragmatic choice. It's 15KB, has no build step, and can
 - Update CSS if needed for Alpine-generated DOM
 
 ### Rollback Strategy
-Each phase is independently rollbackable:
-1. Remove `<script>` tags for Alpine
-2. Remove `x-*` attributes from HTML
-3. Restore vanilla JS for that view
-4. No data loss — Alpine doesn't store data, it binds to existing state
+
+Each phase is independently rollbackable, with caveats:
+
+1. **Phase 1 rollback** — Trivial: remove `<script>` tag for Alpine, delete store init. No views depend on it yet.
+2. **Phase 2+ rollback** — Per-view: remove `x-*` attributes from that view's HTML, restore the vanilla JS rendering code for that view. Alpine.store dependency means the vanilla code needs its own state management restored (the old `_searchQuery`, `_statusFilter`, `_sortBy` variables in `session-list.js`).
+3. **No data loss** — Alpine doesn't store data, it binds to existing state. The backend API is unchanged.
+4. **Rollback cost increases with each phase** — Earlier phases are cheap to roll back. Later phases require restoring more vanilla code. This is acceptable because each phase provides standalone value.
 
 ## Consequences
 
@@ -180,9 +230,9 @@ Each phase is independently rollbackable:
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Migration stalls | Two paradigms coexist | Phase 1 alone (session list) provides the highest value |
+| Migration stalls | Two paradigms coexist | Phase 2 alone (session list) provides the highest value; can stop after Phase 2 |
 | Alpine.js abandoned | Framework disappears | 28K stars, active development; removal is trivial |
-| Performance regression | UI slower than before | Alpine is faster than innerHTML rebuilds; benchmark before/after Phase 1 |
+| Performance regression | UI slower than before | Alpine is faster than innerHTML rebuilds; benchmark before/after Phase 2 |
 | Alpine store conflicts | State management issues | Use namespaced store keys; follow Alpine.store() best practices |
 
 ## Related Issues
@@ -200,4 +250,5 @@ Each phase is independently rollbackable:
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-06-24 | 1.1 | Addressed review: added Documentation section, Ladder compliance, htmx comparison, SSE-Alpine bridge, split Phase 2, pinned version, fixed rollback strategy, grounded code claims |
 | 2026-06-24 | 1.0 | Initial version |
