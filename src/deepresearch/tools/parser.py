@@ -34,7 +34,7 @@ class ParsedToolCall:
     source: str = ""
 
 
-class ParseStrategy(ABC):
+class _ParseStrategy(ABC):
     """Base class for a tool call parsing strategy."""
 
     @property
@@ -91,7 +91,7 @@ def _try_parse_json_obj(obj_str: str) -> dict[str, Any] | None:
 # ── Strategy 1: JSON inline ─────────────────────────────────────────────────
 
 
-class JSONInlineStrategy(ParseStrategy):
+class _JSONInlineStrategy(_ParseStrategy):
     """Match inline JSON tool calls: ``{"name": "...", "arguments": {...}}``."""
 
     @property
@@ -122,7 +122,7 @@ class JSONInlineStrategy(ParseStrategy):
 # ── Strategy 2: Fenced block ────────────────────────────────────────────────
 
 
-class FencedBlockStrategy(ParseStrategy):
+class _FencedBlockStrategy(_ParseStrategy):
     r"""Match fenced code blocks with ``tool_call`` language tag.
 
     Pattern::
@@ -185,7 +185,7 @@ class FencedBlockStrategy(ParseStrategy):
 # ── Strategy 3: [TOOL_CALL] tag ─────────────────────────────────────────────
 
 
-class ToolCallTagStrategy(ParseStrategy):
+class _ToolCallTagStrategy(_ParseStrategy):
     r"""Match ``[TOOL_CALL]`` tags.
 
     Pattern::
@@ -237,7 +237,7 @@ class ToolCallTagStrategy(ParseStrategy):
 # ── Strategy 4: XML <invoke> ────────────────────────────────────────────────
 
 
-class XMLInvokeStrategy(ParseStrategy):
+class _XMLInvokeStrategy(_ParseStrategy):
     r"""Match XML ``<invoke>`` blocks.
 
     Pattern::
@@ -293,7 +293,7 @@ class XMLInvokeStrategy(ParseStrategy):
 # ── Strategy 5: DSML (DeepSeek) ─────────────────────────────────────────────
 
 
-class DSMLStrategy(ParseStrategy):
+class _DSMLStrategy(_ParseStrategy):
     r"""Match DeepSeek DSML markup.
 
     Pattern::
@@ -350,13 +350,13 @@ class ToolCallParser:
     formats) are not deduplicated — the caller should handle that.
     """
 
-    def __init__(self, strategies: list[ParseStrategy] | None = None) -> None:
-        self.strategies: list[ParseStrategy] = strategies or [
-            JSONInlineStrategy(),
-            FencedBlockStrategy(),
-            ToolCallTagStrategy(),
-            XMLInvokeStrategy(),
-            DSMLStrategy(),
+    def __init__(self, strategies: list[_ParseStrategy] | None = None) -> None:
+        self.strategies: list[_ParseStrategy] = strategies or [
+            _JSONInlineStrategy(),
+            _FencedBlockStrategy(),
+            _ToolCallTagStrategy(),
+            _XMLInvokeStrategy(),
+            _DSMLStrategy(),
         ]
 
     def parse(self, text: str) -> list[ParsedToolCall]:

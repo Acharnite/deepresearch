@@ -10,23 +10,23 @@ import pytest
 def _import_parser():
     """Lazy-import parser to avoid side effects."""
     from deepresearch.tools.parser import (
-        DSMLStrategy,
-        FencedBlockStrategy,
-        JSONInlineStrategy,
+        _DSMLStrategy,
+        _FencedBlockStrategy,
+        _JSONInlineStrategy,
         ParsedToolCall,
         ToolCallParser,
-        ToolCallTagStrategy,
-        XMLInvokeStrategy,
+        _ToolCallTagStrategy,
+        _XMLInvokeStrategy,
     )
 
     return {
-        "DSMLStrategy": DSMLStrategy,
-        "FencedBlockStrategy": FencedBlockStrategy,
-        "JSONInlineStrategy": JSONInlineStrategy,
+        "DSMLStrategy": _DSMLStrategy,
+        "FencedBlockStrategy": _FencedBlockStrategy,
+        "JSONInlineStrategy": _JSONInlineStrategy,
         "ParsedToolCall": ParsedToolCall,
         "ToolCallParser": ToolCallParser,
-        "ToolCallTagStrategy": ToolCallTagStrategy,
-        "XMLInvokeStrategy": XMLInvokeStrategy,
+        "ToolCallTagStrategy": _ToolCallTagStrategy,
+        "XMLInvokeStrategy": _XMLInvokeStrategy,
     }
 
 

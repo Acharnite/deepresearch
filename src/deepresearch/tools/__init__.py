@@ -12,14 +12,8 @@ from deepresearch.tools import web_search as _web_search_mod
 from deepresearch.tools.cache import SearchCache
 from deepresearch.tools.content_fetcher import fetch_page_content
 from deepresearch.tools.parser import (
-    DSMLStrategy,
-    FencedBlockStrategy,
-    JSONInlineStrategy,
-    ParseStrategy,
     ParsedToolCall,
     ToolCallParser,
-    ToolCallTagStrategy,
-    XMLInvokeStrategy,
 )
 from deepresearch.tools.registry import ToolDef, get_registry, register_tool, resolve_tool
 
@@ -35,12 +29,6 @@ __all__ = [
     "get_search_semaphore_info",
     # parser
     "ParsedToolCall",
-    "ParseStrategy",
-    "JSONInlineStrategy",
-    "FencedBlockStrategy",
-    "ToolCallTagStrategy",
-    "XMLInvokeStrategy",
-    "DSMLStrategy",
     "ToolCallParser",
     # registry
     "ToolDef",

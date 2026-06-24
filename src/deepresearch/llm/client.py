@@ -797,8 +797,6 @@ class LLMClient:
         Parses SSE chunks from the streaming response and yields text via callback.
         Falls back to reasoning_content for reasoning models.
         """
-        import json as _json
-
         is_ollama = self.provider == "ollama"
         model_name = self.actual_model
         if "/" in model_name and not model_name.startswith("http"):
@@ -854,8 +852,8 @@ class LLMClient:
                         if data_str == "[DONE]":
                             break
                         try:
-                            chunk = _json.loads(data_str)
-                        except _json.JSONDecodeError:
+                            chunk = json.loads(data_str)
+                        except json.JSONDecodeError:
                             continue
 
                         if is_ollama:
@@ -1117,7 +1115,6 @@ class LLMClient:
             # avoid LiteLLM bugs with Ollama and other local providers.
             if not use_text_parsing and self._is_local_backend():
                 logger.warning("generate_with_tools: using direct HTTP for %s", self.provider)
-                import json as _json
 
                 data = await self._local_backend_request(
                     messages, temperature, effective_max_tokens, stream=False, tools=tools
@@ -1138,7 +1135,7 @@ class LLMClient:
                         tool_calls[idx] = (
                             f"call_{idx}",
                             fn_info.get("name", ""),
-                            _json.dumps(fn_info.get("arguments", {})),
+                            json.dumps(fn_info.get("arguments", {})),
                         )
                 else:
                     choice = data.get("choices", [{}])[0]
@@ -1288,8 +1285,6 @@ class LLMClient:
             # Handle models that output tool calls as text content
             # (e.g. local models without native function calling support)
             if not tool_calls and _round_text:
-                import json as _json
-
                 from deepresearch.tools.parser import ToolCallParser
                 from deepresearch.tools.registry import resolve_tool
 
@@ -1305,7 +1300,7 @@ class LLMClient:
                                 pc.name,
                                 pc.source,
                             )
-                            args_str = _json.dumps(pc.arguments, ensure_ascii=False)
+                            args_str = json.dumps(pc.arguments, ensure_ascii=False)
                             tool_calls.append((pc.call_id, pc.name, args_str))
                     _round_text = ""  # Not the final response — execute tool
 
@@ -1336,8 +1331,6 @@ class LLMClient:
             )
 
             # Execute tool calls
-            import json
-
             from deepresearch.tools.registry import resolve_tool
 
             for tool_id, tool_name, tool_args_str in tool_calls:

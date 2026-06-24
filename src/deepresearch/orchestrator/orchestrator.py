@@ -36,7 +36,6 @@ from deepresearch.models import (
 from deepresearch.orchestrator.round_runner import RoundRunner
 from deepresearch.orchestrator.scribe_compiler import ScribeCompiler
 from deepresearch.orchestrator.session_state import SessionState
-from deepresearch.orchestrator.timeout_calculator import TimeoutCalculator
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -82,7 +81,6 @@ class Orchestrator:
         self._pdf_underweight: bool = False
 
         # ── Collaborators ────────────────────────────────────────────
-        self.timeout_calc = TimeoutCalculator(self.session_config)
         self.state_tracker = SessionState("", None)
         self.round_runner = RoundRunner(self, self._event_bus)
         self.scribe_comp = ScribeCompiler(self, self._prompt)
@@ -123,7 +121,18 @@ class Orchestrator:
     # ------------------------------------------------------------------
 
     def _get_round_timeout(self) -> int:
-        return self.timeout_calc.get_round_timeout()
+        """Per-agent timeout: scribe gets 40% (min 120s), agents split 60%."""
+        if self.session_config is None:
+            return 120
+        if hasattr(self.session_config, "budget"):
+            b = self.session_config.budget.seconds
+            m = self.session_config.budget.max_rounds
+        else:
+            b = self.session_config.time_budget_seconds
+            m = self.session_config.max_rounds
+        scribe_budget = max(120, int(b * 0.40))
+        agent_budget = b - scribe_budget
+        return max(300, int(agent_budget / m))
 
     async def run_round(
         self,
@@ -186,7 +195,6 @@ class Orchestrator:
         from deepresearch.orchestrator.config import configure as _configure_impl
 
         config = await _configure_impl(self, topic_str, **overrides)
-        self.timeout_calc._config = config
         self.state_tracker.topic = config.topic
         return config
 

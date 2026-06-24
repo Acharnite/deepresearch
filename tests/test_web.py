@@ -228,8 +228,6 @@ class TestDashboardEndpoints:
             "/api/sessions/{session_id}/events",
             "/api/sessions/{session_id}/cancel",
             "/api/sessions/clear-completed",
-            "/api/session",
-            "/api/cancel",
             "/api/profiles",
             "/api/models",
             "/api/download/{session_id}/{filename:path}",
@@ -362,19 +360,6 @@ class TestSessionEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
-
-    def test_legacy_session_endpoint(self, client: TestClient) -> None:
-        """GET /api/session returns status (backward compat)."""
-        resp = client.get("/api/session")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "status" in data
-
-    def test_legacy_cancel_endpoint(self, client: TestClient) -> None:
-        """POST /api/cancel returns status (backward compat)."""
-        resp = client.post("/api/cancel")
-        assert resp.status_code == 200
-        assert "status" in resp.json()
 
     @pytest.mark.asyncio
     async def test_cancel_event_in_session(self):
@@ -636,66 +621,6 @@ class TestMultiSessionManager:
 
 
 # ─── SessionManager Unit Tests (legacy compat) ──────────────────────────
-
-
-class TestSessionManager:
-    """SessionManager legacy compatibility tests."""
-
-    @pytest.mark.asyncio
-    async def test_properties(self) -> None:
-        """SessionManager properties reflect initial idle state."""
-        from deepresearch.web.session_manager import SessionManager
-
-        sm = SessionManager()
-        assert sm.status == "idle"
-        assert sm.is_running is False
-        assert sm.result is None
-
-    @pytest.mark.asyncio
-    async def test_start_stop_lifecycle(self) -> None:
-        """Starting a session sets status to running; cancel returns to idle."""
-        from deepresearch.web.session_manager import SessionManager
-
-        sm = SessionManager()
-        assert sm.status == "idle"
-
-        result = await sm.start_session(
-            topic="Test topic",
-            time_budget="quick",
-            model_mode="same",
-        )
-        assert result["status"] == "started"
-        assert sm.status == "running"
-        assert sm.is_running is True
-
-        cancel_result = await sm.cancel_session()
-        assert cancel_result["status"] == "cancelled"
-
-        await asyncio.sleep(0.1)
-        assert sm.status == "idle"
-
-    @pytest.mark.asyncio
-    async def test_raises_if_already_running(self) -> None:
-        """Starting a second session while one is running raises RuntimeError."""
-        from deepresearch.web.session_manager import SessionManager
-
-        sm = SessionManager()
-        await sm.start_session(topic="First", time_budget="quick")
-
-        with pytest.raises(RuntimeError, match="already running"):
-            await sm.start_session(topic="Second")
-
-        await sm.cancel_session()
-        await asyncio.sleep(0.1)
-
-    @pytest.mark.asyncio
-    async def test_cancel_when_idle(self) -> None:
-        """Cancelling without an active session returns no_active_session."""
-        from deepresearch.web.session_manager import SessionManager
-
-        sm = SessionManager()
-        result = await sm.cancel_session()
-        assert result["status"] == "no_active_session"
 
 
 # ─── SettingsManager Unit Tests ─────────────────────────────────────────

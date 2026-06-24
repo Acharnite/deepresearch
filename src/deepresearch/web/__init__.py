@@ -7,7 +7,6 @@ from deepresearch.web.sessions import (
     SessionInfo,
     multi_session_manager,
 )
-from deepresearch.web.session_manager import SessionManager, session_manager
 from deepresearch.web.settings_manager import SettingsManager, settings_manager
 from deepresearch.web.state import update_status
 
@@ -18,8 +17,6 @@ __all__ = [
     "SessionInfo",
     "multi_session_manager",
     "app",
-    "SessionManager",
-    "session_manager",
     "SettingsManager",
     "settings_manager",
     "update_status",
