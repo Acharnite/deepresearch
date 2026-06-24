@@ -8,10 +8,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-# Save reference to real SearchChain.search before conftest autouse fixture patches it
-from deepresearch.tools.search_chain import SearchChain as _SearchChain
-_REAL_SEARCH_CHAIN_SEARCH = _SearchChain.search
-
 
 # List of all provider modules to test
 PROVIDER_MODULES = [
@@ -298,12 +294,6 @@ class TestProviderTimeFilters:
 
 class TestSearchChain:
     """SearchChain — multi-provider fallback chain."""
-
-    @pytest.fixture(autouse=True)
-    def _unpatch_search(self) -> None:
-        """Override conftest autouse fixture that mocks SearchChain.search."""
-        _SearchChain.search = _REAL_SEARCH_CHAIN_SEARCH
-        yield
 
     @pytest.mark.asyncio
     async def test_chain_returns_results_from_first_working_provider(self) -> None:

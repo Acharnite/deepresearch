@@ -465,6 +465,7 @@ class TestSettingsEndpoints:
 # ─── MultiSessionManager Unit Tests ─────────────────────────────────────
 
 
+@pytest.mark.usefixtures("mock_llm_client")
 class TestMultiSessionManager:
     """MultiSessionManager create/list/cancel/cleanup unit tests."""
 

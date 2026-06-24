@@ -11,12 +11,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture()
 def mock_llm_client() -> None:
-    """Mock LLMClient.generate to return 'ok' for all tests.
+    """Mock LLMClient.generate to return 'ok'.
 
     This prevents the model connectivity check (added in create_session)
-    from making real API calls. The mock applies to all tests automatically.
+    from making real API calls. Tests that need this mock must request it
+    explicitly via fixture parameter or @pytest.mark.usefixtures.
     """
     with patch(
         "deepresearch.llm.client.LLMClient.generate", new_callable=AsyncMock
@@ -25,9 +26,13 @@ def mock_llm_client() -> None:
         yield
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture()
 def mock_searxng():
-    """Autouse fixture that patches SearchChain so tests don't call real providers."""
+    """Fixture that patches SearchChain.search so tests don't call real providers.
+
+    Tests that need this mock must request it explicitly via fixture parameter
+    or @pytest.mark.usefixtures.
+    """
     from deepresearch.tools.search_chain import SearchChain
 
     with patch.object(SearchChain, "search", new_callable=AsyncMock) as mock_search:

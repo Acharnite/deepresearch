@@ -33,11 +33,38 @@ def _reset_llamacpp_globals():
     """Reset llamacpp global state to prevent cross-test leakage."""
     import deepresearch.web.server as srv
 
+    # Save originals — use getattr with sentinel for globals that may not exist
+    _SENTINEL = object()
+    orig_process = getattr(srv, "_llamacpp_process", _SENTINEL)
+    orig_config = getattr(srv, "_llamacpp_config", _SENTINEL)
+    orig_shutting_down = getattr(srv, "_llamacpp_shutting_down", _SENTINEL)
+    orig_serving = getattr(srv, "_llamacpp_serving_model", _SENTINEL)
+    orig_detected = getattr(srv, "_llamacpp_detected", _SENTINEL)
+    orig_last = getattr(srv, "_llamacpp_last_model", _SENTINEL)
+
+    # Set known test state
     srv._llamacpp_process = None
     srv._llamacpp_config = {"port": 8080, "installed": False, "gpu_layers": 0, "context_size": 8192, "flash_attn": False}
     srv._llamacpp_shutting_down = False
     srv._llamacpp_serving_model = None
+    if orig_detected is not _SENTINEL:
+        srv._llamacpp_detected = False
+    if orig_last is not _SENTINEL:
+        srv._llamacpp_last_model = None
     yield
+    # Restore originals (not None — the actual original values)
+    if orig_process is not _SENTINEL:
+        srv._llamacpp_process = orig_process
+    if orig_config is not _SENTINEL:
+        srv._llamacpp_config = orig_config
+    if orig_shutting_down is not _SENTINEL:
+        srv._llamacpp_shutting_down = orig_shutting_down
+    if orig_serving is not _SENTINEL:
+        srv._llamacpp_serving_model = orig_serving
+    if orig_detected is not _SENTINEL:
+        srv._llamacpp_detected = orig_detected
+    if orig_last is not _SENTINEL:
+        srv._llamacpp_last_model = orig_last
     # Clean up any address set by start/serve endpoints
     from deepresearch.web.settings_manager import local_backend_manager
     overrides = local_backend_manager._load()
