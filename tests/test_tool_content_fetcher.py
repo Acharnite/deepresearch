@@ -22,6 +22,8 @@ def _import_fetcher():
 
 # ponytail: inline httpx mocks for readability — each test owns its response data.
 # Ceiling: 14+ repetitions. Upgrade path: extract to conftest fixture when 20+.
+# NOTE: Mocking httpx.AsyncClient.get (class-level) works because Python binds
+# `self` as the first arg, which the side_effect functions ignore.
 
 
 class TestContentFetcher:

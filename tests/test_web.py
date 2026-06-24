@@ -274,6 +274,7 @@ class TestDashboardEndpoints:
         """GET /api/sessions/{id}/state returns current session state."""
         resp = client.get("/api/sessions/nonexistent/state")
         assert resp.status_code == 404
+        assert "Session not found" in resp.json()["error"]
 
         resp = client.post(
             "/api/run",
@@ -333,6 +334,9 @@ class TestSessionEndpoints:
         """POST /api/run without topic returns validation error."""
         resp = client.post("/api/run", json={"time_budget": "quick"})
         assert resp.status_code == 422
+        # FastAPI validation error returns detail array
+        data = resp.json()
+        assert "detail" in data
 
     def test_list_sessions_endpoint(self, client: TestClient) -> None:
         """GET /api/sessions returns a dict with sessions, total, offset, limit."""
@@ -348,6 +352,7 @@ class TestSessionEndpoints:
         """GET /api/sessions/{id} with unknown id returns 404."""
         resp = client.get("/api/sessions/unknown123")
         assert resp.status_code == 404
+        assert "Session not found" in resp.json()["error"]
 
     def test_cancel_session_not_found(self, client: TestClient) -> None:
         """POST /api/sessions/{id}/cancel with unknown id."""
@@ -411,6 +416,7 @@ class TestSettingsEndpoints:
             json={"provider": "nonexistent_provider", "key": "sk-test"},
         )
         assert resp.status_code == 400
+        assert "error" in resp.json()
 
     def test_settings_set_and_delete_key(self, client: TestClient) -> None:
         """POST then DELETE /api/settings/keys round-trips."""

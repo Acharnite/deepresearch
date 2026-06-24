@@ -22,6 +22,41 @@ from deepresearch.web.server import app
 from tests.conftest import get_all_paths
 
 
+# ─── SSE Helpers ────────────────────────────────────────────────────────────
+
+
+def _parse_sse_events(body: str) -> list[dict[str, str]]:
+    """Parse SSE response body into a list of event dicts.
+
+    Each dict has 'event' (type) and 'data' (raw string) keys.
+    Lines without an explicit event: get event='message' per SSE spec.
+    """
+    events: list[dict[str, str]] = []
+    current_event = "message"
+    current_data_lines: list[str] = []
+    for line in body.splitlines():
+        if line.startswith("event:"):
+            current_event = line[len("event:"):].strip()
+        elif line.startswith("data:"):
+            current_data_lines.append(line[len("data:"):].strip())
+        elif line == "":
+            # Blank line = end of event
+            if current_data_lines:
+                events.append({
+                    "event": current_event,
+                    "data": "\n".join(current_data_lines),
+                })
+            current_event = "message"
+            current_data_lines = []
+    # Flush last event if body doesn't end with blank line
+    if current_data_lines:
+        events.append({
+            "event": current_event,
+            "data": "\n".join(current_data_lines),
+        })
+    return events
+
+
 @pytest.fixture
 def client() -> TestClient:
     """Return a TestClient bound to the FastAPI app."""
@@ -440,6 +475,7 @@ class TestLlamaCppInstallEndpoint:
 
     def test_install_already_installed(self, client: TestClient) -> None:
         """POST /install returns error SSE event when already installed."""
+        import json
         from unittest.mock import patch
 
         with patch("shutil.which", return_value="/usr/bin/llama-server"):
@@ -447,20 +483,13 @@ class TestLlamaCppInstallEndpoint:
             assert resp.status_code == 200
             assert resp.headers.get("content-type", "").startswith("text/event-stream")
 
-            lines = list(resp.iter_lines())
-            assert len(lines) >= 1
-            # First line should be an install_error event
-            line = lines[0]
-            if line.startswith("event: install_error"):
-                # Parse the data line that follows
-                for i, l in enumerate(lines):
-                    if l.startswith("data:"):
-                        import json
-                        data = json.loads(l[len("data:"):].strip())
-                        assert data["status"] == "error"
-                        assert "already installed" in data["message"].lower()
-                        assert data["code"] == "ALREADY_INSTALLED"
-                        break
+            events = _parse_sse_events(resp.text)
+            error_events = [e for e in events if e["event"] == "install_error"]
+            assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+            data = json.loads(error_events[0]["data"])
+            assert data["status"] == "error"
+            assert "already installed" in data["message"].lower()
+            assert data["code"] == "ALREADY_INSTALLED"
 
     def test_install_sse_events_when_not_installed(self, client: TestClient) -> None:
         """POST /install produces expected SSE event types when not installed."""
@@ -542,12 +571,8 @@ class TestLlamaCppInstallEndpoint:
             assert resp.headers.get("content-type", "").startswith("text/event-stream")
 
             # Consume the SSE stream with patches still active
-            lines = list(resp.iter_lines())
-            # Should have multiple SSE events: detect, tag, download, extract, verify, complete
-            event_types = []
-            for i, line in enumerate(lines):
-                if line.startswith("event:"):
-                    event_types.append(line[len("event:"):].strip())
+            events = _parse_sse_events(resp.text)
+            event_types = [e["event"] for e in events]
 
             assert "install_log" in event_types, f"Expected install_log events, got: {event_types}"
             # Should end with install_complete
@@ -572,18 +597,12 @@ class TestLlamaCppUninstallEndpoint:
             assert resp.status_code == 200
             assert resp.headers.get("content-type", "").startswith("text/event-stream")
 
-            lines = list(resp.iter_lines())
-            assert len(lines) >= 1
-            # Find the install_error event
-            found_error = False
-            for i, line in enumerate(lines):
-                if line.startswith("data:"):
-                    data = json.loads(line[len("data:"):].strip())
-                    if data.get("code") == "NOT_INSTALLED":
-                        found_error = True
-                        assert "not installed" in data["message"].lower()
-                        break
-            assert found_error, "Expected NOT_INSTALLED error event"
+            events = _parse_sse_events(resp.text)
+            error_events = [e for e in events if e["event"] == "install_error"]
+            assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+            data = json.loads(error_events[0]["data"])
+            assert data["code"] == "NOT_INSTALLED"
+            assert "not installed" in data["message"].lower()
 
 
 class TestLlamaCppStartEndpoint:

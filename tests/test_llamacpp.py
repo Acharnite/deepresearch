@@ -26,12 +26,47 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deepresearch.web.server import (
-    _build_llamacpp_download_url,
-    _detect_llamacpp_platform,
-    _get_latest_llamacpp_tag,
+    _build_llamacpp_download_url,  # Re-exported from routes/_helpers for backward compat
+    _detect_llamacpp_platform,  # Re-exported from routes/_helpers for backward compat
+    _get_latest_llamacpp_tag,  # Re-exported from routes/_helpers for backward compat
     app,
 )
 from tests.conftest import get_all_paths
+
+
+# ─── SSE Helpers ────────────────────────────────────────────────────────────
+
+
+def _parse_sse_events(body: str) -> list[dict[str, str]]:
+    """Parse SSE response body into a list of event dicts.
+
+    Each dict has 'event' (type) and 'data' (raw string) keys.
+    Lines without an explicit event: get event='message' per SSE spec.
+    """
+    events: list[dict[str, str]] = []
+    current_event = "message"
+    current_data_lines: list[str] = []
+    for line in body.splitlines():
+        if line.startswith("event:"):
+            current_event = line[len("event:"):].strip()
+        elif line.startswith("data:"):
+            current_data_lines.append(line[len("data:"):].strip())
+        elif line == "":
+            # Blank line = end of event
+            if current_data_lines:
+                events.append({
+                    "event": current_event,
+                    "data": "\n".join(current_data_lines),
+                })
+            current_event = "message"
+            current_data_lines = []
+    # Flush last event if body doesn't end with blank line
+    if current_data_lines:
+        events.append({
+            "event": current_event,
+            "data": "\n".join(current_data_lines),
+        })
+    return events
 
 
 # ─── Fixtures ──────────────────────────────────────────────────────────────
@@ -380,9 +415,10 @@ class TestLlamacppInstall:
             resp = client.post("/api/local-backends/llamacpp/install")
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
-        body = resp.text
-        assert "install_error" in body
-        assert "llama.cpp is already installed" in body
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert "llama.cpp is already installed" in error_events[0]["data"]
 
     def test_install_sse_events_have_progress_and_steps(self, client: TestClient):
         """Install flow produces SSE events with step, progress, and message fields."""
@@ -447,13 +483,19 @@ class TestLlamacppInstall:
 
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
-        body = resp.text
-        assert "install_log" in body
-        assert "install_complete" in body
-        assert "b9999" in body
-        assert "success" in body
+        events = _parse_sse_events(resp.text)
+        event_types = [e["event"] for e in events]
+        assert "install_log" in event_types
+        assert "install_complete" in event_types
+        # Verify at least one event has progress data
+        log_events = [e for e in events if e["event"] == "install_log"]
+        assert log_events, "Expected install_log events"
+        # Verify b9999 and success appear in the data
+        all_data = " ".join(e["data"] for e in events)
+        assert "b9999" in all_data
+        assert "success" in all_data
         # Verify progress values appear
-        assert '"progress":' in body
+        assert '"progress":' in resp.text
 
     def test_install_error_on_bad_platform(self, client: TestClient):
         """Install returns SSE error when platform is unsupported."""
@@ -465,9 +507,10 @@ class TestLlamacppInstall:
             resp = client.post("/api/local-backends/llamacpp/install")
 
         assert resp.status_code == 200
-        body = resp.text
-        assert "install_error" in body
-        assert "Unsupported platform" in body
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert "Unsupported platform" in error_events[0]["data"]
 
 
 # ─── F. Integration Tests: POST /uninstall (SSE) ──────────────────────────
@@ -482,10 +525,11 @@ class TestLlamacppUninstall:
             resp = client.post("/api/local-backends/llamacpp/uninstall")
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
-        body = resp.text
-        assert "install_error" in body
-        assert "llama.cpp is not installed" in body
-        assert "NOT_INSTALLED" in body
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert "llama.cpp is not installed" in error_events[0]["data"]
+        assert "NOT_INSTALLED" in error_events[0]["data"]
 
     def test_uninstall_installed_success(self, client: TestClient):
         """Uninstall removes binary, state dir, returns success SSE events."""
@@ -509,10 +553,15 @@ class TestLlamacppUninstall:
             resp = client.post("/api/local-backends/llamacpp/uninstall")
 
         assert resp.status_code == 200
-        body = resp.text
-        assert "install_complete" in body
-        assert '"status": "success"' in body
-        assert "uninstalled" in body.lower()
+        events = _parse_sse_events(resp.text)
+        event_types = [e["event"] for e in events]
+        assert "install_complete" in event_types
+        # Verify the success status in the data
+        complete_events = [e for e in events if e["event"] == "install_complete"]
+        assert complete_events
+        all_data = " ".join(e["data"] for e in events)
+        assert "success" in all_data
+        assert "uninstalled" in all_data.lower()
 
     def test_uninstall_stops_running_process_first(self, client: TestClient):
         """Uninstall terminates a running process before removing binary."""
@@ -909,9 +958,10 @@ class TestLlamacppServe:
                 json={"model": "test.gguf"},
             )
         assert resp.status_code == 200
-        body = resp.text
-        assert "install_error" in body
-        assert "not installed" in body.lower()
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert "not installed" in error_events[0]["data"].lower()
 
     def test_serve_no_model_returns_error(self, client: TestClient):
         """Returns SSE error when no model is specified."""
@@ -921,9 +971,10 @@ class TestLlamacppServe:
                 json={"model": ""},
             )
         assert resp.status_code == 200
-        body = resp.text
-        assert "install_error" in body
-        assert "no model" in body.lower()
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert "no model" in error_events[0]["data"].lower()
 
     def test_serve_model_not_found_returns_error(self, client: TestClient):
         """Returns SSE error when model file does not exist."""
@@ -937,9 +988,10 @@ class TestLlamacppServe:
                 json={"model": "nonexistent.gguf"},
             )
         assert resp.status_code == 200
-        body = resp.text
-        assert "install_error" in body
-        assert "not found" in body.lower()
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert "not found" in error_events[0]["data"].lower()
 
     def test_serve_stops_existing_process(self, client: TestClient):
         """Stops existing process before starting new one."""
@@ -1236,9 +1288,10 @@ class TestLlamacppServePhase2:
                 json={},  # no model field
             )
         assert resp.status_code == 200
-        body = resp.text
-        assert "install_error" in body
-        assert "no model" in body.lower()
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert "no model" in error_events[0]["data"].lower()
 
     def test_serve_model_not_found_returns_error(self, client: TestClient):
         """Nonexistent .gguf file returns SSE error."""
@@ -1252,9 +1305,10 @@ class TestLlamacppServePhase2:
                 json={"model": "nonexistent.gguf"},
             )
         assert resp.status_code == 200
-        body = resp.text
-        assert "install_error" in body
-        assert "not found" in body.lower()
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert "not found" in error_events[0]["data"].lower()
 
     def test_serve_starts_with_m_flag(self, client: TestClient):
         """Subprocess starts with -m <path>."""
@@ -1411,9 +1465,10 @@ class TestLlamacppServePhase2:
             )
         assert resp.status_code == 200
         assert resp.headers["content-type"].startswith("text/event-stream")
-        # Verify that SSE events contain progress data (generic check)
-        body = resp.text
-        assert "install_log" in body or "install_complete" in body
+        # Verify that SSE events contain progress data via structured parsing
+        events = _parse_sse_events(resp.text)
+        event_types = [e["event"] for e in events]
+        assert "install_log" in event_types or "install_complete" in event_types
 
     def test_serve_port_conflict_returns_error(self, client: TestClient):
         """Port already in use returns SSE error."""
@@ -1428,10 +1483,11 @@ class TestLlamacppServePhase2:
                 json={"model": "/path/to/model.gguf"},
             )
         assert resp.status_code == 200
-        body = resp.text
-        assert "install_error" in body
-        assert "port" in body.lower()
-        assert "already in use" in body.lower()
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert "port" in error_events[0]["data"].lower()
+        assert "already in use" in error_events[0]["data"].lower()
 
 
 # ─── R. Phase 2: Config Endpoint — additional tests ────────────────────────
