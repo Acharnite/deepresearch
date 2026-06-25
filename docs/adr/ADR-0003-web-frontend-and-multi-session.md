@@ -12,8 +12,8 @@ phase:
 
 Accepted
 
-**Version:** 1.3
-**Last Updated:** 2026-06-14
+**Version:** 1.4
+**Last Updated:** 2026-06-25
 
 ## Context
 
@@ -165,6 +165,10 @@ Two complementary logging systems were added for observability:
 - **Root logger:** The handler is added to the root logger, so all child loggers benefit
 - Auto-created on server start — directory and file created if absent
 
+> Enhancement (2026-06-25): Per-session log files were added. Each session now
+> writes its own `logs/session-<session_id>.log` alongside the global log.
+> See `observability/session_logging.py`.
+
 #### 2. In-Memory System Log Buffer (`/api/system/log`)
 - **Handler:** `SystemLogHandler` — a custom `logging.Handler` that captures log records into an in-memory list
 - **Buffer:** `SYSTEM_LOG` list, max 500 entries
@@ -210,6 +214,7 @@ Before a session starts, `MultiSessionManager.create_session()` runs a connectiv
 12. **Live agent streaming** — per-agent text output panels show real-time LLM generation
 13. **File-based logging** — persistent DEBUG logs survive server restarts
 14. **System Log tab** — in-browser log viewer for debugging without terminal access
+15. **Per-session log files** — each session has its own dedicated log file for debugging without interleaving
 
 ### Negative
 1. In-memory sessions: lost on server restart (acceptable for v1.0)
@@ -231,6 +236,7 @@ Before a session starts, `MultiSessionManager.create_session()` runs a connectiv
 6. Delete confirmation dialog prevents accidental session removal
 7. Event history trimmed to 500 entries — recent history always available, oldest events are lost
 8. System log buffer is in-memory (500 entries) — lost on server restart, distinct from file-based logging
+9. **Per-session log files consume disk space** — each session creates a separate log file that persists after the session ends; cleanup is manual
 
 ## Related Issues
 - #52 (Q&A Graph — Interactive visualization): Extends the frontend with a real-time SVG interaction graph showing agent-scribe communication flow.

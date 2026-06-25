@@ -1,8 +1,8 @@
 # DeepeResearch — Design Document
-**Version:** 1.5
+**Version:** 1.6
 **Status:** Active
 **Design Authority:** Architects
-**Last Updated:** 2026-06-20
+**Last Updated:** 2026-06-25
 
 ## 1. Purpose & Scope
 
@@ -651,6 +651,24 @@ class SessionEvent:
     agent_id: str | None = None
     details: dict[str, Any] = field(default_factory=dict)
 ```
+
+### 6.5 Per-Session File Logging
+
+Each session automatically gets its own log file at `logs/session-<session_id>.log`
+for isolated debugging. This supplements the global `logs/deepresearch.log`.
+
+- **Setup:** `observability/session_logging.py` — wired into
+  `MultiSessionManager._run_session()`
+- **File path:** `logs/session-<session_id>.log` (same directory as global log)
+- **Format:** `2026-06-25 20:30:00 [DEBUG] deepresearch.orchestrator [a1b2c3d4]: message`
+- **Level:** DEBUG — captures all `deepresearch.*` logger activity for that session
+- **Scope:** All loggers under the `deepresearch.*` namespace write to the per-session
+  file while the session is active
+- **Lifecycle:** Created when session status changes to `running`, torn down in
+  `finally` block (survives errors and cancellations)
+- **Safety:** Failure to create the log file is caught gracefully — the session
+  continues without per-session logging. Concurrent sessions each get their own
+  independent log file.
 
 ## 7. Implementation Plan
 
