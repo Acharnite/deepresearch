@@ -294,6 +294,21 @@ class MultiSessionManager:
         info = self._sessions[session_id]
         info.status = "running"
 
+        # ── Per-session log file ──────────────────────────────────────────
+        _session_log_handler: logging.Handler | None = None
+        try:
+            from deepresearch.observability.session_logging import (
+                setup_session_logging,
+            )
+
+            _session_log_handler = setup_session_logging(session_id, info.topic)
+        except Exception:
+            logger.warning(
+                "Failed to create per-session log for %s (continuing anyway)",
+                session_id,
+                exc_info=True,
+            )
+
         # Semaphore is already acquired by the server handler before
         # create_session() returns. Only release happens here (in finally).
 
@@ -476,6 +491,21 @@ class MultiSessionManager:
             )
 
         finally:
+            # ── Tear down per-session log file ────────────────────────────
+            if _session_log_handler is not None:
+                try:
+                    from deepresearch.observability.session_logging import (
+                        teardown_session_logging,
+                    )
+
+                    teardown_session_logging(_session_log_handler)
+                except Exception:
+                    logger.warning(
+                        "Failed to tear down per-session log for %s",
+                        session_id,
+                        exc_info=True,
+                    )
+
             self._cancel_events.pop(session_id, None)
             # Release concurrency semaphore if held.
             if semaphore is not None:
