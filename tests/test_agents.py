@@ -1,4 +1,4 @@
-"""Tests for DeepeResearch agents (Phase 3).
+"""Tests for DeepResearch agents (Phase 3).
 
 Covers:
   - BaseAgent abstract methods enforce NotImplementedError

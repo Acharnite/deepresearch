@@ -1,4 +1,4 @@
-"""Shared web server state for the DeepeResearch dashboard.
+"""Shared web server state for the DeepResearch dashboard.
 
 Holds the global status variables and the ``update_status`` helper
 that both ``server.py`` and ``session_manager.py`` need to import.

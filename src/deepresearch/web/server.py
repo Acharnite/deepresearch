@@ -1,4 +1,4 @@
-"""FastAPI web server for the DeepeResearch real-time dashboard.
+"""FastAPI web server for the DeepResearch real-time dashboard.
 
 Thin wiring layer — all route handlers live in ``routes/`` submodules.
 This file creates the FastAPI app, configures middleware, mounts static
@@ -122,7 +122,7 @@ async def _lifespan(app: FastAPI):
             logger.warning("llama.cpp killed (force)")
 
 
-app = FastAPI(title="DeepeResearch Dashboard", lifespan=_lifespan)
+app = FastAPI(title="DeepResearch Dashboard", lifespan=_lifespan)
 
 # ── Serve static files ─────────────────────────────────────────────────
 HERE = Path(__file__).resolve().parent
@@ -130,7 +130,7 @@ STATIC_DIR = HERE / "static"
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 logger.info(
-    "DeepeResearch %s starting on port %d",
+    "DeepResearch %s starting on port %d",
     VERSION,
     int(__import__("os").environ.get("PORT", 7500)),
 )

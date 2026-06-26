@@ -1,4 +1,4 @@
-"""Web search tool for DeepeResearch agents.
+"""Web search tool for DeepResearch agents.
 
 Refactored per ADR-0017.  Delegates to ``SearchChain`` for multi-provider
 fallback and wires in content fetching, caching, and time filter

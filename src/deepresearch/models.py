@@ -1,4 +1,4 @@
-"""Pydantic v2 data models for DeepeResearch."""
+"""Pydantic v2 data models for DeepResearch."""
 
 from datetime import datetime
 from typing import Literal

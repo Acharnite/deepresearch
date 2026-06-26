@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from deepresearch.web.settings_manager import (
@@ -70,10 +70,10 @@ async def set_settings_key(req: SetKeyRequest) -> JSONResponse:
 
 
 @router.delete("/settings/keys/{provider}")
-async def delete_settings_key(provider: str) -> JSONResponse:
+async def delete_settings_key(provider: str) -> Response:
     """Remove an API key for a provider."""
     settings_manager.delete_key(provider)
-    return JSONResponse({"status": "ok", "provider": provider})
+    return Response(status_code=204)
 
 
 @router.get("/settings/local-models")
@@ -119,10 +119,10 @@ async def add_local_endpoint(req: AddEndpointRequest) -> JSONResponse:
 
 
 @router.delete("/settings/local-endpoints/{name}")
-async def remove_local_endpoint(name: str) -> JSONResponse:
+async def remove_local_endpoint(name: str) -> Response:
     """Remove a saved local endpoint by name."""
     settings_manager.remove_local_endpoint(name)
-    return JSONResponse({"status": "ok", "name": name})
+    return Response(status_code=204)
 
 
 @router.post("/settings/local-endpoints/{name}/test")
@@ -176,10 +176,10 @@ async def set_scribe_model(req: ScribeModelRequest) -> JSONResponse:
 
 
 @router.delete("/settings/scribe-model")
-async def delete_scribe_model() -> JSONResponse:
+async def delete_scribe_model() -> Response:
     """Remove the scribe model setting."""
     settings_manager.delete_scribe_model()
-    return JSONResponse({"status": "ok"})
+    return Response(status_code=204)
 
 
 @router.get("/settings/max-tokens")
@@ -224,11 +224,11 @@ async def set_context_window(req: ContextWindowRequest) -> JSONResponse:
 
 
 @router.delete("/config/context/{model_id:path}")
-async def delete_context_window(model_id: str) -> JSONResponse:
+async def delete_context_window(model_id: str) -> Response:
     """Remove a context window override for a model."""
     removed = context_window_manager.delete_override(model_id)
     if removed:
-        return JSONResponse({"status": "ok", "model_id": model_id})
+        return Response(status_code=204)
     return JSONResponse(
         {"error": f"No override found for '{model_id}'"}, status_code=404
     )

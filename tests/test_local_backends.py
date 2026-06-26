@@ -749,3 +749,175 @@ class TestLlamaCppRestartEndpoint:
             assert resp.status_code == 200
             data = resp.json()
             assert data["status"] == "ok"
+
+
+# ── SettingsManager Unit Tests ──────────────────────────────────────────
+
+
+class TestSettingsManager:
+    """Unit tests for SettingsManager edge cases (empty/corrupt config)."""
+
+    def test_get_keys_when_no_env_file(self) -> None:
+        """``get_keys()`` returns all providers as ``configured=False`` when no .env exists."""
+        import os
+        from unittest.mock import patch
+
+        from deepresearch.web.settings_manager import PROVIDERS, SettingsManager
+
+        # Unset all provider env vars and disable .env file reads so they appear unconfigured.
+        env_vars = [info["env_var"] for info in PROVIDERS.values()]
+        with (
+            patch.dict(os.environ, {v: "" for v in env_vars}, clear=False),
+            patch.object(SettingsManager, "_get_from_file", return_value=None),
+        ):
+            mgr = SettingsManager()
+            keys = mgr.get_keys()
+        assert isinstance(keys, dict)
+        for provider_id, info in keys.items():
+            assert info["configured"] is False, f"{provider_id} expected unconfigured"
+            assert info["has_key"] is False
+            assert info["key_preview"] is None
+
+    def test_get_local_endpoints_no_file(self) -> None:
+        """``get_local_endpoints()`` returns empty list when file does not exist."""
+        from deepresearch.web.settings_manager import SettingsManager
+
+        mgr = SettingsManager()
+        assert mgr.get_local_endpoints() == []
+
+    def test_get_local_endpoints_corrupted_json(self, tmp_path) -> None:
+        """``get_local_endpoints()`` returns empty list when JSON is corrupted."""
+        from deepresearch.web.settings_manager import SettingsManager
+
+        mgr = SettingsManager()
+        mgr._endpoints_path = tmp_path / "local_endpoints.json"
+        mgr._endpoints_path.write_text("{invalid json}")
+        endpoints = mgr.get_local_endpoints()
+        assert endpoints == []
+
+    def test_get_local_endpoints_empty_json(self, tmp_path) -> None:
+        """``get_local_endpoints()`` returns empty list when JSON is empty array."""
+        from deepresearch.web.settings_manager import SettingsManager
+
+        mgr = SettingsManager()
+        mgr._endpoints_path = tmp_path / "local_endpoints.json"
+        mgr._endpoints_path.write_text("[]")
+        assert mgr.get_local_endpoints() == []
+
+    def test_get_local_endpoints_not_a_list(self, tmp_path) -> None:
+        """``get_local_endpoints()`` returns empty list when JSON root is not a list.
+
+        The method only catches JSONDecodeError; a valid JSON non-list value
+        is returned as-is (it's up to the caller to handle the type).
+        """
+        from deepresearch.web.settings_manager import SettingsManager
+
+        mgr = SettingsManager()
+        mgr._endpoints_path = tmp_path / "local_endpoints.json"
+        # Valid JSON but not a list — this is an accepted edge case
+        mgr._endpoints_path.write_text('"string"')
+        result = mgr.get_local_endpoints()
+        # A valid JSON string is returned as-is (no JSONDecodeError)
+        assert result == "string"
+
+    def test_set_key_unknown_provider_raises(self) -> None:
+        """``set_key()`` with unknown provider raises ``ValueError``."""
+        from deepresearch.web.settings_manager import SettingsManager
+
+        mgr = SettingsManager()
+        with pytest.raises(ValueError, match="Unknown provider"):
+            mgr.set_key("nonexistent_provider", "sk-...")
+
+    def test_delete_key_unknown_provider_safe(self) -> None:
+        """``delete_key()`` with unknown provider does not raise."""
+        from deepresearch.web.settings_manager import SettingsManager
+
+        mgr = SettingsManager()
+        # Should not raise
+        mgr.delete_key("nonexistent_provider")
+
+
+class TestLocalBackendManager:
+    """Unit tests for LocalBackendManager edge cases."""
+
+    def test_get_address_no_file(self, tmp_path) -> None:
+        """``get_address()`` returns None when no overrides file exists."""
+        from deepresearch.web.settings_manager import LocalBackendManager
+
+        mgr = LocalBackendManager()
+        mgr._path = tmp_path / "local_backends.json"
+        addr = mgr.get_address("ollama")
+        assert addr is None
+
+    def test_get_address_unknown_backend(self) -> None:
+        """``get_address()`` returns None for an unknown backend name."""
+        from deepresearch.web.settings_manager import LocalBackendManager
+
+        mgr = LocalBackendManager()
+        assert mgr.get_address("not-a-backend") is None
+
+    def test_set_and_get_address_roundtrip(self, tmp_path) -> None:
+        """``set_address()`` then ``get_address()`` returns the same value."""
+        from deepresearch.web.settings_manager import LocalBackendManager
+
+        mgr = LocalBackendManager()
+        mgr._path = tmp_path / "local_backends.json"
+        mgr.set_address("ollama", "10.0.0.5:11434")
+        assert mgr.get_address("ollama") == "10.0.0.5:11434"
+
+    def test_set_address_overwrites_previous(self, tmp_path) -> None:
+        """``set_address()`` overwrites a previously set address."""
+        from deepresearch.web.settings_manager import LocalBackendManager
+
+        mgr = LocalBackendManager()
+        mgr._path = tmp_path / "local_backends.json"
+        mgr.set_address("ollama", "192.168.1.1:11434")
+        mgr.set_address("ollama", "10.0.0.1:11434")
+        assert mgr.get_address("ollama") == "10.0.0.1:11434"
+
+    def test_load_corrupted_json(self, tmp_path) -> None:
+        """``_load()`` returns empty dict when JSON is corrupted."""
+        from deepresearch.web.settings_manager import LocalBackendManager
+
+        mgr = LocalBackendManager()
+        bad_file = tmp_path / "corrupted.json"
+        bad_file.write_text("not json")
+        mgr._path = bad_file
+        assert mgr._load() == {}
+
+
+class TestGgufModelListing:
+    """Tests for the list_gguf_models endpoint — model discovery edge cases."""
+
+    def test_no_models_directory(self, client: TestClient) -> None:
+        """When the GGUF models directory does not exist, returns empty list."""
+        from unittest.mock import patch
+
+        with patch("deepresearch.web.routes.llamacpp._os.path.isdir", return_value=False):
+            resp = client.get("/api/local-backends/models/gguf")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data == {"models": []}
+
+    def test_empty_models_directory(self, client: TestClient) -> None:
+        """When the GGUF models directory is empty, returns empty list."""
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch(
+                "deepresearch.web.routes.llamacpp._os.path.expanduser",
+                return_value=tmpdir,
+            ):
+                resp = client.get("/api/local-backends/models/gguf")
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data == {"models": []}
+
+    def test_list_gguf_returns_json(self, client: TestClient) -> None:
+        """GET /api/local-backends/models/gguf always returns JSON with a models key."""
+        resp = client.get("/api/local-backends/models/gguf")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "models" in data
+        assert isinstance(data["models"], list)

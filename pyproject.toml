@@ -36,6 +36,7 @@ deepresearch = "deepresearch.main:main"
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
     "pytest-mock>=3.12",
     "ruff>=0.3.0",
 ]
@@ -61,5 +62,4 @@ filterwarnings = [
     "ignore:coroutine 'Orchestrator.run' was never awaited:RuntimeWarning",
     "ignore:coroutine 'BaseLLMHTTPHandler.acompletion_stream_function' was never awaited:RuntimeWarning",
     # Starlette deprecation — httpx2 doesn't exist yet (upstream pre-announcement)
-    "ignore::starlette.exceptions.StarletteDeprecationWarning",
 ]

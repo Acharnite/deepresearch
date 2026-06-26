@@ -1,4 +1,4 @@
-"""Tests for the DeepeResearch web dashboard.
+"""Tests for the DeepResearch web dashboard.
 
 Covers:
   - EventBus publish / subscribe / unsubscribe
@@ -280,7 +280,7 @@ class TestDashboardEndpoints:
             "/api/run",
             json={"topic": "State Test", "time_budget": "quick", "model_mode": "same"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         session_id = resp.json()["session_id"]
 
         resp = client.get(f"/api/sessions/{session_id}/state")
@@ -309,7 +309,7 @@ class TestSessionEndpoints:
                 "model_mode": "same",
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         data = resp.json()
         assert data["status"] == "started"
         assert data["session_id"] is not None
@@ -326,7 +326,7 @@ class TestSessionEndpoints:
                 "model_mode": "same",
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         data = resp.json()
         assert data["status"] == "started"
 
@@ -431,7 +431,7 @@ class TestSettingsEndpoints:
         assert data["openai"]["configured"] is True
 
         resp = client.delete("/api/settings/keys/openai")
-        assert resp.status_code == 200
+        assert resp.status_code == 204
 
         resp = client.get("/api/settings/keys")
         data = resp.json()
@@ -465,7 +465,7 @@ class TestSettingsEndpoints:
         assert resp.status_code == 200
 
         resp = client.delete("/api/settings/local-endpoints/test-llama")
-        assert resp.status_code == 200
+        assert resp.status_code == 204
 
 
 # ─── MultiSessionManager Unit Tests ─────────────────────────────────────

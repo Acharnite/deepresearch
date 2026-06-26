@@ -1,4 +1,4 @@
-"""Tests for the DeepeResearch Orchestrator.
+"""Tests for the DeepResearch Orchestrator.
 
 Covers:
   - Configuration flow (time budget, model mode selection)
@@ -30,6 +30,7 @@ from deepresearch.models import (
     SharedKnowledge,
 )
 from deepresearch.orchestrator import Orchestrator, ConfigError
+from deepresearch.orchestrator.session_state import SessionState
 
 
 # ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -968,3 +969,258 @@ async def test_refinement_survives_agent_failure(profiles, model_configs):
     assert isinstance(output_path, Path)
     assert orch.state == "COMPLETE"
     assert "agent-a" in orch.failed_agents
+
+
+# ─── Convergence Detection Tests ────────────────────────────────────────
+
+
+class TestConvergenceDetection:
+    """Tests for SessionState convergence detection (``should_continue`` & helpers)."""
+
+    # ── Helper factories ──────────────────────────────────────────
+
+    @staticmethod
+    def _make_shared(round_number: int, num_gaps: int, num_disagreements: int = 0) -> SharedKnowledge:
+        """Build a SharedKnowledge with the given gap counts."""
+        return SharedKnowledge(
+            round_number=round_number,
+            all_summaries={"a": f"Round {round_number}"},
+            key_themes=[],
+            areas_of_agreement=[],
+            areas_of_disagreement=[f"Dis {i}" for i in range(num_disagreements)],
+            knowledge_gaps=[f"Gap {i}" for i in range(num_gaps)],
+        )
+
+    @staticmethod
+    def _make_config(max_rounds: int = 5):
+        """Build a minimal session config like object."""
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            budget=SimpleNamespace(max_rounds=max_rounds),
+        )
+
+    # ── total_gaps ────────────────────────────────────────────────
+
+    def test_total_gaps_counts_both(self) -> None:
+        """``total_gaps`` sums knowledge_gaps + areas_of_disagreement."""
+        sk = self._make_shared(1, num_gaps=3, num_disagreements=2)
+        assert SessionState.total_gaps(sk) == 5
+
+    def test_total_gaps_no_gaps(self) -> None:
+        """``total_gaps`` returns 0 when both lists are empty."""
+        sk = self._make_shared(1, num_gaps=0, num_disagreements=0)
+        assert SessionState.total_gaps(sk) == 0
+
+    def test_total_gaps_only_gaps(self) -> None:
+        """``total_gaps`` counts only knowledge_gaps when disagreements is empty."""
+        sk = self._make_shared(1, num_gaps=4, num_disagreements=0)
+        assert SessionState.total_gaps(sk) == 4
+
+    def test_total_gaps_only_disagreements(self) -> None:
+        """``total_gaps`` counts only areas_of_disagreement when gaps is empty."""
+        sk = self._make_shared(1, num_gaps=0, num_disagreements=3)
+        assert SessionState.total_gaps(sk) == 3
+
+    # ── compute_gap_delta ─────────────────────────────────────────
+
+    def test_compute_gap_delta_insufficient_history(self) -> None:
+        """``compute_gap_delta`` returns -1.0 when fewer than 3 rounds."""
+        history = [self._make_shared(1, 5), self._make_shared(2, 3)]
+        assert SessionState.compute_gap_delta(history) == -1.0
+
+    def test_compute_gap_delta_single_round(self) -> None:
+        """``compute_gap_delta`` returns -1.0 with only 1 round."""
+        history = [self._make_shared(1, 5)]
+        assert SessionState.compute_gap_delta(history) == -1.0
+
+    def test_compute_gap_delta_empty_history(self) -> None:
+        """``compute_gap_delta`` returns -1.0 with empty history."""
+        assert SessionState.compute_gap_delta([]) == -1.0
+
+    def test_compute_gap_delta_gaps_decreasing(self) -> None:
+        """When gaps are decreasing, return -1.0 (continue researching)."""
+        history = [
+            self._make_shared(1, num_gaps=5),
+            self._make_shared(2, num_gaps=3),
+            self._make_shared(3, num_gaps=1),
+        ]
+        # d1 = 3-1=2, d2 = 5-3=2 → both > 0 → return -1.0
+        assert SessionState.compute_gap_delta(history) == -1.0
+
+    def test_compute_gap_delta_gaps_stagnant(self) -> None:
+        """When gaps are stagnant (not changing), return the delta (convergence)."""
+        history = [
+            self._make_shared(1, num_gaps=5),
+            self._make_shared(2, num_gaps=5),
+            self._make_shared(3, num_gaps=5),
+        ]
+        # d1 = 5-5=0, d2 = 5-5=0 → both <= 0 → return 0.0
+        assert SessionState.compute_gap_delta(history) == 0.0
+
+    def test_compute_gap_delta_gaps_increasing_then_decreasing(self) -> None:
+        """Mixed pattern: increase followed by decrease → -1.0 (not 2 consecutive non-decreasing)."""
+        history = [
+            self._make_shared(1, num_gaps=3),
+            self._make_shared(2, num_gaps=5),  # Increased
+            self._make_shared(3, num_gaps=1),  # Decreased
+        ]
+        # d1 = 5-1=4, d2 = 3-5=-2 → d1 > 0 → return -1.0
+        assert SessionState.compute_gap_delta(history) == -1.0
+
+    # ── diminishing_returns ───────────────────────────────────────
+
+    def test_diminishing_returns_insufficient_history(self) -> None:
+        """``diminishing_returns`` is False with fewer than 3 rounds."""
+        history = [self._make_shared(1, 5), self._make_shared(2, 3)]
+        assert SessionState.diminishing_returns(history) is False
+
+    def test_diminishing_returns_stagnant(self) -> None:
+        """``diminishing_returns`` True when gaps stay the same for 2 consecutive deltas."""
+        history = [
+            self._make_shared(1, num_gaps=5),
+            self._make_shared(2, num_gaps=5),
+            self._make_shared(3, num_gaps=5),
+        ]
+        assert SessionState.diminishing_returns(history) is True
+
+    def test_diminishing_returns_increasing(self) -> None:
+        """``diminishing_returns`` True when gaps keep increasing (worsening)."""
+        history = [
+            self._make_shared(1, num_gaps=2),
+            self._make_shared(2, num_gaps=4),
+            self._make_shared(3, num_gaps=6),
+        ]
+        # d1 = 4-6=-2, d2 = 2-4=-2 → both <= 0 → True
+        assert SessionState.diminishing_returns(history) is True
+
+    def test_diminishing_returns_improving(self) -> None:
+        """``diminishing_returns`` False when gaps consistently decrease."""
+        history = [
+            self._make_shared(1, num_gaps=6),
+            self._make_shared(2, num_gaps=4),
+            self._make_shared(3, num_gaps=2),
+        ]
+        # d1 = 4-2=2, d2 = 6-4=2 → both > 0 → False
+        assert SessionState.diminishing_returns(history) is False
+
+    # ── should_continue ───────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_should_continue_cancel_event_set(self) -> None:
+        """Cancel event set → stops (returns False) regardless of other conditions."""
+        import asyncio
+        import time
+
+        now = time.monotonic()
+        state = SessionState(session_id="test")
+        cancel = asyncio.Event()
+        cancel.set()
+        result = await state.should_continue(
+            cancel_event=cancel,
+            session_config=self._make_config(max_rounds=10),
+            round_num=1,
+            round_history=[],
+            start_time=now,
+        )
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_should_continue_max_rounds_reached(self) -> None:
+        """``round_num >= max_rounds`` → stops (returns False)."""
+        import time
+
+        now = time.monotonic()
+        state = SessionState(session_id="test")
+        result = await state.should_continue(
+            cancel_event=None,
+            session_config=self._make_config(max_rounds=2),
+            round_num=2,
+            round_history=[],
+            start_time=now,
+        )
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_should_continue_below_max_rounds(self) -> None:
+        """``round_num < max_rounds`` → continues (returns True) when no convergence."""
+        import time
+
+        now = time.monotonic()
+        state = SessionState(session_id="test")
+        result = await state.should_continue(
+            cancel_event=None,
+            session_config=self._make_config(max_rounds=5),
+            round_num=2,
+            round_history=[],
+            start_time=now,
+        )
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_should_continue_gap_convergence(self) -> None:
+        """Gap convergence (stagnant gaps for 2+ consecutive deltas) → stops."""
+        import time
+
+        now = time.monotonic()
+        state = SessionState(session_id="test")
+        history = [
+            self._make_shared(1, num_gaps=5),
+            self._make_shared(2, num_gaps=5),
+            self._make_shared(3, num_gaps=5),
+        ]
+        result = await state.should_continue(
+            cancel_event=None,
+            session_config=self._make_config(max_rounds=10),
+            round_num=3,
+            round_history=history,
+            start_time=now,
+        )
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_should_continue_gaps_improving(self) -> None:
+        """Gaps still decreasing → continues (returns True)."""
+        import time
+
+        now = time.monotonic()
+        state = SessionState(session_id="test")
+        history = [
+            self._make_shared(1, num_gaps=5),
+            self._make_shared(2, num_gaps=3),
+            self._make_shared(3, num_gaps=1),
+        ]
+        result = await state.should_continue(
+            cancel_event=None,
+            session_config=self._make_config(max_rounds=10),
+            round_num=3,
+            round_history=history,
+            start_time=now,
+        )
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_should_continue_insufficient_history(self) -> None:
+        """Less than 3 rounds of history → continues (need more data)."""
+        import time
+
+        now = time.monotonic()
+        state = SessionState(session_id="test")
+        history = [
+            self._make_shared(1, num_gaps=5),
+        ]
+        result = await state.should_continue(
+            cancel_event=None,
+            session_config=self._make_config(max_rounds=10),
+            round_num=1,
+            round_history=history,
+            start_time=now,
+        )
+        assert result is True
+
+    # ── converged_by_confidence (stub) ────────────────────────────
+
+    def test_converged_by_confidence_stub(self) -> None:
+        """``converged_by_confidence`` is a stub that always returns False."""
+        assert SessionState.converged_by_confidence([]) is False
+        assert SessionState.converged_by_confidence([self._make_shared(1, 0)]) is False

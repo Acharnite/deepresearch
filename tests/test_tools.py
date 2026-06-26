@@ -1,4 +1,4 @@
-"""Tests for DeepeResearch tool definitions.
+"""Tests for DeepResearch tool definitions.
 
 Covers:
   - web_search tool definition schema (WEB_SEARCH_TOOL)

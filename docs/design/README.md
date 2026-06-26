@@ -1,8 +1,8 @@
 # DeepeResearch — Design Document
-**Version:** 1.6
+**Version:** 1.8
 **Status:** Active
 **Design Authority:** Architects
-**Last Updated:** 2026-06-25
+**Last Updated:** 2026-06-26
 
 ## 1. Purpose & Scope
 
@@ -190,9 +190,11 @@ workspaces/deepresearch/
 │   └── deepresearch/
 │       ├── __init__.py
 │       ├── __main__.py              # Entry point: python -m deepresearch
-│       ├── cli.py                   # CLI argument parsing and dispatch
-│       ├── config.py                # SessionConfig, model assignment logic
-│       ├── orchestrator.py          # Orchestrator finite state machine
+│       ├── main.py                  # CLI entry point & config orchestration
+│       ├── models.py                # Core Pydantic data models
+│       ├── schemas.py               # API schemas and request/response models
+│       ├── constants.py             # Application constants
+│       ├── service_manager.py       # Service lifecycle management
 │       │
 │       ├── agents/
 │       │   ├── __init__.py
@@ -201,17 +203,39 @@ workspaces/deepresearch/
 │       │   ├── research_agent.py    # Concrete research agent implementation
 │       │   └── scribe_agent.py      # Scribe agent (compilation, PDF)
 │       │
-│       ├── models/
-│       │   ├── __init__.py
-│       │   └── schemas.py           # All Pydantic data models
-│       │
 │       ├── collaboration/
 │       │   ├── __init__.py
 │       │   └── bus.py               # CollaborationBus (in-memory)
 │       │
+│       ├── config/
+│       │   ├── __init__.py
+│       │   └── session.py           # Session configuration and validation
+│       │
 │       ├── llm/
 │       │   ├── __init__.py
-│       │   └── client.py            # LLMClient (LiteLLM wrapper)
+│       │   ├── client.py            # LLMClient (LiteLLM wrapper, provider routing)
+│       │   └── tracker.py           # Token usage tracking
+│       │
+│       ├── observability/
+│       │   ├── __init__.py
+│       │   ├── session_logging.py   # Per-session file logging
+│       │   └── tracing.py           # Distributed tracing support
+│       │
+│       ├── orchestrator/
+│       │   ├── __init__.py
+│       │   ├── config.py            # Orchestrator-specific configuration
+│       │   ├── dry_run.py           # Dry-run mode logic
+│       │   ├── orchestrator.py      # Orchestrator finite state machine
+│       │   ├── round_runner.py      # Round execution and agent management
+│       │   ├── scribe_compiler.py   # Scribe compilation orchestration
+│       │   └── session_state.py     # Session convergence state
+│       │
+│       ├── output/
+│       │   ├── __init__.py
+│       │   ├── pdf_generator.py     # PDF generation via WeasyPrint
+│       │   └── templates/
+│       │       ├── paper.html       # Jinja2 HTML template for paper
+│       │       └── styles.css       # CSS styling for PDF output
 │       │
 │       ├── prompts/
 │       │   ├── __init__.py
@@ -219,38 +243,74 @@ workspaces/deepresearch/
 │       │   ├── scribe.py            # Scribe compilation prompt templates
 │       │   └── collaboration.py     # Collaboration/sharing prompt templates
 │       │
-│       ├── templates/
-│       │   ├── paper.html            # Jinja2 HTML template for paper
-│       │   └── paper.css             # CSS styling for PDF output
-│       │
-│       ├── web/
+│       ├── tools/
 │       │   ├── __init__.py
-│       │   ├── server.py             # FastAPI server (REST + SSE)
-│       │   ├── dashboard.html        # Single-page dark-themed UI
-│       │   ├── event_bus.py          # SSE event bus
-│       │   ├── sessions.py           # MultiSessionManager, SessionInfo
-│       │   ├── session_manager.py    # Legacy singleton session manager
-│       │   ├── settings_manager.py   # API key & local endpoint management
-│       │   └── state.py              # Shared session state
+│       │   ├── cache.py             # Web search result cache (LRU)
+│       │   ├── content_fetcher.py   # Parallel web content fetching
+│       │   ├── parser.py            # Search result parsing
+│       │   ├── registry.py          # Tool/function registry
+│       │   ├── search_chain.py      # Multi-provider search chaining
+│       │   ├── time_filter.py       # Time filter auto-detection
+│       │   ├── web_search.py        # Web search orchestration
+│       │   └── providers/
+│       │       ├── __init__.py
+│       │       ├── brave.py          # Brave Search provider
+│       │       ├── duckduckgo.py     # DuckDuckGo provider
+│       │       ├── google_pse.py     # Google PSE provider
+│       │       ├── searxng.py        # SearXNG provider
+│       │       ├── serper.py         # Serper.dev provider
+│       │       └── tavily.py         # Tavily provider
 │       │
-│       └── utils/
+│       ├── utils/
+│       │   ├── __init__.py
+│       │   └── prompts.py           # Prompt template utilities
+│       │
+│       └── web/
 │           ├── __init__.py
-│           ├── token_tracker.py     # Token usage tracking
-│           └── cost_estimator.py    # Cost estimation logic
+│           ├── server.py             # FastAPI server (REST + SSE)
+│           ├── dashboard.html        # Single-page dark-themed UI
+│           ├── event_bus.py          # SSE event bus
+│           ├── sessions.py           # MultiSessionManager, SessionInfo
+│           ├── settings_manager.py   # API key & local endpoint management
+│           ├── state.py              # Shared session state
+│           ├── static/
+│           │   ├── dashboard.css     # Dashboard styling
+│           │   └── demo.html         # Demo/landing page
+│           └── routes/
+│               ├── __init__.py
+│               ├── _helpers.py        # Route helper utilities
+│               ├── backends.py        # Local backend management routes
+│               ├── llamacpp.py        # llama.cpp lifecycle routes
+│               ├── models.py          # Model discovery routes
+│               ├── search.py          # Web search routes
+│               ├── sessions.py        # Session management routes
+│               └── settings.py        # Settings management routes
 │
 ├── profiles/
 │   └── default.yaml             # Built-in agent profiles
 │
 └── tests/
     ├── conftest.py              # Shared fixtures (mock LLM, profiles)
-    ├── test_models.py           # Data model tests
-    ├── test_config.py           # Configuration loading tests
-    ├── test_orchestrator.py     # Orchestrator FSM tests
     ├── test_agents.py           # Agent execution tests
     ├── test_collaboration.py    # Collaboration bus tests
-    ├── test_scribe.py           # Scribe compilation tests
-    ├── test_prompts.py          # Prompt builder tests
-    └── test_integration.py      # End-to-end workflow tests
+    ├── test_config.py           # Configuration loading tests
+    ├── test_integration.py      # End-to-end workflow tests
+    ├── test_llamacpp.py         # llama.cpp backend lifecycle tests
+    ├── test_llm_client.py       # LLM client tests
+    ├── test_local_backends.py   # Local backend management tests
+    ├── test_models.py           # Data model tests
+    ├── test_orchestrator.py     # Orchestrator FSM tests
+    ├── test_pdf_generation.py   # PDF generation tests
+    ├── test_polish.py           # Polish phase tests
+    ├── test_system.py           # System-level tests
+    ├── test_tool_cache.py       # Tool cache tests
+    ├── test_tool_content_fetcher.py  # Content fetcher tests
+    ├── test_tool_parser.py      # Tool parser tests
+    ├── test_tool_providers.py   # Tool provider tests
+    ├── test_tool_registry.py    # Tool registry tests
+    ├── test_tools.py            # General tool tests
+    ├── test_tool_time_filter.py # Time filter tests
+    └── test_web.py              # Web dashboard & API tests
 ```
 
 ## 4. Component Design
@@ -826,7 +886,9 @@ A single test that runs the full pipeline (with mock LLM) and validates the PDF 
 | ADR-0015 | Fix JSON Parsing and Topic Drift | Accepted |
 | ADR-0016 | Epic Tracker — Code Review Handlingsplan (2026-06-17) | Accepted |
 | ADR-0017 | Enhanced Tool Calling with Multi-Provider Search | Accepted |
-| ADR-0018 | Native llama.cpp Backend — Binary Lifecycle, GGUF Serving, and LiteLLM Integration | Proposed |
+| ADR-0018 | Native llama.cpp Backend — Binary Lifecycle, GGUF Serving, and LiteLLM Integration | Accepted |
+| ADR-0019 | Frontend Reactivity Strategy | Proposed |
+| ADR-0020 | Remove llmfit Dependency — Adopt llama-server `-hf` Flag and Python Hardware Detection | Proposed |
 
 ## 10. Open Questions
 
@@ -847,6 +909,9 @@ A single test that runs the full pipeline (with mock LLM) and validates the PDF 
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.8 | 2026-06-26 | Documentation refresh: updated module structure diagram to reflect actual source layout (orchestrator/ package, web/routes/, config/, tools/providers/, observability/, output/); expanded test file list to all 22 files; fixed ADR-0018 status to Accepted; bumped VERSION to 1.6.0; added CHANGES.md entries for post-1.5.0 work. |
+| 1.7 | 2026-06-25 | Added ADR-0020 (Remove llmfit Dependency — Adopt llama-server `-hf` Flag and Python Hardware Detection) to ADR index. Backfilled ADR-0019 (Frontend Reactivity Strategy) to ADR index and ADR README. |
+| 1.6 | 2026-06-25 | Backfilled ADR-0017, ADR-0018, ADR-0019, ADR-0020 in ADR README index. |
 | 1.5 | 2026-06-20 | Added ADR-0018 (Native llama.cpp Backend) with full Component Design section (Phase 1: binary lifecycle management, 6 API endpoints, platform detection, process tracking) |
 | 1.4 | 2026-06-20 | Batch doc fixes: all 17 ADR statuses updated to Accepted in index; version bump |
 | 1.3 | 2026-06-19 | Added ADR-0017 (Enhanced Tool Calling with Multi-Provider Search) to ADR index and inline references; updated Scope to reflect web search is in scope |

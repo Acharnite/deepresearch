@@ -1,4 +1,4 @@
-"""Prompt builders for DeepeResearch.
+"""Prompt builders for DeepResearch.
 
 Provides functions to construct system and user prompts for each stage
 of the research workflow, incorporating agent personality profiles

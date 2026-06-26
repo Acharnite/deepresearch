@@ -1,4 +1,4 @@
-"""Abstract base class for all DeepeResearch agents.
+"""Abstract base class for all DeepResearch agents.
 
 Defines the contract that research agents and the scribe agent must fulfill
 across the research lifecycle.

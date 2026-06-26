@@ -128,7 +128,7 @@ def _show_dry_run_table(
     """Display dry-run preview as a Rich Table."""
     # Assignment table.
     table = Table(
-        title="DeepeResearch — Dry Run",
+        title="DeepResearch — Dry Run",
         title_style="bold cyan",
         border_style="blue",
     )

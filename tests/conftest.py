@@ -1,4 +1,4 @@
-"""Shared fixtures for the DeepeResearch test suite.
+"""Shared fixtures for the DeepResearch test suite.
 
 Patches LLMClient.generate so that the model connectivity check in
 create_session() does not attempt a real API call during tests.

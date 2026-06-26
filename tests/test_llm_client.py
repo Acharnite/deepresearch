@@ -93,6 +93,46 @@ class TestModelRouting:
         assert client.provider is None
         assert client.api_base is None
 
+    def test_openai_prefix_no_routing(self) -> None:
+        """``openai/gpt-4o`` — ``openai`` is NOT in ``PROVIDER_ROUTES`` → provider is ``None``."""
+        client = LLMClient(model="openai/gpt-4o")
+        assert client.provider is None
+
+    def test_anthropic_resolves_provider(self) -> None:
+        """``anthropic/claude-sonnet-4-20250514`` → provider = ``anthropic``."""
+        client = LLMClient(model="anthropic/claude-sonnet-4-20250514")
+        assert client.provider == "anthropic"
+
+    def test_groq_resolves_provider(self) -> None:
+        """``groq/llama3-70b`` → provider = ``groq``."""
+        client = LLMClient(model="groq/llama3-70b")
+        assert client.provider == "groq"
+
+    def test_together_resolves_provider(self) -> None:
+        """``together/llama3-70b`` → provider = ``together``."""
+        client = LLMClient(model="together/llama3-70b")
+        assert client.provider == "together"
+
+    def test_deepseek_resolves_provider(self) -> None:
+        """``deepseek/deepseek-chat`` → provider = ``deepseek``."""
+        client = LLMClient(model="deepseek/deepseek-chat")
+        assert client.provider == "deepseek"
+
+    def test_gemini_resolves_provider(self) -> None:
+        """``gemini/gemini-pro`` → provider = ``gemini``."""
+        client = LLMClient(model="gemini/gemini-pro")
+        assert client.provider == "gemini"
+
+    def test_cohere_resolves_provider(self) -> None:
+        """``cohere/command-r`` → provider = ``cohere``."""
+        client = LLMClient(model="cohere/command-r")
+        assert client.provider == "cohere"
+
+    def test_openrouter_resolves_provider(self) -> None:
+        """``openrouter/opencode/go`` → provider = ``openrouter``."""
+        client = LLMClient(model="openrouter/opencode/go")
+        assert client.provider == "openrouter"
+
     def test_opencode_endpoint_routed(self) -> None:
         """``opencode/go/deepseek-v4-flash`` is endpoint-routed with correct api_base."""
         client = LLMClient(model="opencode/go/deepseek-v4-flash")
@@ -100,6 +140,80 @@ class TestModelRouting:
         assert client.endpoint == "go"
         assert client.actual_model == "deepseek-v4-flash"
         assert client.api_base == "https://opencode.ai/zen/go/v1"
+
+    # ── Local backend flag tests ─────────────────────────────────────
+
+    def test_ollama_is_local_backend(self) -> None:
+        """``ollama/…`` models have the local_backend flag set."""
+        client = LLMClient(model="ollama/llama3.1")
+        assert client._is_local_backend() is True
+
+    def test_llama_cpp_is_local_backend(self) -> None:
+        """``llama-cpp/…`` models have the local_backend flag set."""
+        client = LLMClient(model="llama-cpp/qwen2.5-7b")
+        assert client._is_local_backend() is True
+
+    def test_vllm_is_local_backend(self) -> None:
+        """``vllm/…`` models have the local_backend flag set."""
+        with patch("deepresearch.llm.client._detect_llamacpp_address", return_value=None):
+            client = LLMClient(model="vllm/Meta-Llama-3-8B")
+            assert client._is_local_backend() is True
+
+    def test_lm_studio_is_local_backend(self) -> None:
+        """``lm-studio/…`` models have the local_backend flag set."""
+        with patch("deepresearch.llm.client._detect_llamacpp_address", return_value=None):
+            client = LLMClient(model="lm-studio/local-model")
+            assert client._is_local_backend() is True
+
+    def test_anthropic_is_not_local_backend(self) -> None:
+        """Remote providers (anthropic) → local_backend is False."""
+        client = LLMClient(model="anthropic/claude-sonnet-4-20250514")
+        assert client._is_local_backend() is False
+
+    def test_openai_no_prefix_is_not_local_backend(self) -> None:
+        """Models without a known provider → local_backend is False."""
+        client = LLMClient(model="gpt-4o")
+        assert client._is_local_backend() is False
+
+    # ── Timeout bump for local backends ──────────────────────────────
+
+    def test_local_backend_bumps_timeout(self) -> None:
+        """Local backends with default 60s timeout bump to 180s."""
+        client = LLMClient(model="ollama/llama3.1", timeout=60)
+        assert client.timeout == 180
+
+    def test_non_local_backend_keeps_timeout(self) -> None:
+        """Non-local provider keeps the default 60s timeout."""
+        client = LLMClient(model="anthropic/claude-sonnet-4-20250514", timeout=60)
+        assert client.timeout == 60
+
+    # ── Fallback on unavailable provider ─────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_generate_returns_error_on_api_failure(self) -> None:
+        """When all API calls fail, ``generate`` raises ``LLMError`` (does not crash)."""
+        from deepresearch.llm.client import LLMError
+
+        client = LLMClient(model="test-model", timeout=5)
+        with patch("litellm.acompletion", side_effect=Exception("API unreachable")):
+            with pytest.raises(LLMError, match="failed after all retries"):
+                await client.generate(
+                    system_prompt="test",
+                    user_prompt="test",
+                )
+
+    @pytest.mark.asyncio
+    async def test_generate_with_unavailable_local_backend(self) -> None:
+        """A local backend that is not running should raise ``LLMError``, not crash."""
+        from deepresearch.llm.client import LLMError
+
+        client = LLMClient(model="ollama/llama3.1", timeout=5)
+        with patch("litellm.acompletion", side_effect=Exception("Connection refused")):
+            with pytest.raises(LLMError, match="failed after all retries"):
+                await client.generate(
+                    system_prompt="test",
+                    user_prompt="test",
+                )
 
 
 # ── Tool Calling Fallback Tests ──────────────────────────────────────────

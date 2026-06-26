@@ -18,3 +18,7 @@
 | [ADR-0014](ADR-0014-enforce-time-budget-and-correct-labels.md) | Enforce Time Budget and Correct UI Labels | Proposed | 2026-06-17 |
 | [ADR-0015](ADR-0015-fix-json-parsing-and-topic-drift.md) | Fix JSON Parsing and Topic Drift | Proposed | 2026-06-17 |
 | [ADR-0016](ADR-0016-epic-tracker-code-review-2026-06-17.md) | Epic Tracker — Code Review Handlingsplan (2026-06-17) | Accepted | 2026-06-17 |
+| [ADR-0017](ADR-0017-enhanced-tool-calling-and-multi-provider-search.md) | Enhanced Tool Calling and Multi-Provider Search | Proposed | 2026-06-20 |
+| [ADR-0018](ADR-0018-native-llamacpp-backend-integration.md) | Native llama.cpp Backend — Binary Lifecycle, GGUF Serving, and LiteLLM Integration | Proposed | 2026-06-20 |
+| [ADR-0019](ADR-0019-frontend-reactivity-strategy.md) | Frontend Reactivity Strategy | Proposed | 2026-06-25 |
+| [ADR-0020](ADR-0020-remove-llmfit-adopt-llama-server-hf.md) | Remove llmfit Dependency — Adopt llama-server `-hf` Flag and Python Hardware Detection | Proposed | 2026-06-25 |

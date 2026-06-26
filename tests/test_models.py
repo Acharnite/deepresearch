@@ -5,6 +5,7 @@ from datetime import datetime
 import pytest
 from pydantic import ValidationError
 
+from deepresearch.config.session import TimeBudget
 from deepresearch.models import (
     AgentProfile,
     ClarificationQuery,
@@ -85,6 +86,96 @@ def sample_report() -> IndividualReport:
         analysis="Detailed analysis here.",
         full_text="Full text of the report.",
     )
+
+
+# ─── TimeBudget Tests ─────────────────────────────────────────────────────────
+
+
+class TestTimeBudget:
+    """Edge case tests for the TimeBudget frozen dataclass."""
+
+    def test_from_keyword_quick(self) -> None:
+        """``from_keyword("quick")`` returns (quick, 240s, 2 rounds)."""
+        budget = TimeBudget.from_keyword("quick")
+        assert budget.keyword == "quick"
+        assert budget.seconds == 240
+        assert budget.max_rounds == 2
+
+    def test_from_keyword_medium(self) -> None:
+        """``from_keyword("medium")`` returns (medium, 420s, 3 rounds)."""
+        budget = TimeBudget.from_keyword("medium")
+        assert budget.keyword == "medium"
+        assert budget.seconds == 420
+        assert budget.max_rounds == 3
+
+    def test_from_keyword_deep(self) -> None:
+        """``from_keyword("deep")`` returns (deep, 660s, 5 rounds)."""
+        budget = TimeBudget.from_keyword("deep")
+        assert budget.keyword == "deep"
+        assert budget.seconds == 660
+        assert budget.max_rounds == 5
+
+    def test_from_keyword_custom(self) -> None:
+        """``from_keyword("custom")`` returns (custom, 600s, 4 rounds)."""
+        budget = TimeBudget.from_keyword("custom")
+        assert budget.keyword == "custom"
+        assert budget.seconds == 600
+        assert budget.max_rounds == 4
+
+    def test_from_keyword_case_insensitive(self) -> None:
+        """Keywords are case-insensitive (``"QUICK"`` → quick)."""
+        budget = TimeBudget.from_keyword("QUICK")
+        assert budget.keyword == "quick"
+
+    def test_from_keyword_invalid_raises(self) -> None:
+        """An unknown keyword raises ``ValueError``."""
+        with pytest.raises(ValueError, match="Unknown time budget"):
+            TimeBudget.from_keyword("nonexistent")
+
+    def test_from_minutes_normal(self) -> None:
+        """``from_minutes(5)`` produces 300 seconds."""
+        budget = TimeBudget.from_minutes(5)
+        assert budget.keyword == "custom"
+        assert budget.seconds == 300
+        assert budget.max_rounds == 4
+
+    def test_zero_seconds(self) -> None:
+        """``TimeBudget`` accepts 0 seconds (minimal boundary)."""
+        budget = TimeBudget(keyword="custom", seconds=0, max_rounds=1)
+        assert budget.seconds == 0
+        assert budget.max_rounds == 1
+
+    def test_negative_seconds(self) -> None:
+        """``TimeBudget`` accepts negative seconds (no validation at dataclass level)."""
+        budget = TimeBudget(keyword="custom", seconds=-100, max_rounds=4)
+        assert budget.seconds == -100
+
+    def test_large_value_24h(self) -> None:
+        """``TimeBudget`` accepts 86400 seconds (24 hours)."""
+        budget = TimeBudget(keyword="custom", seconds=86400, max_rounds=10)
+        assert budget.seconds == 86400
+        assert budget.max_rounds == 10
+
+    def test_from_minutes_zero(self) -> None:
+        """``from_minutes(0)`` produces 0 seconds."""
+        budget = TimeBudget.from_minutes(0)
+        assert budget.seconds == 0
+
+    def test_from_minutes_negative(self) -> None:
+        """``from_minutes(-5)`` produces -300 seconds."""
+        budget = TimeBudget.from_minutes(-5)
+        assert budget.seconds == -300
+
+    def test_from_minutes_large(self) -> None:
+        """``from_minutes(1440)`` = 86400 seconds (24 hours)."""
+        budget = TimeBudget.from_minutes(1440)
+        assert budget.seconds == 86400
+
+    def test_frozen_dataclass_immutable(self) -> None:
+        """TimeBudget is frozen — attribute assignment raises."""
+        budget = TimeBudget.from_keyword("quick")
+        with pytest.raises(AttributeError):
+            budget.seconds = 999  # type: ignore[misc]
 
 
 # ─── ResearchTopic Tests ─────────────────────────────────────────────────────

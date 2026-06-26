@@ -1,4 +1,4 @@
-"""ScribeAgent — neutral academic compiler for DeepeResearch.
+"""ScribeAgent — neutral academic compiler for DeepResearch.
 
 The scribe receives individual reports from all research agents and
 synthesises them into a coherent, well-structured research paper.

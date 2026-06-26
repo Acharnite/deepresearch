@@ -1,4 +1,4 @@
-"""Web dashboard package for DeepeResearch."""
+"""Web dashboard package for DeepResearch."""
 
 from deepresearch.web.event_bus import EventBus, event_bus
 from deepresearch.web.server import app

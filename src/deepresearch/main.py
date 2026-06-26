@@ -1,4 +1,4 @@
-"""CLI entry point for DeepeResearch.
+"""CLI entry point for DeepResearch.
 
 Provides commands for running research sessions and viewing
 available profiles and models.
@@ -282,7 +282,7 @@ def _create_progress() -> Progress:
 def cmd_run(args: argparse.Namespace) -> int:
     """Execute the 'run' command using the Orchestrator."""
     console.print(
-        "[bold green]DeepeResearch[/bold green] — Multi-Agent Research System"
+        "[bold green]DeepResearch[/bold green] — Multi-Agent Research System"
     )
     console.print(f"Topic: [yellow]{args.topic}[/yellow]")
     console.print(f"Output: {args.output}")
@@ -493,7 +493,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     """Start the web dashboard server without running a session."""
     from deepresearch.web.server import run_server
 
-    console.print("[bold green]DeepeResearch Dashboard[/bold green]")
+    console.print("[bold green]DeepResearch Dashboard[/bold green]")
     console.print(f"Starting web server at http://{args.host}:{args.port}")
     console.print(f"Max concurrent sessions: {args.max_concurrent}")
     console.print("Press Ctrl+C to stop the server")

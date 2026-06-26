@@ -7,7 +7,7 @@ import logging
 from typing import Any, AsyncGenerator
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -47,7 +47,7 @@ class RunResponse(BaseModel):
     model_mode: str
 
 
-@router.post("/run")
+@router.post("/run", status_code=201)
 async def start_research(req: RunRequest) -> JSONResponse:
     """Start a new research session in the background."""
     sem = get_session_semaphore()
@@ -336,11 +336,11 @@ async def cancel_session(session_id: str) -> JSONResponse:
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str) -> JSONResponse:
+async def delete_session(session_id: str) -> Response:
     """Delete a completed/error/cancelled session."""
     removed = multi_session_manager.remove_session(session_id)
     if removed:
-        return JSONResponse({"status": "deleted", "session_id": session_id})
+        return Response(status_code=204)
     info = multi_session_manager.get_session(session_id)
     if info is not None:
         return JSONResponse(

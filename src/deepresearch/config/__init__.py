@@ -1,4 +1,4 @@
-"""YAML configuration loader for DeepeResearch.
+"""YAML configuration loader for DeepResearch.
 
 Loads agent profiles and model definitions from YAML files,
 validates them against Pydantic models, and returns typed config objects.

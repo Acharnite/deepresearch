@@ -212,7 +212,7 @@ class Orchestrator:
                 {"event_type": "session_start", "topic": topic},
                 state=self.state,
             )
-        console.print("\n[bold]🚀 DeepeResearch — Multi-Agent Research System[/bold]")
+        console.print("\n[bold]🚀 DeepResearch — Multi-Agent Research System[/bold]")
         console.print(f"[yellow]Topic:[/yellow] {topic}")
 
         config = await self.configure(topic, **overrides)
