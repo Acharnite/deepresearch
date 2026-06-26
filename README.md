@@ -1,5 +1,8 @@
 # DeepeResearch — Multi-Agent AI Research System
 
+[![CI](https://github.com/Acharnite/deepresearch/actions/workflows/ci.yml/badge.svg)](https://github.com/Acharnite/deepresearch/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+
 > Six AI agents with distinct personalities collaborate to research any topic and produce a comprehensive, multi-perspective PDF paper.
 
 ---

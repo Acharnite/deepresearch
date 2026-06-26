@@ -1,13 +1,14 @@
 """Session management routes."""
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -15,7 +16,6 @@ from deepresearch.constants import TIME_BUDGETS
 from deepresearch.web.sessions import multi_session_manager
 from deepresearch.web.routes._helpers import (
     get_session_semaphore,
-    set_session_semaphore,
     MAX_CONCURRENT_SESSIONS,
     error_generator,
 )
@@ -47,7 +47,7 @@ class RunResponse(BaseModel):
     model_mode: str
 
 
-@router.post("/run")
+@router.post("/run", status_code=201)
 async def start_research(req: RunRequest) -> JSONResponse:
     """Start a new research session in the background."""
     sem = get_session_semaphore()
@@ -119,7 +119,8 @@ async def start_research(req: RunRequest) -> JSONResponse:
                 "topic": info.topic,
                 "time_budget": info.time_budget,
                 "model_mode": info.model_mode,
-            }
+            },
+            status_code=201,
         )
     except Exception as e:
         sem.release()
@@ -336,11 +337,11 @@ async def cancel_session(session_id: str) -> JSONResponse:
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str) -> JSONResponse:
+async def delete_session(session_id: str) -> Response:
     """Delete a completed/error/cancelled session."""
     removed = multi_session_manager.remove_session(session_id)
     if removed:
-        return JSONResponse({"status": "deleted", "session_id": session_id})
+        return Response(status_code=204)
     info = multi_session_manager.get_session(session_id)
     if info is not None:
         return JSONResponse(

@@ -1,10 +1,10 @@
 """Model recommendations, system info, profiles, and model listing routes."""
+
 from __future__ import annotations
 
 import json
 import logging
 import os
-from typing import Any
 
 import httpx
 from fastapi import APIRouter
@@ -140,9 +140,7 @@ async def get_tools_status() -> JSONResponse:
                 text=True,
                 timeout=5,
             )
-            result["ollama"]["version"] = (
-                ver.stdout.strip() or ver.stderr.strip()
-            )
+            result["ollama"]["version"] = ver.stdout.strip() or ver.stderr.strip()
         except Exception:
             result["ollama"]["version"] = "unknown"
         try:
@@ -162,9 +160,7 @@ async def get_tools_status() -> JSONResponse:
                 text=True,
                 timeout=5,
             )
-            result["llamacpp"]["version"] = (
-                ver.stdout.strip() or ver.stderr.strip()
-            )
+            result["llamacpp"]["version"] = ver.stdout.strip() or ver.stderr.strip()
         except Exception:
             result["llamacpp"]["version"] = "unknown"
         result["llamacpp"]["running"] = (  # type: ignore[assignment]
@@ -192,9 +188,7 @@ async def get_hardware_info() -> JSONResponse:
         )
         if result.returncode == 0:
             data = json.loads(result.stdout)
-            return JSONResponse(
-                {"available": True, "hardware": data.get("system", {})}
-            )
+            return JSONResponse({"available": True, "hardware": data.get("system", {})})
         return JSONResponse({"available": False, "error": result.stderr.strip()})
     except FileNotFoundError:
         return JSONResponse({"available": False, "message": "llmfit not found"})

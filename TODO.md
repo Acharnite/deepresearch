@@ -31,6 +31,16 @@
 - [x] Academic search engines: arXiv, PubMed, Semantic Scholar, Wikipedia
 - [x] PDF minimum healthy threshold: 12KB → 20KB
 
+## Epic #113 Group 4 — Documentation Gaps ✅
+
+### Completed (2026-06-26)
+- [x] Fixed ADR-0018 status in design doc index (Proposed → Accepted)
+- [x] Updated module structure diagram to reflect actual source layout
+- [x] Expanded test file list to all 22 files
+- [x] Updated CHANGES.md with v1.6.0 (post-1.5.0 changes)
+- [x] Bumped VERSION.md to 1.6.0
+- [x] Updated design doc to v1.8 with changelog entry
+
 ## Next Testing Session
 
 ### Priority 1: Verify latest fixes

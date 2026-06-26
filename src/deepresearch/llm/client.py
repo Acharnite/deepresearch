@@ -40,7 +40,10 @@ def _detect_llamacpp_address() -> str | None:
     global _llamacpp_detected_url, _llamacpp_detected_at
 
     now = time.monotonic()
-    if _llamacpp_detected_url is not None and (now - _llamacpp_detected_at) < _LLAMACPP_CACHE_TTL:
+    if (
+        _llamacpp_detected_url is not None
+        and (now - _llamacpp_detected_at) < _LLAMACPP_CACHE_TTL
+    ):
         return _llamacpp_detected_url
 
     # Build candidate list: configured default port first, then others
@@ -358,7 +361,11 @@ class LLMClient:
         # Local backends (especially quantized models) need more time for
         # complex prompts.  Bump timeout to 180s if the caller used the
         # default 60s and this is a local backend.
-        if self.timeout == 60 and self.provider and PROVIDER_ROUTES.get(self.provider, {}).get("local_backend"):
+        if (
+            self.timeout == 60
+            and self.provider
+            and PROVIDER_ROUTES.get(self.provider, {}).get("local_backend")
+        ):
             self.timeout = 180
 
         self.api_base: str | None = None
@@ -441,7 +448,10 @@ class LLMClient:
                 if provider == "ollama":
                     port = route.get("local_backend_port")
                     try:
-                        from deepresearch.web.settings_manager import local_backend_manager
+                        from deepresearch.web.settings_manager import (
+                            local_backend_manager,
+                        )
+
                         custom_addr = local_backend_manager.get_address(provider)
                         if custom_addr:
                             return f"http://{custom_addr}"
@@ -463,7 +473,10 @@ class LLMClient:
                 detected = _detect_llamacpp_address()
                 if detected:
                     try:
-                        from deepresearch.web.settings_manager import local_backend_manager
+                        from deepresearch.web.settings_manager import (
+                            local_backend_manager,
+                        )
+
                         # Persist so future calls skip the probe
                         local_backend_manager.set_address(
                             provider,
@@ -734,14 +747,16 @@ class LLMClient:
                 ollama_tools = []
                 for t in tools:
                     fn = t.get("function", {})
-                    ollama_tools.append({
-                        "type": "function",
-                        "function": {
-                            "name": fn.get("name", ""),
-                            "description": fn.get("description", ""),
-                            "parameters": fn.get("parameters", {}),
-                        },
-                    })
+                    ollama_tools.append(
+                        {
+                            "type": "function",
+                            "function": {
+                                "name": fn.get("name", ""),
+                                "description": fn.get("description", ""),
+                                "parameters": fn.get("parameters", {}),
+                            },
+                        }
+                    )
                 payload["tools"] = ollama_tools
             else:
                 payload["tools"] = tools
@@ -833,7 +848,11 @@ class LLMClient:
         if is_ollama:
             url = f"{base}/api/chat"
         else:
-            url = f"{base}/v1/chat/completions" if not base.endswith("/v1") else f"{base}/chat/completions"
+            url = (
+                f"{base}/v1/chat/completions"
+                if not base.endswith("/v1")
+                else f"{base}/chat/completions"
+            )
 
         full_text = ""
         try:
@@ -1085,7 +1104,9 @@ class LLMClient:
         max_tool_rounds = 5  # Prevent infinite loops
         collected_tool_results: list[dict[str, Any]] = []
 
-        logger.warning("generate_with_tools: starting with %d tools", len(tools) if tools else 0)
+        logger.warning(
+            "generate_with_tools: starting with %d tools", len(tools) if tools else 0
+        )
         for tool_round in range(max_tool_rounds):
             # Check cancellation before each tool round.
             if _cancel and _cancel.is_set():
@@ -1114,10 +1135,16 @@ class LLMClient:
             # (they hang silently with no output). Use direct HTTP to
             # avoid LiteLLM bugs with Ollama and other local providers.
             if not use_text_parsing and self._is_local_backend():
-                logger.warning("generate_with_tools: using direct HTTP for %s", self.provider)
+                logger.warning(
+                    "generate_with_tools: using direct HTTP for %s", self.provider
+                )
 
                 data = await self._local_backend_request(
-                    messages, temperature, effective_max_tokens, stream=False, tools=tools
+                    messages,
+                    temperature,
+                    effective_max_tokens,
+                    stream=False,
+                    tools=tools,
                 )
 
                 is_ollama = self.provider == "ollama"
@@ -1126,7 +1153,9 @@ class LLMClient:
                     text_content = msg.get("content", "") or ""
                     _round_text = text_content
                     if text_content and self.event_callback:
-                        await self.event_callback({"type": "stream", "text": text_content})
+                        await self.event_callback(
+                            {"type": "stream", "text": text_content}
+                        )
                     raw_tc = msg.get("tool_calls", [])
                     for idx, tc in enumerate(raw_tc):
                         while len(tool_calls) <= idx:
@@ -1146,7 +1175,9 @@ class LLMClient:
                         text_content = msg.get("reasoning_content", "") or ""
                     _round_text = text_content
                     if text_content and self.event_callback:
-                        await self.event_callback({"type": "stream", "text": text_content})
+                        await self.event_callback(
+                            {"type": "stream", "text": text_content}
+                        )
                     raw_tc = msg.get("tool_calls", [])
                     for idx, tc in enumerate(raw_tc):
                         while len(tool_calls) <= idx:
@@ -1365,37 +1396,45 @@ class LLMClient:
                     if is_search and self.event_callback and results:
                         q = args.get("query", "")
                         search_summary = f'\n[🔍 Web Search] Query: "{q}"\n'
-                        
+
                         # Show time_filter from first result if available
                         tf = results[0].get("time_filter") if results else None
                         if tf:
                             search_summary += f"   Time filter: {tf}\n"
                         # Show provider source + number of results
-                        sources = set(r.get("source", "") for r in results if r.get("source"))
+                        sources = set(
+                            r.get("source", "") for r in results if r.get("source")
+                        )
                         if sources:
-                            search_summary += f"   Providers: {', '.join(sorted(sources))}\n"
-                        
+                            search_summary += (
+                                f"   Providers: {', '.join(sorted(sources))}\n"
+                            )
+
                         # Show tl_dr if available (enriched search - ADR-0017)
                         tl_dr = results[0].get("tl_dr") if results else None
                         if tl_dr:
                             search_summary += f"   TL;DR: {tl_dr[:200]}\n"
-                        
+
                         # Show content stats
                         content_count = sum(1 for r in results if r.get("content"))
                         if content_count > 0:
-                            total_chars = sum(len(r.get("content", "") or "") for r in results)
+                            total_chars = sum(
+                                len(r.get("content", "") or "") for r in results
+                            )
                             search_summary += f"   Fetched content: {total_chars:,} chars from {content_count} pages\n"
-                        
+
                         # Show result titles
                         for r in results[:5]:
                             title = (r.get("title", "") or "")[:80]
                             source = r.get("source", "")
                             src_tag = f" [{source}]" if source else ""
                             search_summary += f"  • {title}{src_tag}\n"
-                        
+
                         if len(results) > 5:
-                            search_summary += f"  ... and {len(results) - 5} more results\n"
-                        
+                            search_summary += (
+                                f"  ... and {len(results) - 5} more results\n"
+                            )
+
                         await self.event_callback(
                             {"type": "stream", "text": search_summary}
                         )
@@ -1409,7 +1448,9 @@ class LLMClient:
                         }
                     )
                 else:
-                    logger.warning("Unknown tool call: %s in round %s", tool_name, tool_round)
+                    logger.warning(
+                        "Unknown tool call: %s in round %s", tool_name, tool_round
+                    )
                     messages.append(
                         {
                             "role": "tool",
@@ -1456,7 +1497,9 @@ class LLMClient:
             content = response.choices[0].message.content or ""
             if not content:
                 # Reasoning model fallback
-                content = getattr(response.choices[0].message, "reasoning_content", "") or ""
+                content = (
+                    getattr(response.choices[0].message, "reasoning_content", "") or ""
+                )
             return content
         except (AttributeError, IndexError, KeyError) as e:
             raise LLMError(f"Failed to extract content from response: {e}") from e

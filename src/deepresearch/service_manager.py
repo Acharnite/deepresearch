@@ -162,7 +162,7 @@ def cmd_logs() -> int:
 # ── Platform-specific installers ───────────────────────────────────
 
 SYSTEMD_SERVICE_TEMPLATE = """[Unit]
-Description=DeepeResearch Multi-Agent Research System
+Description=DeepResearch Multi-Agent Research System
 Documentation=https://github.com/Acharnite/deepresearch
 After=network.target network-online.target
 Wants=network-online.target

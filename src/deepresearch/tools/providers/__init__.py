@@ -1,4 +1,4 @@
-"""Search provider modules for DeepeResearch agents.
+"""Search provider modules for DeepResearch agents.
 
 Each module exports an async ``search()`` function with the same signature::
 

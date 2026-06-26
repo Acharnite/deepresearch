@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -37,7 +37,8 @@ class TestProviderImports:
 
     @pytest.mark.parametrize("module_path, name", zip(PROVIDER_MODULES, PROVIDER_NAMES))
     def test_provider_search_is_async(self, module_path: str, name: str) -> None:
-        import importlib, inspect
+        import importlib
+        import inspect
 
         mod = importlib.import_module(module_path)
         fn = mod.search
@@ -49,7 +50,9 @@ class TestProviderResultShape:
 
     @pytest.mark.parametrize("module_path, name", zip(PROVIDER_MODULES, PROVIDER_NAMES))
     @pytest.mark.asyncio
-    async def test_provider_returns_list_of_dicts(self, module_path: str, name: str) -> None:
+    async def test_provider_returns_list_of_dicts(
+        self, module_path: str, name: str
+    ) -> None:
         import importlib
 
         mod = importlib.import_module(module_path)
@@ -88,11 +91,15 @@ class TestProviderResultShape:
                 assert "snippet" in r
                 assert "url" in r
                 assert "source" in r
-                assert r["source"] in PROVIDER_NAMES or r["source"] == name.replace("_pse", "")
+                assert r["source"] in PROVIDER_NAMES or r["source"] == name.replace(
+                    "_pse", ""
+                )
 
     @pytest.mark.parametrize("module_path, name", zip(PROVIDER_MODULES, PROVIDER_NAMES))
     @pytest.mark.asyncio
-    async def test_provider_result_keys_are_strings(self, module_path: str, name: str) -> None:
+    async def test_provider_result_keys_are_strings(
+        self, module_path: str, name: str
+    ) -> None:
         import importlib
 
         mod = importlib.import_module(module_path)
@@ -104,7 +111,11 @@ class TestProviderResultShape:
                 mock_resp = MagicMock()
                 mock_resp.json.return_value = {
                     "results": [
-                        {"title": "R1", "content": "Snippet 1", "url": "https://example.com/1"}
+                        {
+                            "title": "R1",
+                            "content": "Snippet 1",
+                            "url": "https://example.com/1",
+                        }
                     ]
                 }
                 mock_resp.raise_for_status.return_value = None
@@ -118,7 +129,11 @@ class TestProviderResultShape:
                 mock_resp.json.return_value = {
                     "web": {
                         "results": [
-                            {"title": "R1", "description": "Snippet", "url": "https://ex.com"}
+                            {
+                                "title": "R1",
+                                "description": "Snippet",
+                                "url": "https://ex.com",
+                            }
                         ]
                     }
                 }
@@ -131,7 +146,9 @@ class TestProviderResultShape:
                 mock_instance = MagicMock()
                 mock_resp = MagicMock()
                 mock_resp.json.return_value = {
-                    "items": [{"title": "R1", "snippet": "Snippet", "link": "https://ex.com"}]
+                    "items": [
+                        {"title": "R1", "snippet": "Snippet", "link": "https://ex.com"}
+                    ]
                 }
                 mock_resp.raise_for_status.return_value = None
                 mock_instance.__aenter__.return_value.get.return_value = mock_resp
@@ -142,7 +159,9 @@ class TestProviderResultShape:
                 mock_instance = MagicMock()
                 mock_resp = MagicMock()
                 mock_resp.json.return_value = {
-                    "organic": [{"title": "R1", "snippet": "Snippet", "link": "https://ex.com"}]
+                    "organic": [
+                        {"title": "R1", "snippet": "Snippet", "link": "https://ex.com"}
+                    ]
                 }
                 mock_resp.raise_for_status.return_value = None
                 mock_instance.__aenter__.return_value.post.return_value = mock_resp
@@ -153,7 +172,9 @@ class TestProviderResultShape:
                 mock_instance = MagicMock()
                 mock_resp = MagicMock()
                 mock_resp.json.return_value = {
-                    "results": [{"title": "R1", "content": "Snippet", "url": "https://ex.com"}]
+                    "results": [
+                        {"title": "R1", "content": "Snippet", "url": "https://ex.com"}
+                    ]
                 }
                 mock_resp.raise_for_status.return_value = None
                 mock_instance.__aenter__.return_value.post.return_value = mock_resp
@@ -186,7 +207,11 @@ class TestProviderMissingAPIKey:
         "module_path, name, env_vars",
         [
             ("deepresearch.tools.providers.brave", "brave", ["BRAVE_API_KEY"]),
-            ("deepresearch.tools.providers.google_pse", "google_pse", ["GOOGLE_PSE_API_KEY", "GOOGLE_PSE_CX"]),
+            (
+                "deepresearch.tools.providers.google_pse",
+                "google_pse",
+                ["GOOGLE_PSE_API_KEY", "GOOGLE_PSE_CX"],
+            ),
             ("deepresearch.tools.providers.serper", "serper", ["SERPER_API_KEY"]),
             ("deepresearch.tools.providers.tavily", "tavily", ["TAVILY_API_KEY"]),
         ],
@@ -301,17 +326,40 @@ class TestSearchChain:
 
         with (
             patch("deepresearch.tools.search_chain._get_provider") as mock_get_provider,
-            patch("deepresearch.tools.search_chain._is_provider_configured") as mock_configured,
+            patch(
+                "deepresearch.tools.search_chain._is_provider_configured"
+            ) as mock_configured,
         ):
             mock_configured.return_value = True
 
-            async def provider_a(query, max_results=5, time_filter=None, cancel_event=None):
-                return [{"title": "A1", "snippet": "snippet", "url": "https://a.com", "source": "a"}]
+            async def provider_a(
+                query, max_results=5, time_filter=None, cancel_event=None
+            ):
+                return [
+                    {
+                        "title": "A1",
+                        "snippet": "snippet",
+                        "url": "https://a.com",
+                        "source": "a",
+                    }
+                ]
 
-            async def provider_b(query, max_results=5, time_filter=None, cancel_event=None):
-                return [{"title": "B1", "snippet": "snippet", "url": "https://b.com", "source": "b"}]
+            async def provider_b(
+                query, max_results=5, time_filter=None, cancel_event=None
+            ):
+                return [
+                    {
+                        "title": "B1",
+                        "snippet": "snippet",
+                        "url": "https://b.com",
+                        "source": "b",
+                    }
+                ]
 
-            mock_get_provider.side_effect = lambda name: {"a": provider_a, "b": provider_b}.get(name)
+            mock_get_provider.side_effect = lambda name: {
+                "a": provider_a,
+                "b": provider_b,
+            }.get(name)
 
             chain = SearchChain(provider_order=["a", "b"])
             results = await chain.search("test query")
@@ -325,17 +373,33 @@ class TestSearchChain:
 
         with (
             patch("deepresearch.tools.search_chain._get_provider") as mock_get_provider,
-            patch("deepresearch.tools.search_chain._is_provider_configured") as mock_configured,
+            patch(
+                "deepresearch.tools.search_chain._is_provider_configured"
+            ) as mock_configured,
         ):
             mock_configured.return_value = True
 
-            async def provider_a(query, max_results=5, time_filter=None, cancel_event=None):
+            async def provider_a(
+                query, max_results=5, time_filter=None, cancel_event=None
+            ):
                 return []
 
-            async def provider_b(query, max_results=5, time_filter=None, cancel_event=None):
-                return [{"title": "B1", "snippet": "snippet", "url": "https://b.com", "source": "b"}]
+            async def provider_b(
+                query, max_results=5, time_filter=None, cancel_event=None
+            ):
+                return [
+                    {
+                        "title": "B1",
+                        "snippet": "snippet",
+                        "url": "https://b.com",
+                        "source": "b",
+                    }
+                ]
 
-            mock_get_provider.side_effect = lambda name: {"a": provider_a, "b": provider_b}.get(name)
+            mock_get_provider.side_effect = lambda name: {
+                "a": provider_a,
+                "b": provider_b,
+            }.get(name)
 
             chain = SearchChain(provider_order=["a", "b"])
             results = await chain.search("test query")
@@ -349,11 +413,15 @@ class TestSearchChain:
 
         with (
             patch("deepresearch.tools.search_chain._get_provider") as mock_get_provider,
-            patch("deepresearch.tools.search_chain._is_provider_configured") as mock_configured,
+            patch(
+                "deepresearch.tools.search_chain._is_provider_configured"
+            ) as mock_configured,
         ):
             mock_configured.return_value = True
 
-            async def failing_provider(query, max_results=5, time_filter=None, cancel_event=None):
+            async def failing_provider(
+                query, max_results=5, time_filter=None, cancel_event=None
+            ):
                 msg = "Provider error"
                 raise RuntimeError(msg)
 
@@ -373,14 +441,19 @@ class TestSearchChain:
 
         with (
             patch("deepresearch.tools.search_chain._get_provider") as mock_get_provider,
-            patch("deepresearch.tools.search_chain._is_provider_configured") as mock_configured,
+            patch(
+                "deepresearch.tools.search_chain._is_provider_configured"
+            ) as mock_configured,
         ):
+
             def configured_side_effect(name):
                 return name == "b"
 
             mock_configured.side_effect = configured_side_effect
 
-            async def provider_b(query, max_results=5, time_filter=None, cancel_event=None):
+            async def provider_b(
+                query, max_results=5, time_filter=None, cancel_event=None
+            ):
                 call_log.append("b")
                 return [{"title": "B1", "snippet": "", "url": "", "source": "b"}]
 

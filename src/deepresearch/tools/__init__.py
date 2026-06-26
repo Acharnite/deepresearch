@@ -1,4 +1,4 @@
-"""Tool definitions for DeepeResearch agents.
+"""Tool definitions for DeepResearch agents.
 
 Tools give LLM agents the ability to interact with external systems
 (e.g., web search) and incorporate real-time data into their research.
@@ -15,7 +15,12 @@ from deepresearch.tools.parser import (
     ParsedToolCall,
     ToolCallParser,
 )
-from deepresearch.tools.registry import ToolDef, get_registry, register_tool, resolve_tool
+from deepresearch.tools.registry import (
+    ToolDef,
+    get_registry,
+    register_tool,
+    resolve_tool,
+)
 
 # Re-export existing public symbols
 WEB_SEARCH_TOOL = _web_search_mod.WEB_SEARCH_TOOL

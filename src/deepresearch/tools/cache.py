@@ -183,7 +183,9 @@ class SearchCache:
         cache_dir: str | Path | None = None,
         max_entries: int = _DEFAULT_MAX_ENTRIES,
     ) -> None:
-        self._cache_dir = Path(cache_dir).expanduser().resolve() if cache_dir else _get_cache_dir()
+        self._cache_dir = (
+            Path(cache_dir).expanduser().resolve() if cache_dir else _get_cache_dir()
+        )
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
         self._index = _CacheIndex()
@@ -243,18 +245,26 @@ class SearchCache:
         exceptions.
         """
         if ttl is None:
-            ttl = _DEFAULT_TTL_CURRENT_EVENTS if _is_current_event(key) else _DEFAULT_TTL_EVERGREEN
+            ttl = (
+                _DEFAULT_TTL_CURRENT_EVENTS
+                if _is_current_event(key)
+                else _DEFAULT_TTL_EVERGREEN
+            )
 
         async with self._lock:
             # Write cache file
             cache_file = self._cache_dir / f"{key}.json"
             try:
                 cache_file.write_text(
-                    json.dumps({"key": key, "results": results, "cached_at": time.time()}),
+                    json.dumps(
+                        {"key": key, "results": results, "cached_at": time.time()}
+                    ),
                     encoding="utf-8",
                 )
             except OSError as e:
-                logger.warning("Failed to write cache file '%s': %s", cache_file.name, e)
+                logger.warning(
+                    "Failed to write cache file '%s': %s", cache_file.name, e
+                )
                 return
 
             # Update index

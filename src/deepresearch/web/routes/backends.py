@@ -1,4 +1,5 @@
 """Local backend management routes (discovery, ollama, llmfit, model download)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -6,18 +7,17 @@ import json
 import logging
 import re
 import time
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator
 
 import httpx
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from deepresearch.web.settings_manager import local_backend_manager
 from deepresearch.web.routes._helpers import (
     BACKEND_DEFINITIONS,
-    download_process,
     download_state,
     install_error_generator,
     probe_backend,
@@ -734,7 +734,7 @@ async def pull_ollama_model(
 
 
 @router.delete("/local-backends/models/{model_name}")
-async def delete_ollama_model(model_name: str) -> JSONResponse:
+async def delete_ollama_model(model_name: str) -> Response:
     """Delete an Ollama model via 'ollama rm'."""
     import shutil
     import subprocess
@@ -752,9 +752,7 @@ async def delete_ollama_model(model_name: str) -> JSONResponse:
             timeout=30,
         )
         if result.returncode == 0:
-            return JSONResponse(
-                {"status": "ok", "message": f"Model '{model_name}' deleted"}
-            )
+            return Response(status_code=204)
         else:
             return JSONResponse(
                 {
@@ -1103,9 +1101,7 @@ async def download_model(
                     return
 
                 repo = req.repo or req.name
-                model_display = (
-                    req.name.split("/")[-1] if "/" in req.name else req.name
-                )
+                model_display = req.name.split("/")[-1] if "/" in req.name else req.name
                 import os
 
                 output_dir = os.path.expanduser("~/.cache/llmfit/models/")
@@ -1123,7 +1119,7 @@ async def download_model(
                     ),
                 }
 
-                cmd = ["llmfit", "download", repo, "--output-dir", output_dir]
+                cmd = ["llmfit", "download", repo, "--output-dir", output_dir, "--json"]
 
                 process = await asyncio.create_subprocess_exec(
                     *cmd,
@@ -1132,45 +1128,31 @@ async def download_model(
                 )
 
                 assert process.stdout is not None
-                import re as _re
 
-                last_pct = 0.0
-                pre_pct = 0
                 async for line in process.stdout:
                     line_str = line.decode("utf-8", errors="replace").strip()
-                    clean = _re.sub(r"\[K|\r", "", line_str).strip()
-                    if not clean:
+                    if not line_str:
                         continue
-                    pct_match = _re.match(r"\s*(\d+\.?\d*)\s*%", clean)
-                    msg = clean
-                    if pct_match:
-                        pct_val = float(pct_match.group(1))
-                        last_pct = min(pct_val, 99)
-                        msg = _re.sub(r"^\s*\d+\.?\d*\s*%\s*-\s*", "", clean)
-                        _update_state(last_pct, msg)
-                        yield {
-                            "event": "install_log",
-                            "data": json.dumps(
-                                {
-                                    "step": "download",
-                                    "message": msg,
-                                    "progress": last_pct,
-                                }
-                            ),
-                        }
-                    else:
-                        pre_pct = min(pre_pct + 1, 3)
-                        _update_state(pre_pct, msg)
-                        yield {
-                            "event": "install_log",
-                            "data": json.dumps(
-                                {
-                                    "step": "download",
-                                    "message": msg,
-                                    "progress": pre_pct,
-                                }
-                            ),
-                        }
+                    try:
+                        entry = json.loads(line_str)
+                    except json.JSONDecodeError:
+                        # Not JSON — skip; llmfit with --json outputs only JSON lines
+                        continue
+                    pct = entry.get("progress")
+                    msg = entry.get("message", line_str)
+                    if pct is not None:
+                        pct = min(float(pct), 99)
+                        _update_state(pct, msg)
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps(
+                            {
+                                "step": "download",
+                                "message": msg,
+                                "progress": pct if pct is not None else 0,
+                            }
+                        ),
+                    }
 
                 await process.wait()
 

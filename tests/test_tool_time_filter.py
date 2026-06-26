@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 
 class TestTimeFilter:
     """detect_time_filter boundary cases."""

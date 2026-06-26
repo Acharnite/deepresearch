@@ -221,7 +221,9 @@ class _ToolCallTagStrategy(_ParseStrategy):
                         args = obj
                         break
             if args is None:
-                logger.debug("Could not parse [TOOL_CALL] args for '%s': %s", name, args_str[:50])
+                logger.debug(
+                    "Could not parse [TOOL_CALL] args for '%s': %s", name, args_str[:50]
+                )
                 continue
             results.append(
                 ParsedToolCall(
@@ -276,7 +278,11 @@ class _XMLInvokeStrategy(_ParseStrategy):
                 params_str = params_match.group(1).strip()
                 obj = _try_parse_json_obj(params_str)
                 if obj is None:
-                    logger.debug("Could not parse <parameters> JSON for '%s': %s", name, params_str[:50])
+                    logger.debug(
+                        "Could not parse <parameters> JSON for '%s': %s",
+                        name,
+                        params_str[:50],
+                    )
                 else:
                     args = obj
             results.append(
@@ -327,7 +333,11 @@ class _DSMLStrategy(_ParseStrategy):
                 if obj is not None:
                     args = obj
                 elif params_str:
-                    logger.debug("Could not parse DSML <arguments> for '%s': %s", name, params_str[:50])
+                    logger.debug(
+                        "Could not parse DSML <arguments> for '%s': %s",
+                        name,
+                        params_str[:50],
+                    )
             results.append(
                 ParsedToolCall(
                     call_id=str(uuid.uuid4()),

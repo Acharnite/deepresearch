@@ -1,4 +1,4 @@
-"""Integration tests for the DeepeResearch Orchestrator.
+"""Integration tests for the DeepResearch Orchestrator.
 
 Tests run the Orchestrator with mock agent profiles and mock LLM
 responses, verifying the full workflow executes correctly from topic

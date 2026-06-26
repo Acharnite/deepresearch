@@ -1,4 +1,4 @@
-"""Shared constants for DeepeResearch.
+"""Shared constants for DeepResearch.
 
 Single source of truth for time budgets, round limits, and PDF size thresholds.
 All other modules MUST import from here — never define these values locally.

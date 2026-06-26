@@ -1,4 +1,4 @@
-"""DeepeResearch agents — personality-driven research agents and scribe."""
+"""DeepResearch agents — personality-driven research agents and scribe."""
 
 from deepresearch.agents.base_agent import BaseAgent
 from deepresearch.agents.registry import AgentRegistry

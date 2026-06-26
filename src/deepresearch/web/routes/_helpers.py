@@ -4,6 +4,7 @@ All global mutable state that multiple route modules need lives here.
 Import this module to read/write shared state — never import server.py
 directly from route modules (circular import risk).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -200,9 +201,7 @@ def get_provider_auth(
     return {"Authorization": f"Bearer {api_key}"}, {}
 
 
-def parse_provider_models(
-    provider_id: str, data: dict | list
-) -> list[dict[str, str]]:
+def parse_provider_models(provider_id: str, data: dict | list) -> list[dict[str, str]]:
     """Parse a provider's model-list API response into [{id, display_name}]."""
     if provider_id == "anthropic":
         raw = data.get("data", []) if isinstance(data, dict) else data
@@ -500,7 +499,7 @@ async def monitor_llamacpp_process() -> None:
         not _srv._llamacpp_shutting_down
         and _srv._llamacpp_restart_attempts < MAX_RESTART_ATTEMPTS
     ):
-        backoff = (2 ** _srv._llamacpp_restart_attempts) * 5
+        backoff = (2**_srv._llamacpp_restart_attempts) * 5
         _srv._llamacpp_restart_attempts += 1
         logger.info(
             "Auto-restarting llama-server in %ds (attempt %d/%d)...",
