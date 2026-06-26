@@ -12,7 +12,12 @@ import pytest
 
 def _import_cache():
     """Lazy-import cache module."""
-    from deepresearch.tools.cache import SearchCache, _CacheIndex, _is_current_event, _make_key
+    from deepresearch.tools.cache import (
+        SearchCache,
+        _CacheIndex,
+        _is_current_event,
+        _make_key,
+    )
 
     return {
         "SearchCache": SearchCache,
@@ -134,7 +139,9 @@ class TestSearchCache:
 
     @pytest.mark.asyncio
     async def test_cache_set_and_hit(self, cache) -> None:
-        data = [{"title": "Test", "snippet": "Test snippet", "url": "https://example.com"}]
+        data = [
+            {"title": "Test", "snippet": "Test snippet", "url": "https://example.com"}
+        ]
         await cache.set("key1", data, ttl=3600)
         result = await cache.get("key1")
         assert result is not None

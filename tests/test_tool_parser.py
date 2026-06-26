@@ -62,7 +62,7 @@ class TestParseFormats:
             ),
             (
                 "fenced_block",
-                "```tool_call\n{\"name\": \"web_search\", \"arguments\": {\"query\": \"AI\"}}\n```",
+                '```tool_call\n{"name": "web_search", "arguments": {"query": "AI"}}\n```',
                 "web_search",
                 {"query": "AI"},
             ),
@@ -105,7 +105,7 @@ class TestParseFormats:
             (
                 "xml_invoke",
                 "<invoke><tool_name>web_search</tool_name>"
-                "<parameters>{\"query\": \"AI\"}</parameters></invoke>",
+                '<parameters>{"query": "AI"}</parameters></invoke>',
                 "web_search",
                 {"query": "AI"},
             ),
@@ -124,7 +124,7 @@ class TestParseFormats:
             ),
             (
                 "dsml",
-                "<tool>web_search</tool>\n<arguments>{\"query\": \"AI\"}</arguments>",
+                '<tool>web_search</tool>\n<arguments>{"query": "AI"}</arguments>',
                 "web_search",
                 {"query": "AI"},
             ),
@@ -205,19 +205,19 @@ class TestParseFormatEdgeCases:
 
     def test_xml_invoke_missing_tool_name(self) -> None:
         p = _import_parser()["ToolCallParser"]()
-        text = "<invoke><parameters>{\"query\": \"AI\"}</parameters></invoke>"
+        text = '<invoke><parameters>{"query": "AI"}</parameters></invoke>'
         results = p.parse(text)
         assert len(results) == 0
 
     def test_xml_invoke_empty_tool_name(self) -> None:
         p = _import_parser()["ToolCallParser"]()
-        text = "<invoke><tool_name>  </tool_name><parameters>{\"query\": \"AI\"}</parameters></invoke>"
+        text = '<invoke><tool_name>  </tool_name><parameters>{"query": "AI"}</parameters></invoke>'
         results = p.parse(text)
         assert len(results) == 0
 
     def test_dsml_empty_tool_name(self) -> None:
         p = _import_parser()["ToolCallParser"]()
-        text = "<tool>  </tool>\n<arguments>{\"query\": \"AI\"}</arguments>"
+        text = '<tool>  </tool>\n<arguments>{"query": "AI"}</arguments>'
         results = p.parse(text)
         assert len(results) == 0
 

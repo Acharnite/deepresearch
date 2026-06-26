@@ -7,7 +7,12 @@ import pytest
 
 def _import_registry():
     """Lazy-import registry modules."""
-    from deepresearch.tools.registry import ToolDef, get_registry, register_tool, resolve_tool
+    from deepresearch.tools.registry import (
+        ToolDef,
+        get_registry,
+        register_tool,
+        resolve_tool,
+    )
 
     return {
         "ToolDef": ToolDef,

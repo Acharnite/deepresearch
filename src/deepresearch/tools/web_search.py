@@ -30,26 +30,18 @@ logger = logging.getLogger(__name__)
 
 # ── Configuration from environment (ADR-0017) ──────────────────────────
 
-_SEARCH_CACHE_ENABLED: bool = (
-    os.environ.get("SEARCH_CACHE_ENABLED", "true").lower()
-    in ("1", "true", "yes")
-)
+_SEARCH_CACHE_ENABLED: bool = os.environ.get(
+    "SEARCH_CACHE_ENABLED", "true"
+).lower() in ("1", "true", "yes")
 _SEARCH_CACHE_TTL_EVERGREEN: int = int(
     os.environ.get("SEARCH_CACHE_TTL_EVERGREEN", "3600")
 )
-_SEARCH_CACHE_TTL_CURRENT: int = int(
-    os.environ.get("SEARCH_CACHE_TTL_CURRENT", "300")
-)
-_SEARCH_FETCH_CONTENT: bool = (
-    os.environ.get("SEARCH_FETCH_CONTENT", "true").lower()
-    in ("1", "true", "yes")
-)
-_SEARCH_FETCH_MAX_PAGES: int = int(
-    os.environ.get("SEARCH_FETCH_MAX_PAGES", "5")
-)
-_SEARCH_FETCH_MAX_CHARS: int = int(
-    os.environ.get("SEARCH_FETCH_MAX_CHARS", "2000")
-)
+_SEARCH_CACHE_TTL_CURRENT: int = int(os.environ.get("SEARCH_CACHE_TTL_CURRENT", "300"))
+_SEARCH_FETCH_CONTENT: bool = os.environ.get(
+    "SEARCH_FETCH_CONTENT", "true"
+).lower() in ("1", "true", "yes")
+_SEARCH_FETCH_MAX_PAGES: int = int(os.environ.get("SEARCH_FETCH_MAX_PAGES", "5"))
+_SEARCH_FETCH_MAX_CHARS: int = int(os.environ.get("SEARCH_FETCH_MAX_CHARS", "2000"))
 
 
 # ── Global lazy singletons (patchable in tests) ────────────────────────
@@ -88,9 +80,7 @@ _search_health: str = "unknown"
 _last_search_latency_ms: float = 0.0
 _search_semaphore = asyncio.Semaphore(3)
 _searxng_url: str = os.environ.get("SEARXNG_URL", "http://localhost:8888")
-_searxng_fallback_url: str = os.environ.get(
-    "SEARXNG_FALLBACK_URL", "https://searx.be"
-)
+_searxng_fallback_url: str = os.environ.get("SEARXNG_FALLBACK_URL", "https://searx.be")
 _searxng_engines: list[str] = ["google", "bing", "startpage"]
 _searxng_categories: list[str] = ["general"]
 _searxng_timeout: int = 10
@@ -213,9 +203,7 @@ async def web_search(
             cache_key = _make_cache_key(query, max_results)
             cached = await cache.get(cache_key)
             if cached is not None:
-                logger.debug(
-                    "Cache hit for '%s' (%d results)", query, len(cached)
-                )
+                logger.debug("Cache hit for '%s' (%d results)", query, len(cached))
                 return cached
 
         # 3. Execute search via SearchChain
@@ -255,9 +243,7 @@ async def web_search(
         # 6. Parallel content fetching
         if _SEARCH_FETCH_CONTENT and enriched:
             urls = [r["url"] for r in enriched[:_SEARCH_FETCH_MAX_PAGES]]
-            fetched = await fetch_page_content(
-                urls, max_chars=_SEARCH_FETCH_MAX_CHARS
-            )
+            fetched = await fetch_page_content(urls, max_chars=_SEARCH_FETCH_MAX_CHARS)
             url_to_content = {f["url"]: f for f in fetched}
             for r in enriched:
                 fc = url_to_content.get(r["url"])

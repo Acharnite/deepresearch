@@ -11,7 +11,11 @@ import pytest
 
 def _import_fetcher():
     """Lazy-import content_fetcher module."""
-    from deepresearch.tools.content_fetcher import _strip_html, _extract_title, fetch_page_content
+    from deepresearch.tools.content_fetcher import (
+        _strip_html,
+        _extract_title,
+        fetch_page_content,
+    )
 
     return {
         "fetch_page_content": fetch_page_content,
@@ -33,7 +37,9 @@ class TestContentFetcher:
     async def test_returns_list_of_dicts(self) -> None:
         F = _import_fetcher()
         mock_response = MagicMock()
-        mock_response.text = "<html><title>Test</title><body><p>Hello world</p></body></html>"
+        mock_response.text = (
+            "<html><title>Test</title><body><p>Hello world</p></body></html>"
+        )
         mock_response.raise_for_status.return_value = None
 
         with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
@@ -98,7 +104,9 @@ class TestContentFetcher:
 
         with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_response
-            results = await F["fetch_page_content"](["https://example.com"], max_chars=100)
+            results = await F["fetch_page_content"](
+                ["https://example.com"], max_chars=100
+            )
 
         assert len(results) == 1
         assert results[0]["content"] is not None
@@ -117,11 +125,15 @@ class TestContentFetcher:
         async def mock_get_side_effect(url, **kwargs):
             if "good" in str(url):
                 mock_resp = MagicMock()
-                mock_resp.text = "<html><title>Good</title><body><p>OK</p></body></html>"
+                mock_resp.text = (
+                    "<html><title>Good</title><body><p>OK</p></body></html>"
+                )
                 mock_resp.raise_for_status.return_value = None
                 return mock_resp
             else:
-                raise httpx.HTTPStatusError("500", request=MagicMock(), response=MagicMock())
+                raise httpx.HTTPStatusError(
+                    "500", request=MagicMock(), response=MagicMock()
+                )
 
         from httpx import AsyncClient
 
@@ -180,7 +192,6 @@ class TestContentFetcher:
         """Semaphore should limit concurrent requests to max_concurrent."""
         F = _import_fetcher()
 
-        call_tracker = []
         semaphore_lock = asyncio.Lock()
         active_count = 0
         max_active = 0
@@ -194,7 +205,9 @@ class TestContentFetcher:
             async with semaphore_lock:
                 active_count -= 1
             mock_resp = MagicMock()
-            mock_resp.text = f"<html><title>Page</title><body><p>{url}</p></body></html>"
+            mock_resp.text = (
+                f"<html><title>Page</title><body><p>{url}</p></body></html>"
+            )
             mock_resp.raise_for_status.return_value = None
             return mock_resp
 

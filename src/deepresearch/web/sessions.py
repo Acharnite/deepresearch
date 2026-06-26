@@ -199,13 +199,26 @@ class MultiSessionManager:
             # Fallback: try llmfit's top research-optimized model
             try:
                 import subprocess
+
                 result = subprocess.run(
-                    ["llmfit", "recommend", "-n", "1", "--capability", "tool_use",
-                     "--min-fit", "good", "--json"],
-                    capture_output=True, text=True, timeout=45,
+                    [
+                        "llmfit",
+                        "recommend",
+                        "-n",
+                        "1",
+                        "--capability",
+                        "tool_use",
+                        "--min-fit",
+                        "good",
+                        "--json",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=45,
                 )
                 if result.returncode == 0:
                     import json
+
                     data = json.loads(result.stdout)
                     models = data.get("models", [])
                     if models:
@@ -221,6 +234,7 @@ class MultiSessionManager:
             # broken model-info lookup (constructs /api/generate/api/show which 404s).
             if test_model and test_model.startswith("ollama/"):
                 import httpx
+
                 model_name = test_model.split("/", 1)[1]
                 payload = {
                     "model": model_name,
@@ -236,6 +250,7 @@ class MultiSessionManager:
                         )
             else:
                 from deepresearch.llm.client import LLMClient
+
                 test_client = LLMClient(model=test_model, timeout=30)
                 await asyncio.wait_for(
                     test_client.generate(

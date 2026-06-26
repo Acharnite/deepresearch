@@ -1,10 +1,11 @@
 """Session management routes."""
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
@@ -15,7 +16,6 @@ from deepresearch.constants import TIME_BUDGETS
 from deepresearch.web.sessions import multi_session_manager
 from deepresearch.web.routes._helpers import (
     get_session_semaphore,
-    set_session_semaphore,
     MAX_CONCURRENT_SESSIONS,
     error_generator,
 )
@@ -119,7 +119,8 @@ async def start_research(req: RunRequest) -> JSONResponse:
                 "topic": info.topic,
                 "time_budget": info.time_budget,
                 "model_mode": info.model_mode,
-            }
+            },
+            status_code=201,
         )
     except Exception as e:
         sem.release()

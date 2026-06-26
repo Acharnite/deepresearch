@@ -1,11 +1,12 @@
 """llama.cpp lifecycle routes (install, uninstall, start, stop, serve, config)."""
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
 import os as _os
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator
 
 import httpx
 from fastapi import APIRouter, Request
@@ -15,7 +16,6 @@ from sse_starlette.sse import EventSourceResponse
 
 from deepresearch.web.settings_manager import local_backend_manager
 from deepresearch.web.routes._helpers import (
-    MAX_RESTART_ATTEMPTS,
     install_error_generator,
 )
 
@@ -25,7 +25,7 @@ router = APIRouter()
 # Mutable state and functions live in server.py (tests patch them there).
 # Import server module to access — safe because this module is imported
 # AFTER server.py is fully defined.
-import deepresearch.web.server as _srv
+import deepresearch.web.server as _srv  # noqa: E402
 
 
 class LlamacppConfigRequest(BaseModel):
@@ -61,8 +61,7 @@ async def get_llamacpp_status() -> JSONResponse:
             version = "unknown"
 
     running = (
-        _srv._llamacpp_process is not None
-        and _srv._llamacpp_process.returncode is None
+        _srv._llamacpp_process is not None and _srv._llamacpp_process.returncode is None
     )
 
     response: dict = {
@@ -107,7 +106,11 @@ async def install_llamacpp(request: Request) -> EventSourceResponse:
             yield {
                 "event": "install_log",
                 "data": json.dumps(
-                    {"step": "detect", "message": "Detecting platform...", "progress": 5}
+                    {
+                        "step": "detect",
+                        "message": "Detecting platform...",
+                        "progress": 5,
+                    }
                 ),
             }
             platform_info = _srv._detect_llamacpp_platform()
@@ -173,9 +176,7 @@ async def install_llamacpp(request: Request) -> EventSourceResponse:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                _, stderr = await asyncio.wait_for(
-                    curl_proc.communicate(), timeout=300
-                )
+                _, stderr = await asyncio.wait_for(curl_proc.communicate(), timeout=300)
                 if await request.is_disconnected():
                     curl_proc.kill()
                     _os.remove(tmp_path)
@@ -185,7 +186,7 @@ async def install_llamacpp(request: Request) -> EventSourceResponse:
                         f"curl failed (exit {curl_proc.returncode}): "
                         f"{stderr.decode('utf-8', errors='replace').strip()}"
                     )
-            except Exception as exc:
+            except Exception:
                 _os.remove(tmp_path)
                 raise
 
@@ -226,9 +227,7 @@ async def install_llamacpp(request: Request) -> EventSourceResponse:
                             found_binary = True
                         tar.extract(m, path=install_dir)
                     if not found_binary:
-                        raise RuntimeError(
-                            "llama-server binary not found in archive"
-                        )
+                        raise RuntimeError("llama-server binary not found in archive")
             elif ext == "zip":
                 import zipfile as _zipfile
 
@@ -247,9 +246,7 @@ async def install_llamacpp(request: Request) -> EventSourceResponse:
                         info.filename = flat_name
                         zf.extract(info, install_dir)
                     if not found_binary:
-                        raise RuntimeError(
-                            "llama-server binary not found in archive"
-                        )
+                        raise RuntimeError("llama-server binary not found in archive")
 
             _os.remove(tmp_path)
 
@@ -260,7 +257,11 @@ async def install_llamacpp(request: Request) -> EventSourceResponse:
             yield {
                 "event": "install_log",
                 "data": json.dumps(
-                    {"step": "verify", "message": "Verifying installation...", "progress": 90}
+                    {
+                        "step": "verify",
+                        "message": "Verifying installation...",
+                        "progress": 90,
+                    }
                 ),
             }
 
@@ -446,7 +447,11 @@ async def uninstall_llamacpp(request: Request) -> EventSourceResponse:
             yield {
                 "event": "install_log",
                 "data": json.dumps(
-                    {"step": "verify", "message": "Verifying removal...", "progress": 85}
+                    {
+                        "step": "verify",
+                        "message": "Verifying removal...",
+                        "progress": 85,
+                    }
                 ),
             }
 
@@ -501,13 +506,8 @@ async def start_llamacpp() -> JSONResponse:
             status_code=400,
         )
 
-    if (
-        _srv._llamacpp_process is not None
-        and _srv._llamacpp_process.returncode is None
-    ):
-        return JSONResponse(
-            {"status": "ok", "message": "llama.cpp is already running"}
-        )
+    if _srv._llamacpp_process is not None and _srv._llamacpp_process.returncode is None:
+        return JSONResponse({"status": "ok", "message": "llama.cpp is already running"})
 
     if not _srv._llamacpp_serving_model:
         return JSONResponse(
@@ -593,13 +593,8 @@ async def start_llamacpp() -> JSONResponse:
 @router.post("/local-backends/llamacpp/stop")
 async def stop_llamacpp() -> JSONResponse:
     """Stop the managed llama-server subprocess."""
-    if (
-        _srv._llamacpp_process is None
-        or _srv._llamacpp_process.returncode is not None
-    ):
-        return JSONResponse(
-            {"status": "ok", "message": "llama.cpp is not running"}
-        )
+    if _srv._llamacpp_process is None or _srv._llamacpp_process.returncode is not None:
+        return JSONResponse({"status": "ok", "message": "llama.cpp is not running"})
 
     try:
         _srv._llamacpp_process.terminate()
@@ -647,11 +642,9 @@ async def list_gguf_models() -> JSONResponse:
                 size_bytes = 0
             rel_path = _os.path.relpath(full_path, models_dir)
             name = rel_path.replace(_os.sep, "/").removesuffix(".gguf")
-            serving = (
-                _srv._llamacpp_serving_model is not None
-                and _os.path.realpath(_srv._llamacpp_serving_model)
-                == _os.path.realpath(full_path)
-            )
+            serving = _srv._llamacpp_serving_model is not None and _os.path.realpath(
+                _srv._llamacpp_serving_model
+            ) == _os.path.realpath(full_path)
             models.append(
                 {
                     "name": name,
@@ -677,8 +670,7 @@ async def serve_llamacpp_model(request: Request) -> EventSourceResponse:
     qp = dict(request.query_params)
     model_input = body.get("model") or qp.get("model", "")
     port = int(
-        body.get("port")
-        or qp.get("port", _srv._llamacpp_config.get("port", 8080))
+        body.get("port") or qp.get("port", _srv._llamacpp_config.get("port", 8080))
     )
     gpu_layers = int(body.get("gpu_layers") or qp.get("gpu_layers", 0))
     context_size = int(body.get("context_size") or qp.get("context_size", 8192))
@@ -715,9 +707,7 @@ async def serve_llamacpp_model(request: Request) -> EventSourceResponse:
         models_dir = _os.path.expanduser("~/.cache/llmfit/models/")
         for dirpath, _d, filenames in _os.walk(models_dir):
             if name_with_ext in filenames:
-                model_path = _os.path.abspath(
-                    _os.path.join(dirpath, name_with_ext)
-                )
+                model_path = _os.path.abspath(_os.path.join(dirpath, name_with_ext))
                 break
 
     if not model_path or not _os.path.isfile(model_path):
@@ -733,10 +723,7 @@ async def serve_llamacpp_model(request: Request) -> EventSourceResponse:
     _srv._llamacpp_config["flash_attn"] = flash_attn
     _srv._llamacpp_config["batch_size"] = batch_size
 
-    if (
-        _srv._llamacpp_process is not None
-        and _srv._llamacpp_process.returncode is None
-    ):
+    if _srv._llamacpp_process is not None and _srv._llamacpp_process.returncode is None:
         _srv._llamacpp_process.terminate()
         try:
             await asyncio.wait_for(_srv._llamacpp_process.wait(), timeout=5)
@@ -819,7 +806,11 @@ async def serve_llamacpp_model(request: Request) -> EventSourceResponse:
                     yield {
                         "event": "install_log",
                         "data": json.dumps(
-                            {"step": "gpu", "message": line.strip(), "progress": progress}
+                            {
+                                "step": "gpu",
+                                "message": line.strip(),
+                                "progress": progress,
+                            }
                         ),
                     }
                 elif "buffer size" in line.lower() or "model buffer" in line.lower():
@@ -839,7 +830,11 @@ async def serve_llamacpp_model(request: Request) -> EventSourceResponse:
                     yield {
                         "event": "install_log",
                         "data": json.dumps(
-                            {"step": "ready", "message": line.strip(), "progress": progress}
+                            {
+                                "step": "ready",
+                                "message": line.strip(),
+                                "progress": progress,
+                            }
                         ),
                     }
                 else:
@@ -916,8 +911,7 @@ async def serve_llamacpp_model(request: Request) -> EventSourceResponse:
 async def update_llamacpp_config(req: LlamacppConfigRequest) -> JSONResponse:
     """Update llama.cpp configuration. Returns warning if server is running."""
     running = (
-        _srv._llamacpp_process is not None
-        and _srv._llamacpp_process.returncode is None
+        _srv._llamacpp_process is not None and _srv._llamacpp_process.returncode is None
     )
 
     warning = None

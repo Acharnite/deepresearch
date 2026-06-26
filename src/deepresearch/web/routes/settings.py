@@ -1,4 +1,5 @@
 """Settings and configuration routes (API keys, local models, scribe, context windows)."""
+
 from __future__ import annotations
 
 import logging
@@ -13,7 +14,6 @@ from deepresearch.web.settings_manager import (
     settings_manager,
     context_window_manager,
 )
-from deepresearch.web.routes._helpers import get_discovered_local_models
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -131,9 +131,7 @@ async def test_local_endpoint(name: str) -> JSONResponse:
     endpoints = settings_manager.get_local_endpoints()
     ep = next((e for e in endpoints if e.get("name") == name), None)
     if ep is None:
-        return JSONResponse(
-            {"error": f"Endpoint '{name}' not found"}, status_code=404
-        )
+        return JSONResponse({"error": f"Endpoint '{name}' not found"}, status_code=404)
     try:
         endpoint_url = ep["endpoint"].rstrip("/")
         test_url = f"{endpoint_url}/models"
@@ -210,9 +208,7 @@ async def get_context_windows() -> JSONResponse:
 async def set_context_window(req: ContextWindowRequest) -> JSONResponse:
     """Set a context window override for a model."""
     if req.context_window < 1:
-        return JSONResponse(
-            {"error": "context_window must be >= 1"}, status_code=400
-        )
+        return JSONResponse({"error": "context_window must be >= 1"}, status_code=400)
     context_window_manager.set_override(req.model_id, req.context_window)
     return JSONResponse(
         {

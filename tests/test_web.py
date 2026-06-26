@@ -270,7 +270,9 @@ class TestDashboardEndpoints:
         assert resp.status_code == 404
         assert "File not found" in resp.json()["error"]
 
-    def test_session_state_endpoint(self, client: TestClient) -> None:
+    def test_session_state_endpoint(
+        self, client: TestClient, mock_llm_client: None
+    ) -> None:
         """GET /api/sessions/{id}/state returns current session state."""
         resp = client.get("/api/sessions/nonexistent/state")
         assert resp.status_code == 404
@@ -299,7 +301,9 @@ class TestDashboardEndpoints:
 class TestSessionEndpoints:
     """Multi-session API endpoint tests."""
 
-    def test_run_endpoint_returns_session_id(self, client: TestClient) -> None:
+    def test_run_endpoint_returns_session_id(
+        self, client: TestClient, mock_llm_client: None
+    ) -> None:
         """POST /api/run returns started status with session_id."""
         resp = client.post(
             "/api/run",
@@ -315,7 +319,9 @@ class TestSessionEndpoints:
         assert data["session_id"] is not None
         assert data["topic"] == "Quantum Computing"
 
-    def test_run_endpoint_with_custom_seconds(self, client: TestClient) -> None:
+    def test_run_endpoint_with_custom_seconds(
+        self, client: TestClient, mock_llm_client: None
+    ) -> None:
         """POST /api/run accepts time_budget_seconds for custom budget."""
         resp = client.post(
             "/api/run",

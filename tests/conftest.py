@@ -87,6 +87,7 @@ def mock_httpx_get():
         return mock_resp
 
     with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+
         async def side_effect(url, **kwargs):
             if url in responses:
                 return responses[url]

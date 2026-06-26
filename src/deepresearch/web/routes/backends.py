@@ -1,4 +1,5 @@
 """Local backend management routes (discovery, ollama, llmfit, model download)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -6,7 +7,7 @@ import json
 import logging
 import re
 import time
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator
 
 import httpx
 from fastapi import APIRouter, Request
@@ -17,7 +18,6 @@ from sse_starlette.sse import EventSourceResponse
 from deepresearch.web.settings_manager import local_backend_manager
 from deepresearch.web.routes._helpers import (
     BACKEND_DEFINITIONS,
-    download_process,
     download_state,
     install_error_generator,
     probe_backend,
@@ -1101,9 +1101,7 @@ async def download_model(
                     return
 
                 repo = req.repo or req.name
-                model_display = (
-                    req.name.split("/")[-1] if "/" in req.name else req.name
-                )
+                model_display = req.name.split("/")[-1] if "/" in req.name else req.name
                 import os
 
                 output_dir = os.path.expanduser("~/.cache/llmfit/models/")
@@ -1130,7 +1128,6 @@ async def download_model(
                 )
 
                 assert process.stdout is not None
-                import re as _re
 
                 async for line in process.stdout:
                     line_str = line.decode("utf-8", errors="replace").strip()

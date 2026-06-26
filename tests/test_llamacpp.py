@@ -48,24 +48,28 @@ def _parse_sse_events(body: str) -> list[dict[str, str]]:
     current_data_lines: list[str] = []
     for line in body.splitlines():
         if line.startswith("event:"):
-            current_event = line[len("event:"):].strip()
+            current_event = line[len("event:") :].strip()
         elif line.startswith("data:"):
-            current_data_lines.append(line[len("data:"):].strip())
+            current_data_lines.append(line[len("data:") :].strip())
         elif line == "":
             # Blank line = end of event
             if current_data_lines:
-                events.append({
-                    "event": current_event,
-                    "data": "\n".join(current_data_lines),
-                })
+                events.append(
+                    {
+                        "event": current_event,
+                        "data": "\n".join(current_data_lines),
+                    }
+                )
             current_event = "message"
             current_data_lines = []
     # Flush last event if body doesn't end with blank line
     if current_data_lines:
-        events.append({
-            "event": current_event,
-            "data": "\n".join(current_data_lines),
-        })
+        events.append(
+            {
+                "event": current_event,
+                "data": "\n".join(current_data_lines),
+            }
+        )
     return events
 
 
@@ -99,7 +103,13 @@ def _reset_llamacpp_globals():
 
     # Set known test state
     srv._llamacpp_process = None
-    srv._llamacpp_config = {"port": 8080, "installed": False, "gpu_layers": 0, "context_size": 8192, "flash_attn": False}
+    srv._llamacpp_config = {
+        "port": 8080,
+        "installed": False,
+        "gpu_layers": 0,
+        "context_size": 8192,
+        "flash_attn": False,
+    }
     srv._llamacpp_shutting_down = False
     srv._llamacpp_serving_model = None
     if orig_detected is not _SENTINEL:
@@ -122,6 +132,7 @@ def _reset_llamacpp_globals():
         srv._llamacpp_last_model = orig_last
     # Clean up any address set by start/serve endpoints
     from deepresearch.web.settings_manager import local_backend_manager
+
     overrides = local_backend_manager._load()
     overrides.pop("llama-cpp", None)
     local_backend_manager._save(overrides)
@@ -156,10 +167,13 @@ class TestPlatformDetection:
         with (
             patch.object(_platform, "system", return_value="Linux"),
             patch.object(_platform, "machine", return_value="x86_64"),
-            patch("shutil.which", side_effect=lambda cmd: {
-                "rocm-smi": "/usr/bin/rocm-smi",
-                "nvidia-smi": "/usr/bin/nvidia-smi",
-            }.get(cmd)),
+            patch(
+                "shutil.which",
+                side_effect=lambda cmd: {
+                    "rocm-smi": "/usr/bin/rocm-smi",
+                    "nvidia-smi": "/usr/bin/nvidia-smi",
+                }.get(cmd),
+            ),
         ):
             result = _detect_llamacpp_platform()
         assert result == {"asset": "ubuntu-rocm-7.2-x64", "ext": "tar.gz"}
@@ -169,10 +183,13 @@ class TestPlatformDetection:
         with (
             patch.object(_platform, "system", return_value="Linux"),
             patch.object(_platform, "machine", return_value="x86_64"),
-            patch("shutil.which", side_effect=lambda cmd: {
-                "rocm-smi": None,
-                "nvidia-smi": "/usr/bin/nvidia-smi",
-            }.get(cmd)),
+            patch(
+                "shutil.which",
+                side_effect=lambda cmd: {
+                    "rocm-smi": None,
+                    "nvidia-smi": "/usr/bin/nvidia-smi",
+                }.get(cmd),
+            ),
         ):
             result = _detect_llamacpp_platform()
         assert result == {"asset": "ubuntu-vulkan-x64", "ext": "tar.gz"}
@@ -355,9 +372,7 @@ class TestLlamacppStatus:
             patch("shutil.which", return_value="/usr/local/bin/llama-server"),
             patch("subprocess.run") as mock_run,
         ):
-            mock_run.return_value = MagicMock(
-                stdout="version 1.0\n", stderr=""
-            )
+            mock_run.return_value = MagicMock(stdout="version 1.0\n", stderr="")
             resp = client.get("/api/local-backends/llamacpp/status")
 
         assert resp.status_code == 200
@@ -417,7 +432,9 @@ class TestLlamacppInstall:
         assert resp.headers["content-type"].startswith("text/event-stream")
         events = _parse_sse_events(resp.text)
         error_events = [e for e in events if e["event"] == "install_error"]
-        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert error_events, (
+            f"Expected install_error event, got: {[e['event'] for e in events]}"
+        )
         assert "llama.cpp is already installed" in error_events[0]["data"]
 
     def test_install_sse_events_have_progress_and_steps(self, client: TestClient):
@@ -509,7 +526,9 @@ class TestLlamacppInstall:
         assert resp.status_code == 200
         events = _parse_sse_events(resp.text)
         error_events = [e for e in events if e["event"] == "install_error"]
-        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert error_events, (
+            f"Expected install_error event, got: {[e['event'] for e in events]}"
+        )
         assert "Unsupported platform" in error_events[0]["data"]
 
 
@@ -527,7 +546,9 @@ class TestLlamacppUninstall:
         assert resp.headers["content-type"].startswith("text/event-stream")
         events = _parse_sse_events(resp.text)
         error_events = [e for e in events if e["event"] == "install_error"]
-        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert error_events, (
+            f"Expected install_error event, got: {[e['event'] for e in events]}"
+        )
         assert "llama.cpp is not installed" in error_events[0]["data"]
         assert "NOT_INSTALLED" in error_events[0]["data"]
 
@@ -642,7 +663,9 @@ class TestLlamacppStart:
 
         with (
             patch("shutil.which", return_value="/usr/bin/llama-server"),
-            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+            patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec,
             patch("asyncio.sleep", new_callable=AsyncMock),
             patch("httpx.AsyncClient") as mock_client_cls,
             patch("deepresearch.web.server._is_port_available", return_value=True),
@@ -715,9 +738,7 @@ class TestLlamacppStop:
         mock_proc = MagicMock()
         mock_proc.returncode = None
         # Simulate terminate timing out
-        mock_proc.wait = AsyncMock(
-            side_effect=[asyncio.TimeoutError, None]
-        )
+        mock_proc.wait = AsyncMock(side_effect=[asyncio.TimeoutError, None])
         srv._llamacpp_process = mock_proc
 
         resp = client.post("/api/local-backends/llamacpp/stop")
@@ -762,7 +783,9 @@ class TestLlamacppRestart:
 
         with (
             patch("shutil.which", return_value="/usr/bin/llama-server"),
-            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+            patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec,
             patch("asyncio.sleep", new_callable=AsyncMock),
             patch("httpx.AsyncClient") as mock_client_cls,
             patch("deepresearch.web.server._is_port_available", return_value=True),
@@ -901,7 +924,12 @@ class TestLlamacppConfig:
         """Updates config fields and returns new config."""
         resp = client.put(
             "/api/local-backends/llamacpp/config",
-            json={"port": 8081, "gpu_layers": -1, "context_size": 16384, "flash_attn": True},
+            json={
+                "port": 8081,
+                "gpu_layers": -1,
+                "context_size": 16384,
+                "flash_attn": True,
+            },
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -960,7 +988,9 @@ class TestLlamacppServe:
         assert resp.status_code == 200
         events = _parse_sse_events(resp.text)
         error_events = [e for e in events if e["event"] == "install_error"]
-        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert error_events, (
+            f"Expected install_error event, got: {[e['event'] for e in events]}"
+        )
         assert "not installed" in error_events[0]["data"].lower()
 
     def test_serve_no_model_returns_error(self, client: TestClient):
@@ -973,7 +1003,9 @@ class TestLlamacppServe:
         assert resp.status_code == 200
         events = _parse_sse_events(resp.text)
         error_events = [e for e in events if e["event"] == "install_error"]
-        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert error_events, (
+            f"Expected install_error event, got: {[e['event'] for e in events]}"
+        )
         assert "no model" in error_events[0]["data"].lower()
 
     def test_serve_model_not_found_returns_error(self, client: TestClient):
@@ -990,7 +1022,9 @@ class TestLlamacppServe:
         assert resp.status_code == 200
         events = _parse_sse_events(resp.text)
         error_events = [e for e in events if e["event"] == "install_error"]
-        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert error_events, (
+            f"Expected install_error event, got: {[e['event'] for e in events]}"
+        )
         assert "not found" in error_events[0]["data"].lower()
 
     def test_serve_stops_existing_process(self, client: TestClient):
@@ -1012,12 +1046,14 @@ class TestLlamacppServe:
             patch("shutil.which", return_value="/usr/bin/llama-server"),
             patch("os.path.isfile", return_value=True),
             patch("os.path.abspath", side_effect=lambda p: p),
-            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+            patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec,
             patch("deepresearch.web.server._is_port_available", return_value=True),
         ):
             mock_exec.return_value = new_proc
 
-            resp = client.post(
+            client.post(
                 "/api/local-backends/llamacpp/serve",
                 json={"model": "/path/to/model.gguf"},
             )
@@ -1056,7 +1092,9 @@ class TestLlamacppStatusPhase2:
         assert data["running"] is True
         assert "active_model" in data
         assert data["active_model"]["name"] == "qwen"
-        assert data["active_model"]["path"] == "/home/user/.cache/llmfit/models/qwen.gguf"
+        assert (
+            data["active_model"]["path"] == "/home/user/.cache/llmfit/models/qwen.gguf"
+        )
         assert data["port"] == 8080
         assert data["pid"] == 12345
         assert data["gpu_layers"] == 0
@@ -1100,7 +1138,9 @@ class TestLlamacppStartPhase2:
 
         with (
             patch("shutil.which", return_value="/usr/bin/llama-server"),
-            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+            patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec,
             patch("httpx.AsyncClient") as mock_client_cls,
             patch("deepresearch.web.server._is_port_available", return_value=True),
         ):
@@ -1141,7 +1181,9 @@ class TestLlamacppStartPhase2:
 
         with (
             patch("shutil.which", return_value="/usr/bin/llama-server"),
-            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+            patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec,
             patch("httpx.AsyncClient") as mock_client_cls,
             patch("deepresearch.web.server._is_port_available", return_value=True),
         ):
@@ -1178,6 +1220,7 @@ class TestListGgufModelsPhase2:
     def test_empty_directory_returns_empty_list(self, client: TestClient):
         """Empty directory returns empty list."""
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch("os.path.expanduser", return_value=tmpdir):
                 resp = client.get("/api/local-backends/models/gguf")
@@ -1188,6 +1231,7 @@ class TestListGgufModelsPhase2:
     def test_multiple_files_returned_with_correct_metadata(self, client: TestClient):
         """Multiple .gguf files returned with name, path, size_bytes, serving."""
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create two .gguf files with different sizes
             path1 = os.path.join(tmpdir, "model1.gguf")
@@ -1211,6 +1255,7 @@ class TestListGgufModelsPhase2:
     def test_subdirectories_are_scanned(self, client: TestClient):
         """Recursive scan finds .gguf in subdirectories."""
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmpdir:
             subdir = os.path.join(tmpdir, "subdir")
             os.makedirs(subdir)
@@ -1229,6 +1274,7 @@ class TestListGgufModelsPhase2:
         """serving=True only for the currently served model."""
         import tempfile
         import deepresearch.web.server as srv
+
         with tempfile.TemporaryDirectory() as tmpdir:
             model_path = os.path.join(tmpdir, "active.gguf")
             other_path = os.path.join(tmpdir, "other.gguf")
@@ -1250,6 +1296,7 @@ class TestListGgufModelsPhase2:
     def test_sorted_by_size_descending(self, client: TestClient):
         """Results sorted largest first."""
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create files with known sizes
             sizes = [100, 5000, 2000]
@@ -1290,7 +1337,9 @@ class TestLlamacppServePhase2:
         assert resp.status_code == 200
         events = _parse_sse_events(resp.text)
         error_events = [e for e in events if e["event"] == "install_error"]
-        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert error_events, (
+            f"Expected install_error event, got: {[e['event'] for e in events]}"
+        )
         assert "no model" in error_events[0]["data"].lower()
 
     def test_serve_model_not_found_returns_error(self, client: TestClient):
@@ -1307,12 +1356,15 @@ class TestLlamacppServePhase2:
         assert resp.status_code == 200
         events = _parse_sse_events(resp.text)
         error_events = [e for e in events if e["event"] == "install_error"]
-        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert error_events, (
+            f"Expected install_error event, got: {[e['event'] for e in events]}"
+        )
         assert "not found" in error_events[0]["data"].lower()
 
     def test_serve_starts_with_m_flag(self, client: TestClient):
         """Subprocess starts with -m <path>."""
         import deepresearch.web.server as srv
+
         srv._llamacpp_serving_model = None  # will be set after serve
         mock_proc = MagicMock()
         mock_proc.returncode = None
@@ -1325,7 +1377,9 @@ class TestLlamacppServePhase2:
             patch("shutil.which", return_value="/usr/bin/llama-server"),
             patch("os.path.isfile", return_value=True),
             patch("os.path.abspath", side_effect=lambda p: p),
-            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+            patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec,
             patch("deepresearch.web.server._is_port_available", return_value=True),
         ):
             mock_exec.return_value = mock_proc
@@ -1352,6 +1406,7 @@ class TestLlamacppServePhase2:
     def test_serve_stops_existing_first(self, client: TestClient):
         """If already serving, stops before starting new."""
         import deepresearch.web.server as srv
+
         old_proc = MagicMock()
         old_proc.returncode = None
         old_proc.wait = AsyncMock()
@@ -1368,7 +1423,9 @@ class TestLlamacppServePhase2:
             patch("shutil.which", return_value="/usr/bin/llama-server"),
             patch("os.path.isfile", return_value=True),
             patch("os.path.abspath", side_effect=lambda p: p),
-            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+            patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec,
             patch("deepresearch.web.server._is_port_available", return_value=True),
         ):
             mock_exec.return_value = new_proc
@@ -1382,7 +1439,7 @@ class TestLlamacppServePhase2:
             mock_client.get = AsyncMock(return_value=mock_health_resp)
             with patch("httpx.AsyncClient") as mock_client_cls:
                 mock_client_cls.return_value = mock_client
-                resp = client.post(
+                client.post(
                     "/api/local-backends/llamacpp/serve",
                     json={"model": "/path/to/model.gguf"},
                 )
@@ -1390,7 +1447,6 @@ class TestLlamacppServePhase2:
 
     def test_serve_updates_serving_model(self, client: TestClient):
         """After serve, _llamacpp_serving_model is set."""
-        import deepresearch.web.server as srv
         mock_proc = MagicMock()
         mock_proc.returncode = None
         never_set = asyncio.Event()
@@ -1402,7 +1458,9 @@ class TestLlamacppServePhase2:
             patch("shutil.which", return_value="/usr/bin/llama-server"),
             patch("os.path.isfile", return_value=True),
             patch("os.path.abspath", side_effect=lambda p: p),
-            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+            patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec,
             patch("deepresearch.web.server._is_port_available", return_value=True),
         ):
             mock_exec.return_value = mock_proc
@@ -1426,7 +1484,6 @@ class TestLlamacppServePhase2:
 
     def test_serve_sse_events(self, client: TestClient):
         """SSE stream emits loading progress events."""
-        import deepresearch.web.server as srv
         mock_proc = MagicMock()
         mock_proc.returncode = None
         mock_proc.wait = AsyncMock()
@@ -1444,7 +1501,9 @@ class TestLlamacppServePhase2:
             patch("shutil.which", return_value="/usr/bin/llama-server"),
             patch("os.path.isfile", return_value=True),
             patch("os.path.abspath", side_effect=lambda p: p),
-            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+            patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec,
             patch("deepresearch.web.server._is_port_available", return_value=True),
             patch("asyncio.sleep", new_callable=AsyncMock),
             patch("httpx.AsyncClient") as mock_httpx,
@@ -1485,7 +1544,9 @@ class TestLlamacppServePhase2:
         assert resp.status_code == 200
         events = _parse_sse_events(resp.text)
         error_events = [e for e in events if e["event"] == "install_error"]
-        assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+        assert error_events, (
+            f"Expected install_error event, got: {[e['event'] for e in events]}"
+        )
         assert "port" in error_events[0]["data"].lower()
         assert "already in use" in error_events[0]["data"].lower()
 
@@ -1507,6 +1568,7 @@ class TestLlamacppConfigPhase2:
         assert data["config"]["port"] == 9999
         # Verify internal config updated
         import deepresearch.web.server as srv
+
         assert srv._llamacpp_config["port"] == 9999
 
     def test_config_update_gpu_layers(self, client: TestClient):
@@ -1532,6 +1594,7 @@ class TestLlamacppConfigPhase2:
     def test_config_running_warning(self, client: TestClient):
         """Returns warning when server is running."""
         import deepresearch.web.server as srv
+
         mock_proc = MagicMock()
         mock_proc.returncode = None
         srv._llamacpp_process = mock_proc
@@ -1547,6 +1610,7 @@ class TestLlamacppConfigPhase2:
     def test_config_updates_backend_address(self, client: TestClient):
         """Port change calls local_backend_manager.set_address()."""
         from deepresearch.web.settings_manager import local_backend_manager
+
         resp = client.put(
             "/api/local-backends/llamacpp/config",
             json={"port": 8082},
@@ -1566,12 +1630,13 @@ class TestModelRegistrationPhase3:
     def test_api_models_includes_llamacpp_when_running(self, client: TestClient):
         """When llama-server running with model, /api/models includes llamacpp/<model-name>."""
         import deepresearch.web.server as srv
+
         mock_proc = MagicMock()
         mock_proc.returncode = None
         srv._llamacpp_process = mock_proc
         srv._llamacpp_serving_model = "/home/user/.cache/llmfit/models/qwen.gguf"
         # Mock load_model_config to return empty list
-        with patch("deepresearch.web.server.load_model_config", return_value=[]):
+        with patch("deepresearch.web.routes.models.load_model_config", return_value=[]):
             resp = client.get("/api/models")
         assert resp.status_code == 200
         data = resp.json()
@@ -1582,9 +1647,10 @@ class TestModelRegistrationPhase3:
     def test_api_models_excludes_stopped_llamacpp(self, client: TestClient):
         """When not running, no llamacpp model in /api/models."""
         import deepresearch.web.server as srv
+
         srv._llamacpp_process = None
         srv._llamacpp_serving_model = None
-        with patch("deepresearch.web.server.load_model_config", return_value=[]):
+        with patch("deepresearch.web.routes.models.load_model_config", return_value=[]):
             resp = client.get("/api/models")
         assert resp.status_code == 200
         data = resp.json()
@@ -1609,7 +1675,9 @@ class TestDetectLlamacppAddress:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
 
-        with patch("deepresearch.llm.client.httpx.get", return_value=mock_resp) as mock_get:
+        with patch(
+            "deepresearch.llm.client.httpx.get", return_value=mock_resp
+        ) as mock_get:
             result = client_mod._detect_llamacpp_address()
 
         assert result == "http://localhost:8080/v1"
@@ -1631,7 +1699,9 @@ class TestDetectLlamacppAddress:
         ok_resp = MagicMock()
         ok_resp.status_code = 200
 
-        with patch("deepresearch.llm.client.httpx.get", side_effect=[fail_resp, ok_resp]) as mock_get:
+        with patch(
+            "deepresearch.llm.client.httpx.get", side_effect=[fail_resp, ok_resp]
+        ) as mock_get:
             result = client_mod._detect_llamacpp_address()
 
         assert result == "http://localhost:7501/v1"
@@ -1676,7 +1746,9 @@ class TestDetectLlamacppAddress:
         mock_resp.status_code = 200
 
         mock_mgr = MagicMock()
-        mock_mgr.get_address.return_value = None  # no custom address → triggers auto-detect
+        mock_mgr.get_address.return_value = (
+            None  # no custom address → triggers auto-detect
+        )
 
         with (
             patch("deepresearch.llm.client.httpx.get", return_value=mock_resp),
@@ -1686,6 +1758,7 @@ class TestDetectLlamacppAddress:
             ),
         ):
             from deepresearch.llm.client import LLMClient
+
             LLMClient._resolve_api_base("llama-cpp")
 
         mock_mgr.set_address.assert_called_once_with("llama-cpp", "localhost:8080")

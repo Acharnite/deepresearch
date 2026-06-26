@@ -69,7 +69,7 @@ for _noisy in (
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 # ── Load .env keys into os.environ at startup ──────────────────────────
-from deepresearch.web.settings_manager import settings_manager
+from deepresearch.web.settings_manager import settings_manager  # noqa: E402
 
 _settings_env_path = settings_manager._settings_dir / ".env"
 if _settings_env_path.exists():
@@ -107,10 +107,7 @@ async def _lifespan(app: FastAPI):
         logger.error("Failed to save sessions during shutdown: %s", e)
 
     _h.llamacpp_shutting_down = True
-    if (
-        _h.llamacpp_process is not None
-        and _h.llamacpp_process.returncode is None
-    ):
+    if _h.llamacpp_process is not None and _h.llamacpp_process.returncode is None:
         logger.warning("Stopping llama.cpp...")
         _h.llamacpp_process.terminate()
         try:
@@ -311,32 +308,23 @@ async def clear_system_log() -> JSONResponse:
 
 # ── Register Route Modules ─────────────────────────────────────────────
 
-from deepresearch.web.routes.sessions import router as sessions_router
-from deepresearch.web.routes.backends import router as backends_router
-from deepresearch.web.routes.llamacpp import router as llamacpp_router
-from deepresearch.web.routes.settings import router as settings_router
-from deepresearch.web.routes.search import router as search_router
-from deepresearch.web.routes.models import router as models_router
+from deepresearch.web.routes.sessions import router as sessions_router  # noqa: E402
+from deepresearch.web.routes.backends import router as backends_router  # noqa: E402
+from deepresearch.web.routes.llamacpp import router as llamacpp_router  # noqa: E402
+from deepresearch.web.routes.settings import router as settings_router  # noqa: E402
+from deepresearch.web.routes.search import router as search_router  # noqa: E402
+from deepresearch.web.routes.models import router as models_router  # noqa: E402
 
 # ── Backward-compatible re-exports (tests import these from server.py) ──
-from deepresearch.web.routes._helpers import (
-    detect_llamacpp_platform as _detect_llamacpp_platform,
-    get_latest_llamacpp_tag as _get_latest_llamacpp_tag,
-    build_llamacpp_download_url as _build_llamacpp_download_url,
-    is_port_available as _is_port_available,
-    probe_backend as _probe_backend,
-    get_discovered_local_models as _get_discovered_local_models,
-    discover_provider_models as _discover_provider_models,
-    get_api_key as _get_api_key,
-    get_provider_auth as _get_provider_auth,
-    parse_provider_models as _parse_provider_models,
-    error_generator as _error_generator,
-    install_error_generator as _install_error_generator,
+from deepresearch.web.routes._helpers import (  # noqa: E402
+    build_llamacpp_download_url as _build_llamacpp_download_url,  # noqa: F401
+    detect_llamacpp_platform as _detect_llamacpp_platform,  # noqa: F401
+    get_latest_llamacpp_tag as _get_latest_llamacpp_tag,  # noqa: F401
+    is_port_available as _is_port_available,  # noqa: F401
     monitor_llamacpp_process as monitor_llamacpp_process,
 )
 
 # Backward-compat: tests patch these names on the server module
-from deepresearch.config import load_model_config  # noqa: F811
 
 # Backward-compatible aliases for mutable state (tests mutate these via server module)
 _llamacpp_process = _h.llamacpp_process

@@ -147,7 +147,11 @@ class TestWebSearchSearxng:
 
         mock_results = [
             {"title": "Only Title", "source": "searxng"},
-            {"snippet": "Only snippet", "url": "https://example.com", "source": "searxng"},
+            {
+                "snippet": "Only snippet",
+                "url": "https://example.com",
+                "source": "searxng",
+            },
         ]
         with patch.object(SearchChain, "search", new_callable=AsyncMock) as mock_search:
             mock_search.return_value = mock_results
@@ -392,9 +396,7 @@ class TestGenerateWithTools:
 
         with (
             patch("litellm.acompletion") as mock_acompletion,
-            patch(
-                "deepresearch.tools.registry.resolve_tool"
-            ) as mock_resolve,
+            patch("deepresearch.tools.registry.resolve_tool") as mock_resolve,
         ):
             mock_ws = AsyncMock()
             mock_ws.return_value = [

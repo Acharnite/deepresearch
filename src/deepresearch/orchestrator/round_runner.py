@@ -314,7 +314,6 @@ class RoundRunner:
 
             return results
 
-
     @staticmethod
     def _is_empty_result(result: Any) -> bool:
         """Check if a research result is effectively empty (no substantive content).

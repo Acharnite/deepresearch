@@ -43,7 +43,9 @@ def _strip_html(html: str) -> str:
     """Strip HTML tags, collapse whitespace, and return plain text."""
     # Extract and remove <style> / <script> blocks
     html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
-    html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    html = re.sub(
+        r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE
+    )
     text = _RE_TAG.sub(" ", html)
     text = _RE_WHITESPACE.sub(" ", text)
     return text.strip()

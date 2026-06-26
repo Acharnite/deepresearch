@@ -36,24 +36,28 @@ def _parse_sse_events(body: str) -> list[dict[str, str]]:
     current_data_lines: list[str] = []
     for line in body.splitlines():
         if line.startswith("event:"):
-            current_event = line[len("event:"):].strip()
+            current_event = line[len("event:") :].strip()
         elif line.startswith("data:"):
-            current_data_lines.append(line[len("data:"):].strip())
+            current_data_lines.append(line[len("data:") :].strip())
         elif line == "":
             # Blank line = end of event
             if current_data_lines:
-                events.append({
-                    "event": current_event,
-                    "data": "\n".join(current_data_lines),
-                })
+                events.append(
+                    {
+                        "event": current_event,
+                        "data": "\n".join(current_data_lines),
+                    }
+                )
             current_event = "message"
             current_data_lines = []
     # Flush last event if body doesn't end with blank line
     if current_data_lines:
-        events.append({
-            "event": current_event,
-            "data": "\n".join(current_data_lines),
-        })
+        events.append(
+            {
+                "event": current_event,
+                "data": "\n".join(current_data_lines),
+            }
+        )
     return events
 
 
@@ -79,7 +83,13 @@ def _reset_llamacpp_globals():
 
     # Set known test state
     srv._llamacpp_process = None
-    srv._llamacpp_config = {"port": 8080, "installed": False, "gpu_layers": 0, "context_size": 8192, "flash_attn": False}
+    srv._llamacpp_config = {
+        "port": 8080,
+        "installed": False,
+        "gpu_layers": 0,
+        "context_size": 8192,
+        "flash_attn": False,
+    }
     srv._llamacpp_shutting_down = False
     srv._llamacpp_serving_model = None
     if orig_detected is not _SENTINEL:
@@ -102,6 +112,7 @@ def _reset_llamacpp_globals():
         srv._llamacpp_last_model = orig_last
     # Clean up any address set by start/serve endpoints
     from deepresearch.web.settings_manager import local_backend_manager
+
     overrides = local_backend_manager._load()
     overrides.pop("llama-cpp", None)
     local_backend_manager._save(overrides)
@@ -485,7 +496,9 @@ class TestLlamaCppInstallEndpoint:
 
             events = _parse_sse_events(resp.text)
             error_events = [e for e in events if e["event"] == "install_error"]
-            assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+            assert error_events, (
+                f"Expected install_error event, got: {[e['event'] for e in events]}"
+            )
             data = json.loads(error_events[0]["data"])
             assert data["status"] == "error"
             assert "already installed" in data["message"].lower()
@@ -493,8 +506,7 @@ class TestLlamaCppInstallEndpoint:
 
     def test_install_sse_events_when_not_installed(self, client: TestClient) -> None:
         """POST /install produces expected SSE event types when not installed."""
-        from unittest.mock import patch, AsyncMock, MagicMock, mock_open
-        import json
+        from unittest.mock import patch, AsyncMock, MagicMock
 
         # Patch detect to avoid platform dependency
         platform_info = {"asset": "ubuntu-x64", "ext": "tar.gz"}
@@ -550,14 +562,21 @@ class TestLlamaCppInstallEndpoint:
 
         def _which_side_effect(x):
             if x == "llama-server":
-                return which_calls.pop(0) if which_calls else "/home/user/.local/bin/llama-server"
+                return (
+                    which_calls.pop(0)
+                    if which_calls
+                    else "/home/user/.local/bin/llama-server"
+                )
             return None
 
         # IMPORTANT: SSE generators run lazily. The with block MUST stay
         # active while consuming response lines so patches remain applied.
         with (
             patch("shutil.which", side_effect=_which_side_effect),
-            patch("deepresearch.web.server._detect_llamacpp_platform", return_value=platform_info),
+            patch(
+                "deepresearch.web.server._detect_llamacpp_platform",
+                return_value=platform_info,
+            ),
             patch("httpx.AsyncClient", return_value=mock_client_instance),
             patch("tarfile.open", return_value=mock_tar),
             patch("os.path.exists", return_value=True),
@@ -574,7 +593,9 @@ class TestLlamaCppInstallEndpoint:
             events = _parse_sse_events(resp.text)
             event_types = [e["event"] for e in events]
 
-            assert "install_log" in event_types, f"Expected install_log events, got: {event_types}"
+            assert "install_log" in event_types, (
+                f"Expected install_log events, got: {event_types}"
+            )
             # Should end with install_complete
             assert "install_complete" in event_types, (
                 f"Expected install_complete event, got: {event_types}"
@@ -599,7 +620,9 @@ class TestLlamaCppUninstallEndpoint:
 
             events = _parse_sse_events(resp.text)
             error_events = [e for e in events if e["event"] == "install_error"]
-            assert error_events, f"Expected install_error event, got: {[e['event'] for e in events]}"
+            assert error_events, (
+                f"Expected install_error event, got: {[e['event'] for e in events]}"
+            )
             data = json.loads(error_events[0]["data"])
             assert data["code"] == "NOT_INSTALLED"
             assert "not installed" in data["message"].lower()
@@ -657,7 +680,9 @@ class TestLlamaCppStartEndpoint:
             patch.object(server_mod, "_llamacpp_process", None),
             patch.object(server_mod, "_llamacpp_serving_model", "/path/to/model.gguf"),
             patch.object(server_mod, "_is_port_available", return_value=True),
-            patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_process)),
+            patch(
+                "asyncio.create_subprocess_exec", AsyncMock(return_value=mock_process)
+            ),
             patch("asyncio.sleep", AsyncMock()),
             patch("httpx.AsyncClient", return_value=mock_http_client),
         ):
@@ -741,7 +766,9 @@ class TestLlamaCppRestartEndpoint:
             patch.object(server_mod, "_is_port_available", return_value=True),
             patch("shutil.which", return_value="/usr/bin/llama-server"),
             patch("asyncio.wait_for", AsyncMock()),
-            patch("asyncio.create_subprocess_exec", AsyncMock(return_value=mock_process)),
+            patch(
+                "asyncio.create_subprocess_exec", AsyncMock(return_value=mock_process)
+            ),
             patch("asyncio.sleep", AsyncMock()),
             patch("httpx.AsyncClient", return_value=mock_http_client),
         ):
@@ -893,7 +920,9 @@ class TestGgufModelListing:
         """When the GGUF models directory does not exist, returns empty list."""
         from unittest.mock import patch
 
-        with patch("deepresearch.web.routes.llamacpp._os.path.isdir", return_value=False):
+        with patch(
+            "deepresearch.web.routes.llamacpp._os.path.isdir", return_value=False
+        ):
             resp = client.get("/api/local-backends/models/gguf")
             assert resp.status_code == 200
             data = resp.json()

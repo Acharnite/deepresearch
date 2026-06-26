@@ -155,13 +155,17 @@ class TestModelRouting:
 
     def test_vllm_is_local_backend(self) -> None:
         """``vllm/…`` models have the local_backend flag set."""
-        with patch("deepresearch.llm.client._detect_llamacpp_address", return_value=None):
+        with patch(
+            "deepresearch.llm.client._detect_llamacpp_address", return_value=None
+        ):
             client = LLMClient(model="vllm/Meta-Llama-3-8B")
             assert client._is_local_backend() is True
 
     def test_lm_studio_is_local_backend(self) -> None:
         """``lm-studio/…`` models have the local_backend flag set."""
-        with patch("deepresearch.llm.client._detect_llamacpp_address", return_value=None):
+        with patch(
+            "deepresearch.llm.client._detect_llamacpp_address", return_value=None
+        ):
             client = LLMClient(model="lm-studio/local-model")
             assert client._is_local_backend() is True
 
@@ -330,9 +334,7 @@ class TestTextEmbeddedToolCallDetection:
 
         with (
             patch("litellm.acompletion", side_effect=mock_acompletion),
-            patch(
-                "deepresearch.tools.registry.resolve_tool"
-            ) as mock_resolve,
+            patch("deepresearch.tools.registry.resolve_tool") as mock_resolve,
         ):
             from deepresearch.tools.registry import ToolDef
 

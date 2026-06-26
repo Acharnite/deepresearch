@@ -15,7 +15,12 @@ from deepresearch.tools.parser import (
     ParsedToolCall,
     ToolCallParser,
 )
-from deepresearch.tools.registry import ToolDef, get_registry, register_tool, resolve_tool
+from deepresearch.tools.registry import (
+    ToolDef,
+    get_registry,
+    register_tool,
+    resolve_tool,
+)
 
 # Re-export existing public symbols
 WEB_SEARCH_TOOL = _web_search_mod.WEB_SEARCH_TOOL

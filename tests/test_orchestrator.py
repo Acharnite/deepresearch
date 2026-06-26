@@ -980,7 +980,9 @@ class TestConvergenceDetection:
     # ── Helper factories ──────────────────────────────────────────
 
     @staticmethod
-    def _make_shared(round_number: int, num_gaps: int, num_disagreements: int = 0) -> SharedKnowledge:
+    def _make_shared(
+        round_number: int, num_gaps: int, num_disagreements: int = 0
+    ) -> SharedKnowledge:
         """Build a SharedKnowledge with the given gap counts."""
         return SharedKnowledge(
             round_number=round_number,

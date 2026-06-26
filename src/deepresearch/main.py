@@ -281,9 +281,7 @@ def _create_progress() -> Progress:
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Execute the 'run' command using the Orchestrator."""
-    console.print(
-        "[bold green]DeepResearch[/bold green] — Multi-Agent Research System"
-    )
+    console.print("[bold green]DeepResearch[/bold green] — Multi-Agent Research System")
     console.print(f"Topic: [yellow]{args.topic}[/yellow]")
     console.print(f"Output: {args.output}")
 
