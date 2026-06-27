@@ -164,39 +164,42 @@ async function loadHardwareInfo() {
   // Try Python hardware detection first (new)
   try {
     const pyHw = await fetchHardwareInfo();
-    if (pyHw && (pyHw.platform || pyHw.cpu_model)) {
+    const hw = pyHw?.hardware;
+    if (pyHw?.hardware?.platform) {
       // Python detection succeeded
       if (statusEl) statusEl.textContent = '✅ Python';
 
       let html = '<div style="padding:8px 12px;font-size:13px;line-height:1.8;">';
 
       // Platform
-      html += '💻 <strong>Platform:</strong> ' + esc(pyHw.platform || '?');
-      if (pyHw.architecture) html += ' (' + esc(pyHw.architecture) + ')';
+      html += '💻 <strong>Platform:</strong> ' + esc(hw.platform || '?');
+      if (hw.machine) html += ' (' + esc(hw.machine) + ')';
       html += '<br>';
 
       // GPU
-      if (pyHw.gpu && pyHw.gpu.name) {
-        const vram = pyHw.gpu.vram_mb ? ' (' + (pyHw.gpu.vram_mb / 1024).toFixed(1) + 'GB VRAM)' : '';
-        html += '🖥️ <strong>GPU:</strong> ' + esc(pyHw.gpu.name) + vram;
-        if (pyHw.gpu.vendor) html += ' <span class="text-muted">(' + esc(pyHw.gpu.vendor) + ')</span>';
+      const gpu = (hw.gpus && hw.gpus.length > 0) ? hw.gpus[0] : null;
+      if (gpu && gpu.name) {
+        const vram = gpu.memory_total_mb ? ' (' + (gpu.memory_total_mb / 1024).toFixed(1) + 'GB VRAM)' : '';
+        html += '🖥️ <strong>GPU:</strong> ' + esc(gpu.name) + vram;
+        if (gpu.backend) html += ' <span class="text-muted">(' + esc(gpu.backend) + ')</span>';
         html += '<br>';
       } else {
         html += '🖥️ <strong>GPU:</strong> <span class="text-muted">No GPU detected</span><br>';
       }
 
       // CPU
-      html += '🧠 <strong>CPU:</strong> ' + esc(pyHw.cpu_model || 'Unknown') +
-        ' (' + (pyHw.cpu_cores || '?') + ' cores)<br>';
+      html += '🧠 <strong>CPU:</strong> ' + esc(hw.processor || 'Unknown') +
+        ' (' + (hw.cpu_count || '?') + ' cores)<br>';
 
       // RAM
-      html += '💾 <strong>RAM:</strong> ' + formatNumber(pyHw.ram_total_gb) + 'GB total' +
-        ' (' + formatNumber(pyHw.ram_available_gb) + 'GB available)<br>';
+      const ramTotalGb = hw.memory ? hw.memory.total / (1024 * 1024 * 1024) : 0;
+      const ramAvailGb = hw.memory ? hw.memory.available / (1024 * 1024 * 1024) : 0;
+      html += '💾 <strong>RAM:</strong> ' + formatNumber(ramTotalGb) + 'GB total' +
+        ' (' + formatNumber(ramAvailGb) + 'GB available)<br>';
 
-      // Torch availability
-      if (pyHw.torch_available != null) {
-        html += '🔥 <strong>PyTorch:</strong> ' + (pyHw.torch_available ? '✅ Available' : '❌ Not available');
-        if (pyHw.torch_cuda_available) html += ' (CUDA ✅)';
+      // CUDA availability
+      if (hw.cuda_available != null) {
+        html += '🔥 <strong>CUDA:</strong> ' + (hw.cuda_available ? '✅ Available' : '❌ Not available');
         html += '<br>';
       }
 
@@ -1056,7 +1059,7 @@ window.serveHfAction = async function() {
         if (event === 'install_log') {
           const icon = data.progress >= 80 ? '✅' : data.progress >= 50 ? '⏳' : '⬇️';
           addLog('<span class="log-icon">' + icon + '</span> ' + esc(data.message || ''));
-        } else if (event === 'install_complete') {
+        } else if (event === 'hf_serve_complete') {
           addLog('<span class="log-icon">✅</span> <strong>' + esc(repo) + ' is now serving!</strong>', 'log-success');
           setTimeout(() => { checkLlamaCppStatus(); loadGgufModels(); }, 1000);
         } else if (event === 'install_error') {

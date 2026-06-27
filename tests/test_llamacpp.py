@@ -1791,11 +1791,6 @@ class TestHardwareDetection:
         """Memory returns None when psutil is not installed."""
         from deepresearch.hardware import _get_memory_info
 
-        with patch("deepresearch.hardware.psutil", None) if False else patch(
-            "deepresearch.hardware.logger"
-        ):
-            pass
-
         # Simulate ImportError by patching __import__
         import builtins
 
