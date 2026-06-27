@@ -652,7 +652,7 @@ class TestLlamacppStart:
         """Start launches llama-server as subprocess when not already running."""
         import deepresearch.web.server as srv
 
-        srv._llamacpp_serving_model = "/home/user/.cache/llmfit/models/test.gguf"
+        srv._llamacpp_serving_model = "/home/user/.cache/gguf/models/test.gguf"
 
         mock_proc = MagicMock()
         mock_proc.returncode = None
@@ -697,7 +697,7 @@ class TestLlamacppStart:
         assert "--port" in call_args
         assert "8080" in call_args
         assert "-m" in call_args
-        assert "/home/user/.cache/llmfit/models/test.gguf" in call_args
+        assert "/home/user/.cache/gguf/models/test.gguf" in call_args
 
 
 # ─── H. Integration Tests: POST /stop ─────────────────────────────────────
@@ -767,7 +767,7 @@ class TestLlamacppRestart:
         """Restart calls stop then start, returning start's response."""
         import deepresearch.web.server as srv
 
-        srv._llamacpp_serving_model = "/home/user/.cache/llmfit/models/test.gguf"
+        srv._llamacpp_serving_model = "/home/user/.cache/gguf/models/test.gguf"
 
         mock_proc = MagicMock()
         mock_proc.returncode = None
@@ -815,7 +815,7 @@ class TestLlamacppRestart:
         call_args = mock_exec.call_args[0]
         assert "llama-server" in call_args
         assert "-m" in call_args
-        assert "/home/user/.cache/llmfit/models/test.gguf" in call_args
+        assert "/home/user/.cache/gguf/models/test.gguf" in call_args
         assert srv._llamacpp_process is mock_new_proc
 
 
@@ -851,7 +851,7 @@ class TestListGgufModels:
     """GET /api/local-backends/models/gguf."""
 
     def test_empty_when_no_models_dir(self, client: TestClient):
-        """Returns empty list when ~/.cache/llmfit/models/ does not exist."""
+        """Returns empty list when ~/.cache/gguf/models/ does not exist."""
         with patch("os.path.isdir", return_value=False):
             resp = client.get("/api/local-backends/models/gguf")
         assert resp.status_code == 200
@@ -1076,7 +1076,7 @@ class TestLlamacppStatusPhase2:
         mock_proc.returncode = None
         mock_proc.pid = 12345
         srv._llamacpp_process = mock_proc
-        srv._llamacpp_serving_model = "/home/user/.cache/llmfit/models/qwen.gguf"
+        srv._llamacpp_serving_model = "/home/user/.cache/gguf/models/qwen.gguf"
         srv._llamacpp_config["port"] = 8080
         srv._llamacpp_config["gpu_layers"] = 0
         srv._llamacpp_config["context_size"] = 8192
@@ -1094,7 +1094,7 @@ class TestLlamacppStatusPhase2:
         assert "active_model" in data
         assert data["active_model"]["name"] == "qwen"
         assert (
-            data["active_model"]["path"] == "/home/user/.cache/llmfit/models/qwen.gguf"
+            data["active_model"]["path"] == "/home/user/.cache/gguf/models/qwen.gguf"
         )
         assert data["port"] == 8080
         assert data["pid"] == 12345
@@ -1130,7 +1130,7 @@ class TestLlamacppStartPhase2:
         """Start passes -m flag when _llamacpp_serving_model is set."""
         import deepresearch.web.server as srv
 
-        srv._llamacpp_serving_model = "/home/user/.cache/llmfit/models/qwen.gguf"
+        srv._llamacpp_serving_model = "/home/user/.cache/gguf/models/qwen.gguf"
 
         mock_proc = MagicMock()
         mock_proc.returncode = None
@@ -1164,13 +1164,13 @@ class TestLlamacppStartPhase2:
         # Verify -m flag was included
         call_args = mock_exec.call_args
         assert "-m" in call_args[0]
-        assert "/home/user/.cache/llmfit/models/qwen.gguf" in call_args[0]
+        assert "/home/user/.cache/gguf/models/qwen.gguf" in call_args[0]
 
     def test_start_with_config_flags(self, client: TestClient):
         """Start passes -ngl, -c, --flash-attn when configured."""
         import deepresearch.web.server as srv
 
-        srv._llamacpp_serving_model = "/home/user/.cache/llmfit/models/qwen.gguf"
+        srv._llamacpp_serving_model = "/home/user/.cache/gguf/models/qwen.gguf"
         srv._llamacpp_config["gpu_layers"] = 32
         srv._llamacpp_config["context_size"] = 16384
         srv._llamacpp_config["flash_attn"] = True
@@ -1314,7 +1314,7 @@ class TestListGgufModelsPhase2:
             assert returned_sizes == sorted(returned_sizes, reverse=True)
 
     def test_missing_directory_returns_empty_list(self, client: TestClient):
-        """Missing ~/.cache/llmfit/models/ returns empty list."""
+        """Missing ~/.cache/gguf/models/ returns empty list."""
         with patch("os.path.isdir", return_value=False):
             resp = client.get("/api/local-backends/models/gguf")
         assert resp.status_code == 200
@@ -1635,7 +1635,7 @@ class TestModelRegistrationPhase3:
         mock_proc = MagicMock()
         mock_proc.returncode = None
         srv._llamacpp_process = mock_proc
-        srv._llamacpp_serving_model = "/home/user/.cache/llmfit/models/qwen.gguf"
+        srv._llamacpp_serving_model = "/home/user/.cache/gguf/models/qwen.gguf"
         # Mock load_model_config to return empty list
         with patch("deepresearch.web.routes.models.load_model_config", return_value=[]):
             resp = client.get("/api/models")

@@ -108,27 +108,11 @@ async def get_models() -> JSONResponse:
 
 @router.get("/tools/status")
 async def get_tools_status() -> JSONResponse:
-    """Check which tools are installed (llmfit, Ollama)."""
+    """Check which tools are installed (Ollama, llama.cpp)."""
     import shutil
     import subprocess
 
     result: dict[str, dict[str, bool | str]] = {}
-
-    result["llmfit"] = {"installed": False}
-    if shutil.which("llmfit"):
-        result["llmfit"]["installed"] = True  # type: ignore[assignment]
-        try:
-            version = subprocess.run(
-                ["llmfit", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            result["llmfit"]["version"] = (
-                version.stdout.strip() or version.stderr.strip()
-            )
-        except Exception:
-            result["llmfit"]["version"] = "unknown"
 
     result["ollama"] = {"installed": False, "running": False}
     if shutil.which("ollama"):
@@ -202,66 +186,6 @@ async def get_hardware_info() -> JSONResponse:
 
     hw = _detect()
     return JSONResponse({"available": True, "hardware": hw})
-
-
-@router.get("/tools/recommendations")
-async def get_model_recommendations() -> JSONResponse:
-    """Return model recommendations via llmfit fit --json (if installed)."""
-    import shutil
-    import subprocess
-
-    if not shutil.which("llmfit"):
-        return JSONResponse({"available": False, "message": "llmfit not installed"})
-    try:
-        result = subprocess.run(
-            ["llmfit", "fit", "--tool-use", "-n", "30", "--json"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0:
-            data = json.loads(result.stdout)
-            models = data.get("models", [])
-            models.sort(key=lambda m: m.get("score", 0), reverse=True)
-
-            hw_info = {}
-            try:
-                hw_result = subprocess.run(
-                    ["llmfit", "system", "--json"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                )
-                if hw_result.returncode == 0:
-                    hw_data = json.loads(hw_result.stdout)
-                    hw_info = hw_data.get("system", {})
-            except Exception:
-                pass
-
-            total_ram = hw_info.get("total_ram_gb", 0)
-            total_vram = hw_info.get("total_vram_gb", 0)
-
-            recommended = []
-            for m in models:
-                ram_gb = m.get("ram_gb", 0)
-                vram_gb = m.get("vram_gb", 0)
-                fits_ram = total_ram == 0 or ram_gb <= total_ram * 0.8
-                fits_vram = total_vram == 0 or vram_gb == 0 or vram_gb <= total_vram
-                if fits_ram and fits_vram:
-                    recommended.append(m)
-
-            return JSONResponse(
-                {
-                    "available": True,
-                    "models": recommended[:10],
-                    "hardware": hw_info,
-                }
-            )
-        return JSONResponse({"available": False, "error": result.stderr.strip()})
-    except FileNotFoundError:
-        return JSONResponse({"available": False, "message": "llmfit not found"})
-    except subprocess.TimeoutExpired:
-        return JSONResponse({"available": False, "message": "llmfit timed out"})
 
 
 @router.get("/system/concurrency")

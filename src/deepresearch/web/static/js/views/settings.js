@@ -7,11 +7,10 @@ import {
   fetchScribeModelAPI, saveScribeModelAPI, clearScribeModelAPI,
   fetchContextWindows, saveContextWindowAPI, deleteContextWindowAPI,
   fetchMaxTokens, saveMaxTokensAPI,
-  fetchToolStatus, fetchHardwareInfo, fetchModelRecommendations,
+  fetchToolStatus, fetchHardwareInfo,
   fetchOllamaStatus, getOllamaInstallURL,
-  installLlmfit, uninstallLlmfit,
   startOllama, stopOllama, uninstallOllama,
-  getPullModelURL, getDownloadModelURL, getLlmfitInstallURL, getOllamaUninstallURL,
+  getPullModelURL, getOllamaUninstallURL,
   fetchLocalBackends, testLocalBackend, setBackendAddress, getBackendAddress,
   deleteOllamaModel,
   fetchLlamaCppStatus, getLlamaCppInstallURL, getLlamaCppUninstallURL,
@@ -155,13 +154,12 @@ async function loadEndpointList() {
   }
 }
 
-// ── Hardware (Python detection / llmfit) ────────────
+// ── Hardware (Python detection) ─────────────────────
 async function loadHardwareInfo() {
   const statusEl = document.getElementById('llmfitStatus');
   const infoEl = document.getElementById('hardwareInfo');
   if (!infoEl) return;
 
-  // Try Python hardware detection first (new)
   try {
     const pyHw = await fetchHardwareInfo();
     const hw = pyHw?.hardware;
@@ -205,231 +203,15 @@ async function loadHardwareInfo() {
 
       html += '</div>';
       infoEl.innerHTML = html;
-
-      // Keep llmfit actions hidden / show minimal state
-      const llmfitActions = document.getElementById('llmfitActions');
-      if (llmfitActions) {
-        llmfitActions.innerHTML = '<span class="text-muted" style="font-size:11px;">Hardware detection: Python</span>';
-      }
       return;
     }
   } catch (e) {
-    // Python detection not available — fall through to llmfit
+    // Python detection not available
+    console.warn('Hardware detection failed:', e);
   }
 
-  // Fallback: existing llmfit-based detection
-  try {
-    // Check tool status
-    const tools = await fetchToolStatus();
-    const llmfit = tools.llmfit || {};
-
-    if (statusEl) {
-      statusEl.textContent = llmfit.installed
-        ? '\u2705 llmfit ' + (llmfit.version || '')
-        : '\u274C llmfit not installed';
-    }
-
-    if (!llmfit.installed) {
-      infoEl.innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">' +
-        'Install <a href="https://github.com/AlexsJones/llmfit" target="_blank" rel="noopener">llmfit</a> ' +
-        'for hardware-aware model recommendations. ' +
-        '<code style="font-size:11px;">curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local</code>' +
-        '</div>';
-      return;
-    }
-
-    // Fetch hardware info
-    const hw = await fetchHardwareInfo();
-    if (!hw.available) {
-      infoEl.innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">' +
-        'Hardware detection failed: ' + esc(hw.error || hw.message || 'unknown') + '</div>';
-      return;
-    }
-
-    const s = hw.hardware || {};
-    let html = '<div style="padding:8px 12px;font-size:13px;line-height:1.8;">';
-
-    // GPU section
-    if (s.has_gpu && s.gpu_name) {
-      html += '\uD83D\uDDA5\uFE0F <strong>GPU:</strong> ' + esc(s.gpu_name) +
-        ' (' + formatNumber(s.gpu_vram_gb) + 'GB VRAM)<br>';
-    } else {
-      html += '\uD83D\uDDA5\uFE0F <strong>GPU:</strong> <span class="text-muted">No GPU detected</span><br>';
-    }
-
-    // CPU section
-    html += '\uD83E\uDDE0 <strong>CPU:</strong> ' + esc(s.cpu_name || 'Unknown') +
-      ' (' + (s.cpu_cores || '?') + ' cores)<br>';
-
-    // RAM section
-    html += '\uD83D\uDCBE <strong>RAM:</strong> ' + formatNumber(s.total_ram_gb) + 'GB total' +
-      ' (' + formatNumber(s.available_ram_gb) + 'GB available)<br>';
-
-    // Backend section
-    html += '\uD83D\uDD27 <strong>Backend:</strong> ' + esc(s.backend || 'Unknown');
-
-    // Unified memory (Apple Silicon)
-    if (s.unified_memory) {
-      html += ' <span class="text-muted">(unified memory)</span>';
-    }
-
-    html += '</div>';
-    infoEl.innerHTML = html;
-
-    // Add llmfit action buttons
-    const llmfitActions = document.getElementById('llmfitActions');
-    if (llmfitActions) {
-      if (llmfit.installed) {
-        llmfitActions.innerHTML =
-          '<button class="btn btn-sm btn-danger" onclick="window.uninstallLlmfitAction()">\uD83D\uDDD1\uFE0F Uninstall llmfit</button>' +
-          '<span class="text-muted" style="font-size:11px;margin-left:8px;">\u2705 llmfit ' + esc(llmfit.version || '') + '</span>';
-      } else {
-        llmfitActions.innerHTML =
-          '<button class="btn btn-sm btn-primary" onclick="window.installLlmfitAction()">\u2B07 Install llmfit</button>' +
-          '<span class="text-muted" style="font-size:11px;margin-left:8px;">Hardware-aware model recommendations</span>';
-      }
-    }
-
-    // Also load model recommendations
-    loadModelRecommendations();
-
-  } catch (err) {
-    console.warn('Failed to load hardware info:', err);
-    if (infoEl) {
-      infoEl.innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">Could not detect hardware.</div>';
-    }
-  }
-}
-
-// ── Model Recommendations (llmfit) ──────────────────────
-async function loadModelRecommendations() {
-  const statusEl = document.getElementById('llmfitRecStatus');
-  const container = document.getElementById('modelRecommendations');
-  if (!container) return;
-
-  try {
-    const data = await fetchModelRecommendations();
-
-    if (!data.available) {
-      if (statusEl) statusEl.textContent = '\u274C';
-      container.innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">' +
-        'Install <a href="https://github.com/AlexsJones/llmfit" target="_blank" rel="noopener">llmfit</a> ' +
-        'for model recommendations. ' +
-        '<code style="font-size:11px;">curl -fsSL https://llmfit.axjns.dev/install.sh | sh -s -- --local</code>' +
-        '</div>';
-      return;
-    }
-
-    const models = (data.models || []).sort((a, b) => (b.score || 0) - (a.score || 0));
-    // Check which backends are installed for model filtering
-    let ollamaInstalled = false;
-    let llmfitInstalled = false;
-    try {
-      const tools = await fetchToolStatus();
-      llmfitInstalled = !!(tools.llmfit && tools.llmfit.installed);
-      ollamaInstalled = !!(tools.ollama && tools.ollama.installed);
-    } catch (e) {}
-
-    // Filter: only show models downloadable via installed backends
-    const filteredModels = models.filter(m => {
-      if (ollamaInstalled && m.ollama_name) return true;
-      if (llmfitInstalled && m.gguf_sources && m.gguf_sources.length > 0) return true;
-      return false;
-    });
-
-    if (statusEl) statusEl.textContent = '\u2705 ' + filteredModels.length + '/' + models.length + ' models';
-
-    if (filteredModels.length === 0) {
-      if (statusEl) statusEl.textContent = '\u274C';
-      container.innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">' +
-        'No downloadable models found. ' +
-        (!ollamaInstalled ? 'Install <a href="#" onclick="document.querySelector(\'[data-tab=ollama]\')?.click()">Ollama</a> ' : '') +
-        (!llmfitInstalled ? 'or <a href="#" onclick="document.querySelector(\'[data-tab=hardware]\')?.click()">llmfit</a> ' : '') +
-        'to see downloadable model recommendations.' +
-        '</div>';
-      return;
-    }
-
-    let html = '<div style="overflow-x:auto;padding:4px 0;"><table style="width:100%;border-collapse:collapse;font-size:12px;">' +
-      '<thead><tr style="border-bottom:1px solid var(--border);">' +
-      '<th style="padding:8px 6px;text-align:left;">Score</th>' +
-      '<th style="padding:8px 6px;text-align:left;">Model</th>' +
-      '<th style="padding:8px 6px;text-align:left;">Research</th>' +
-      '<th style="padding:8px 6px;text-align:left;">Category</th>' +
-      '<th style="padding:8px 6px;text-align:left;">Fit</th>' +
-      '<th style="padding:8px 6px;text-align:right;">Speed</th>' +
-      '<th style="padding:8px 6px;text-align:right;">Context</th>' +
-      '<th style="padding:8px 6px;text-align:left;">Use Case</th>' +
-      '<th style="padding:8px 6px;text-align:center;">Download</th>' +
-      '</tr></thead><tbody>';
-
-    for (const m of filteredModels) {
-      const score = m.score || 0;
-      const scoreBadge = score >= 90
-        ? '<span style="background:#1a6d1a;color:#fff;padding:2px 6px;border-radius:3px;font-weight:600;font-size:11px;">' + score + '</span>'
-        : score >= 70
-          ? '<span style="background:#b8860b;color:#fff;padding:2px 6px;border-radius:3px;font-weight:600;font-size:11px;">' + score + '</span>'
-          : '<span style="background:#8b1a1a;color:#fff;padding:2px 6px;border-radius:3px;font-weight:600;font-size:11px;">' + score + '</span>';
-
-      const fitLevel = m.fit_level || '?';
-      const fitBadge = fitLevel === 'ideal'
-        ? '<span style="background:#1a6d1a20;color:#4caf50;padding:2px 6px;border-radius:3px;font-size:11px;">ideal</span>'
-        : fitLevel === 'good'
-          ? '<span style="background:#b8860b20;color:#ffb300;padding:2px 6px;border-radius:3px;font-size:11px;">good</span>'
-          : '<span style="background:#8b1a1a20;color:#f44336;padding:2px 6px;border-radius:3px;font-size:11px;">' + esc(fitLevel) + '</span>';
-
-      const speed = m.estimated_tps != null ? Number(m.estimated_tps).toFixed(1) + ' tok/s' : '—';
-      const ctx = m.effective_context_length != null ? Number(m.effective_context_length).toLocaleString() : '—';
-      const useCase = m.use_case ? (m.use_case.length > 60 ? m.use_case.slice(0, 60) + '\u2026' : m.use_case) : '—';
-
-      // Download button using smart download
-      var downloadBtn = '';
-      if (m.ollama_name) {
-        // Available via Ollama — use ollama pull
-        downloadBtn = '<button class="btn btn-sm btn-primary" style="font-size:11px;padding:2px 6px;" onclick="window.downloadModel(\'' + esc(m.ollama_name) + '\', null)">\u2B07 Pull (Ollama)</button>';
-      } else if (m.gguf_sources && m.gguf_sources.length > 0) {
-        var repo = esc(m.gguf_sources[0].repo);
-        var modelName = esc(m.name);
-        if (llmfitInstalled) {
-          downloadBtn = '<button class="btn btn-sm btn-primary" style="font-size:11px;padding:2px 6px;" onclick="window.downloadModel(\'' + modelName + '\', \'' + repo + '\')">\u2B07 Download (GGUF)</button>';
-        } else {
-          // Fallback to ollama pull when llmfit not installed
-          downloadBtn = '<button class="btn btn-sm btn-primary" style="font-size:11px;padding:2px 6px;" onclick="window.downloadModel(\'' + modelName + '\', null)">\u2B07 Pull (Ollama)</button>';
-        }
-      } else {
-        downloadBtn = '\u2014';
-      }
-
-      const warningIcon = m._warning
-        ? '<span style="margin-left:4px;cursor:help;color:#ff9800;" title="' + esc(m._warning) + '">\u26A0\uFE0F</span>'
-        : '';
-      const rScore = m.research_score || 0;
-      const rTags = m.research_tags || [];
-      const rBadgeColor = rScore >= 60 ? '#1a6d1a' : rScore >= 40 ? '#b8860b' : '#555';
-      const researchBadge = '<span style="background:' + rBadgeColor + ';color:#fff;padding:2px 6px;border-radius:3px;font-weight:600;font-size:11px;" title="' + esc(rTags.join(', ')) + '">' + rScore + '</span>';
-      const moeNote = m._moe_annotation
-        ? '<br><span style="font-size:10px;color:#64b5f6;">' + esc(m._moe_annotation) + '</span>'
-        : '';
-
-      html += '<tr style="border-bottom:1px solid var(--border);">' +
-        '<td style="padding:6px;">' + scoreBadge + '</td>' +
-        '<td style="padding:6px;font-weight:500;">' + esc(m.name || '?') + warningIcon + moeNote + '</td>' +
-        '<td style="padding:6px;text-align:center;">' + researchBadge + '</td>' +
-        '<td style="padding:6px;color:var(--text-secondary);">' + esc(m.category || '—') + '</td>' +
-        '<td style="padding:6px;">' + fitBadge + '</td>' +
-        '<td style="padding:6px;text-align:right;font-variant-numeric:tabular-nums;">' + speed + '</td>' +
-        '<td style="padding:6px;text-align:right;font-variant-numeric:tabular-nums;">' + ctx + '</td>' +
-        '<td style="padding:6px;color:var(--text-secondary);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(m.use_case || '') + '">' + esc(useCase) + '</td>' +
-        '<td style="padding:6px;text-align:center;">' + downloadBtn + '</td>' +
-        '</tr>';
-    }
-
-    html += '</tbody></table></div>';
-    container.innerHTML = html;
-
-  } catch (err) {
-    console.warn('Failed to load model recommendations:', err);
-    container.innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">Could not load recommendations.</div>';
+  if (infoEl) {
+    infoEl.innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">Could not detect hardware.</div>';
   }
 }
 
@@ -1098,205 +880,7 @@ window.saveLlamacppConfig = async function() {
   }
 };
 
-// ── llmfit Install ──────────────────────────────────
-window.installLlmfitAction = function() {
-  const logContainer = document.getElementById('ollamaInstallLog');
-  const logOutput = document.getElementById('ollamaInstallOutput');
-  if (!logContainer || !logOutput) return;
-
-  logContainer.classList.remove('hidden');
-  logOutput.innerHTML = '';
-
-  const line = document.createElement('div');
-  line.className = 'log-line';
-  line.innerHTML = '<span class="log-icon">\u2B07</span> <span class="log-msg">Installing llmfit...</span>';
-  logOutput.appendChild(line);
-
-  const eventSource = new EventSource(getLlmfitInstallURL() + '?_method=POST');
-
-  eventSource.addEventListener('install_log', function(e) {
-    try {
-      const data = JSON.parse(e.data);
-      const line = document.createElement('div');
-      line.className = 'log-line';
-      const icon = data.progress >= 80 ? '\u2705' : data.progress >= 50 ? '\u23F3' : '\u2B07';
-      line.innerHTML = '<span class="log-icon">' + icon + '</span> <span class="log-msg">' + esc(data.message || '') + '</span>';
-      logOutput.appendChild(line);
-      logContainer.scrollTop = logContainer.scrollHeight;
-    } catch (err) {}
-  });
-
-  eventSource.addEventListener('install_complete', function(e) {
-    try {
-      const data = JSON.parse(e.data);
-      const line = document.createElement('div');
-      line.className = 'log-line log-success';
-      line.innerHTML = '<span class="log-icon">\u2705</span> <strong>llmfit installed!</strong> Version: ' + esc(data.version || '');
-      logOutput.appendChild(line);
-    } catch (err) {}
-    eventSource.close();
-    // Refresh hardware info and recommendations
-    setTimeout(() => { loadHardwareInfo(); loadModelRecommendations(); }, 1000);
-  });
-
-  eventSource.addEventListener('install_error', function(e) {
-    try {
-      const data = JSON.parse(e.data);
-      const line = document.createElement('div');
-      line.className = 'log-line log-error';
-      line.innerHTML = '<span class="log-icon">\u274C</span> <strong>Error:</strong> ' + esc(data.message || 'Installation failed');
-      logOutput.appendChild(line);
-    } catch (err) {}
-    eventSource.close();
-  });
-
-  eventSource.onerror = function() {
-    if (eventSource.readyState === EventSource.CLOSED) {
-      setTimeout(() => { loadHardwareInfo(); }, 1000);
-    }
-  };
-};
-
-// ── llmfit Uninstall ────────────────────────────────
-window.uninstallLlmfitAction = async function() {
-  if (!confirm('Uninstall llmfit?')) return;
-
-  try {
-    const resp = await uninstallLlmfit();
-    const data = await resp.json();
-    if (resp.ok) {
-      showToast('llmfit uninstalled', 'success');
-    } else {
-      showToast('Error: ' + (data.error || data.message || 'Failed'), 'error');
-    }
-  } catch (err) {
-    showToast('Network error', 'error');
-  }
-
-  setTimeout(() => { loadHardwareInfo(); loadModelRecommendations(); }, 1000);
-};
-
-// ── Download Model (smart: Ollama or llmfit) ──────────
-window.downloadModel = async function(modelName, repoName) {
-  const logContainer = document.getElementById('ollamaInstallLog');
-  const logOutput = document.getElementById('ollamaInstallOutput');
-  if (!logContainer || !logOutput) return;
-
-  logContainer.classList.remove('hidden');
-  logOutput.innerHTML = '';
-
-  // Create progress bar
-  const progressContainer = document.createElement('div');
-  progressContainer.className = 'download-progress';
-  progressContainer.innerHTML = '<div class="progress-bar-bg"><div class="progress-bar-fill" id="dlProgressFill" style="width:0%"></div></div><span class="progress-label" id="dlProgressLabel">0%</span>';
-  logOutput.appendChild(progressContainer);
-
-  // Add initial log line
-  const initLine = document.createElement('div');
-  initLine.className = 'log-line';
-  const modelDisplay = esc(modelName.split('/').pop() || modelName);
-  initLine.innerHTML = '<span class="log-icon">\u2B07</span> <span class="log-msg">Preparing download: <strong>' + modelDisplay + '</strong></span>';
-  logOutput.appendChild(initLine);
-
-  try {
-    const resp = await fetch(getDownloadModelURL(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: modelName,
-        repo: repoName || null,
-        download_type: repoName ? 'llmfit' : 'auto',
-      }),
-    });
-
-    if (!resp.ok) {
-      const err = await resp.json();
-      const errLine = document.createElement('div');
-      errLine.className = 'log-line log-error';
-      errLine.innerHTML = '<span class="log-icon">\u274C</span> <strong>Error:</strong> ' + esc(err.detail || err.error || 'Failed to start download');
-      logOutput.appendChild(errLine);
-      return;
-    }
-
-    // Read SSE stream
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    const MAX_BUF = 65536; // 64KB max buffer
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      // Safety: force-split if buffer exceeds limit
-      if (buffer.length > MAX_BUF) {
-        var idx = buffer.indexOf('\n');
-        if (idx === -1 || idx > MAX_BUF) {
-          // No newline or too far — discard and hope next chunk has one
-          buffer = buffer.slice(-2000);
-          continue;
-        }
-      }
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      let currentEvent = 'message';
-      for (const lineText of lines) {
-        // Track SSE event type from 'event:' headers
-        if (lineText.startsWith('event: ')) {
-          currentEvent = lineText.slice(7).trim();
-          continue;
-        }
-        if (lineText.startsWith('data: ')) {
-          try {
-            const payload = JSON.parse(lineText.slice(6));
-
-            if (currentEvent === 'install_log') {
-              // Update progress bar
-              const pct = payload.progress || 0;
-              const fill = document.getElementById('dlProgressFill');
-              const label = document.getElementById('dlProgressLabel');
-              if (fill) fill.style.width = pct + '%';
-              if (label) label.textContent = Math.round(pct) + '%';
-              const logLine = document.createElement('div');
-              logLine.className = 'log-line';
-              logLine.innerHTML = '<span class="log-icon">' + icon + '</span> <span class="log-msg">' + esc(payload.message || '') + '</span>';
-              logOutput.appendChild(logLine);
-              logContainer.scrollTop = logContainer.scrollHeight;
-            } else if (currentEvent === 'install_complete') {
-              const completeLine = document.createElement('div');
-              completeLine.className = 'log-line log-success';
-              const filePath = payload.file || payload.path || '';
-              const size = payload.size ? ' (' + formatSize(payload.size) + ')' : '';
-              completeLine.innerHTML = '<span class="log-icon">\u2705</span> <strong>Download complete!</strong> ' + esc(filePath) + size;
-              logOutput.appendChild(completeLine);
-              // Show toast notification on success
-              showToast('Download complete: ' + (payload.model || filePath || 'Model downloaded'), 'success');
-              logContainer.scrollTop = logContainer.scrollHeight;
-              // Refresh discovered models
-              loadDiscoveredModels();
-            } else if (currentEvent === 'install_error') {
-              const errLine = document.createElement('div');
-              errLine.className = 'log-line log-error';
-              errLine.innerHTML = '<span class="log-icon">\u274C</span> <strong>Error:</strong> ' + esc(payload.message || 'Download failed');
-              logOutput.appendChild(errLine);
-              // Show toast notification on error
-              showToast('Download failed: ' + (payload.message || 'Unknown error'), 'error');
-              logContainer.scrollTop = logContainer.scrollHeight;
-            }
-          } catch (e) {}
-          currentEvent = 'message'; // Reset after consuming data line
-        }
-      }
-    }
-  } catch (err) {
-    const errLine = document.createElement('div');
-    errLine.className = 'log-line log-error';
-    errLine.innerHTML = '<span class="log-icon">\u274C</span> <strong>Error:</strong> ' + esc(err.message || 'Network error');
-    logOutput.appendChild(errLine);
-  }
-};
+// ── LlamaCpp Config ────────────────────────────────────
 
 function formatNumber(val) {
   if (val === null || val === undefined) return '?';
@@ -1591,11 +1175,6 @@ async function loadLocalBackends() {
           '<div class="backend-actions">' +
           '<span class="text-muted" style="font-size:11px;">Manage in Ollama section above</span>' +
           '</div>';
-      } else if (nameLower === 'llmfit') {
-        actionsHtml =
-          '<div class="backend-actions">' +
-          '<span class="text-muted" style="font-size:11px;">Manage in Hardware section above</span>' +
-          '</div>';
       } else {
         actionsHtml =
           '<div class="backend-actions">' +
@@ -1755,7 +1334,6 @@ function stopProgressPolling() {
 export function loadSettingsView() {
   loadProviderList();
   loadHardwareInfo();
-  loadModelRecommendations();
   loadDiscoveredModels();
   loadEndpointList();
   loadScribeModel();

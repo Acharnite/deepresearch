@@ -224,7 +224,7 @@ export async function saveMaxTokensAPI(maxTokens) {
   });
 }
 
-// ── Tools / Hardware (llmfit) ─────────────────────────
+// ── Tools / Hardware ─────────────────────────────────
 
 export async function fetchToolStatus() {
   const resp = await fetch('/api/tools/status');
@@ -235,12 +235,6 @@ export async function fetchHardwareInfo() {
   const resp = await fetch('/api/hardware');
   if (!resp.ok) throw new Error('Failed to fetch hardware info');
   return resp.json();
-}
-
-export async function fetchModelRecommendations() {
-  const resp = await fetch('/api/tools/recommendations');
-  if (!resp.ok) return { available: false };
-  return await resp.json();
 }
 
 // ── HuggingFace Serve (llama-server -hf) ─────────────────
@@ -363,14 +357,6 @@ export async function updateLlamacppConfig(config) {
 
 // ── Local Backend Management ────────────────────────────
 
-export async function installLlmfit() {
-  return '/api/local-backends/llmfit/install';
-}
-
-export async function uninstallLlmfit() {
-  return await fetch('/api/local-backends/llmfit/uninstall', { method: 'POST' });
-}
-
 export async function startOllama() {
   return await fetch('/api/local-backends/ollama/start', { method: 'POST' });
 }
@@ -385,14 +371,6 @@ export async function uninstallOllama() {
 
 export function getPullModelURL() {
   return '/api/local-backends/ollama/pull';
-}
-
-export function getDownloadModelURL() {
-  return '/api/local-backends/models/download';
-}
-
-export function getLlmfitInstallURL() {
-  return '/api/local-backends/llmfit/install';
 }
 
 export function getOllamaUninstallURL() {

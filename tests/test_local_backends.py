@@ -7,7 +7,7 @@ Covers:
   - POST /api/local-backends/{name}/test – test connectivity
   - POST /api/local-backends/models/download – model download (SSE)
   - GET /api/local-backends/models/download/progress – download progress
-  - GET /api/tools/status – llmfit installation status
+  - GET /api/tools/status – tool installation status
   - GET /api/tools/recommendations – model recommendations
   - GET /api/hardware – system hardware info
 """
@@ -130,16 +130,12 @@ class TestBackendRoutes:
             "/api/local-backends",
             "/api/local-backends/{name}/address",
             "/api/local-backends/{name}/test",
-            "/api/local-backends/models/download",
-            "/api/local-backends/models/download/progress",
             "/api/local-backends/ollama/status",
             "/api/local-backends/ollama/install",
             "/api/local-backends/ollama/start",
             "/api/local-backends/ollama/stop",
             "/api/local-backends/ollama/uninstall",
             "/api/local-backends/ollama/pull",
-            "/api/local-backends/llmfit/install",
-            "/api/local-backends/llmfit/uninstall",
             "/api/local-backends/llamacpp/status",
             "/api/local-backends/llamacpp/install",
             "/api/local-backends/llamacpp/uninstall",
@@ -148,7 +144,6 @@ class TestBackendRoutes:
             "/api/local-backends/llamacpp/restart",
             "/api/local-backends/llamacpp/serve-hf",
             "/api/tools/status",
-            "/api/tools/recommendations",
             "/api/hardware",
         ]
         for route in expected:
@@ -274,81 +269,23 @@ class TestBackendTest:
         assert "Unknown backend" in resp.json()["message"]
 
 
-class TestBackendDownload:
-    """POST /api/local-backends/models/download — model download (SSE)."""
-
-    def test_invalid_body_returns_error(self, client: TestClient) -> None:
-        """POST download with missing required fields returns 422."""
-        resp = client.post(
-            "/api/local-backends/models/download",
-            json={},
-        )
-        assert resp.status_code == 422
-
-    def test_valid_body_returns_sse(self, client: TestClient) -> None:
-        """POST download with valid body returns SSE response."""
-        resp = client.post(
-            "/api/local-backends/models/download",
-            json={"name": "test-model", "download_type": "ollama"},
-        )
-        assert resp.status_code == 200
-        assert resp.headers.get("content-type", "").startswith("text/event-stream")
-
-    def test_auto_mode_returns_sse(self, client: TestClient) -> None:
-        """POST download with auto download_type returns SSE."""
-        resp = client.post(
-            "/api/local-backends/models/download",
-            json={"name": "test-model", "download_type": "auto"},
-        )
-        assert resp.status_code == 200
-        assert resp.headers.get("content-type", "").startswith("text/event-stream")
-
-
-class TestBackendDownloadProgress:
-    """GET /api/local-backends/models/download/progress — download progress."""
-
-    def test_returns_json(self, client: TestClient) -> None:
-        """GET download/progress returns JSON with download state."""
-        resp = client.get("/api/local-backends/models/download/progress")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "active" in data
-        assert "model" in data
-        assert "progress" in data
-        assert "message" in data
-        assert "status" in data
-        assert "log" in data
-
-    def test_has_expected_fields(self, client: TestClient) -> None:
-        """GET download/progress returns all expected state fields."""
-        resp = client.get("/api/local-backends/models/download/progress")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert isinstance(data.get("active"), bool)
-        assert isinstance(data.get("model"), str)
-        assert isinstance(data.get("progress"), (int, float))
-        assert isinstance(data.get("message"), str)
-        assert isinstance(data.get("status"), str)
-        assert isinstance(data.get("log"), list)
-
-
 class TestBackendTools:
-    """GET /api/tools/status and GET /api/tools/recommendations."""
+    """GET /api/tools/status."""
 
     def test_tools_status_returns_json(self, client: TestClient) -> None:
-        """GET /api/tools/status returns JSON with llmfit status."""
+        """GET /api/tools/status returns JSON with tool statuses."""
         resp = client.get("/api/tools/status")
         assert resp.status_code == 200
         data = resp.json()
-        assert "llmfit" in data
-        assert "installed" in data["llmfit"]
+        assert "ollama" in data
+        assert "installed" in data["ollama"]
 
-    def test_tools_recommendations_returns_json(self, client: TestClient) -> None:
-        """GET /api/tools/recommendations returns JSON."""
-        resp = client.get("/api/tools/recommendations")
+    def test_tools_status_has_no_llmfit(self, client: TestClient) -> None:
+        """GET /api/tools/status no longer includes llmfit."""
+        resp = client.get("/api/tools/status")
         assert resp.status_code == 200
         data = resp.json()
-        assert "available" in data
+        assert "llmfit" not in data
 
 
 class TestBackendHardware:
