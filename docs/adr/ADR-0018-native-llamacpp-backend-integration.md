@@ -4,8 +4,8 @@
 
 Accepted
 
-**Version:** 1.2
-**Last Updated:** 2026-06-21
+**Version:** 1.3
+**Last Updated:** 2026-06-27
 
 ## Context
 
@@ -599,7 +599,7 @@ Rationale:
 ## Open Questions
 
 1. Should we support `llama.cpp` router mode (`--model-dir`) for multi-model serving? → Decision: deferred. Phase 1 is single-model.
-2. Should we support the `-hf` flag for direct HuggingFace downloads via llama-server? → Decision: deferred. Use llmfit for downloads; `-hf` is a future enhancement.
+2. Should we support the `-hf` flag for direct HuggingFace downloads via llama-server? → Decision: Accepted per ADR-0020. The `-hf` flag is the primary model acquisition mechanism. llmfit download is deprecated.
 3. CUDA variant selection — should we auto-detect CUDA version with `nvidia-smi`? → Yes, implement in Phase 1 with fallback to CPU variant.
 4. Should the full tarball be extracted or just `llama-server`? → Extract only `llama-server` (and optionally `llama-bench`). No need for other tools.
 5. How to handle `~/.local/bin` not being on PATH? → Add it if missing, or use full path for managed binary. The `_probe_backend()` function should check both PATH and `~/.local/bin/llama-server`.
@@ -610,4 +610,5 @@ Rationale:
 |------|---------|---------|
 | 2026-06-20 | 1.0 | Initial version |
 | 2026-06-21 | 1.1 | Phase 2+3 implemented: GGUF model listing, llama-server serve endpoint, config management, /api/models registration |
+| 2026-06-27 | 1.3 | Resolved `-hf` deferred decision: Accepted per ADR-0020. `-hf` is now the primary model acquisition mechanism; llmfit download deprecated. |
 | 2026-06-23 | 1.2 | Added recommended model section (Llama 3.1 8B Q6_K). Documented thinking+tools conflict for Qwen3/Gemma4. |

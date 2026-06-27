@@ -2,10 +2,10 @@
 
 ## Status
 
-**Proposed**
+**Accepted**
 
-**Version:** 1.1
-**Last Updated:** 2026-06-25
+**Version:** 1.2
+**Last Updated:** 2026-06-27
 
 ## Context
 
@@ -419,4 +419,5 @@ graph LR
 | Date | Version | Changes |
 |------|---------|---------|
 | 2026-06-25 | 1.0 | Initial version — proposed |
+| 2026-06-27 | 1.2 | Promoted from Proposed to Accepted after Phase 1 + Phase 2 implementation and review. Status changed to Accepted. |
 | 2026-06-25 | 1.1 | Review fixes: corrected `POST /models`/`GET /models` capabilities (M1), added HF cache structure notes (M2), made `--fit` primary HW check (M3), added Documentation section (S1), ADR-0019 reference (S2), fixed "Fase" spelling (S3) — approved by Reviewers |

@@ -2,6 +2,27 @@
 
 All notable changes to DeepeResearch will be documented in this file.
 
+## [1.7.0] - 2026-06-27
+### Added
+- ADR-0020: Remove llmfit dependency — Phase 1 and Phase 2 implementation complete
+- Python hardware detection via `psutil` + `nvidia-smi` subprocess (replaces `llmfit system --json`)
+- `llama-server -hf` serving endpoint for direct HuggingFace model download-and-serve
+
+### Removed
+- llmfit dependency fully removed: hardware detection, model recommendations, and GGUF downloads
+- `llmfit install` / `llmfit uninstall` endpoints removed
+- Model recommendations engine and UI removed (unreliable — 12/15 models undownloadable)
+- `GET /api/tools/recommendations` and `GET /api/hardware` endpoints removed
+
+### Changed
+- GGUF model acquisition now uses `llama-server -hf <user>/<model>:<quant>` (single-step download + serve)
+- ADR-0020 promoted from Proposed to Accepted
+
+### Documentation
+- ADR-0020 status: Proposed → Accepted
+- ADR-0005: Added superseded note referencing ADR-0020
+- ADR-0018: Resolved `-hf` deferred decision — Accepted per ADR-0020
+
 ## [1.6.0] - 2026-06-26
 ### Added
 - ADR-0017: Enhanced Tool Calling with Multi-Provider Web Search (Brave, DuckDuckGo, Google PSE, SearXNG, Serper, Tavily)

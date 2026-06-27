@@ -426,6 +426,10 @@ curl "http://localhost:8888/search?q=test&format=json" | python -m json.tool
 
 SearXNG runs on port 8888 by default and is auto-discovered by the same port-probing protocol used for LLM backends.
 
+## Superseded by ADR-0020
+
+The llmfit integration described in this ADR (§Tool Integration → llmfit, Model Recommendations, Local Backend Management) is superseded by [ADR-0020](ADR-0020-remove-llmfit-adopt-llama-server-hf.md). Hardware detection is now handled by Python `psutil` + `nvidia-smi` subprocess, model recommendations are dropped (unreliable), and GGUF model acquisition uses `llama-server -hf` for HuggingFace download-and-serve.
+
 ## Related Issues
 - #36 (Local LLM auto-install): ADR-0005 v2.3 — llmfit (HW detection) + Ollama auto-install + auto-discovery + LiteLLM routing + Web UI install with live log tail (SSE) and frontend state machine (Fase 2c).
 - #94 (Epic: ADR-0017 — Deployment & Resiliency, v0.13.0): Parent epic that includes #36 as Phase 2.

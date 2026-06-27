@@ -1,8 +1,8 @@
 # DeepeResearch — Design Document
-**Version:** 1.8
+**Version:** 1.9
 **Status:** Active
 **Design Authority:** Architects
-**Last Updated:** 2026-06-26
+**Last Updated:** 2026-06-27
 
 ## 1. Purpose & Scope
 
@@ -888,7 +888,7 @@ A single test that runs the full pipeline (with mock LLM) and validates the PDF 
 | ADR-0017 | Enhanced Tool Calling with Multi-Provider Search | Accepted |
 | ADR-0018 | Native llama.cpp Backend — Binary Lifecycle, GGUF Serving, and LiteLLM Integration | Accepted |
 | ADR-0019 | Frontend Reactivity Strategy | Proposed |
-| ADR-0020 | Remove llmfit Dependency — Adopt llama-server `-hf` Flag and Python Hardware Detection | Proposed |
+| ADR-0020 | Remove llmfit Dependency — Adopt llama-server `-hf` Flag and Python Hardware Detection | Accepted |
 
 ## 10. Open Questions
 
@@ -909,6 +909,7 @@ A single test that runs the full pipeline (with mock LLM) and validates the PDF 
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.9 | 2026-06-27 | ADR-0020 promoted from Proposed → Accepted after Phase 1 + Phase 2 implementation and review. Updated ADR index. Bumped VERSION to 1.7.0. Added CHANGES.md v1.7.0 entry. |
 | 1.8 | 2026-06-26 | Documentation refresh: updated module structure diagram to reflect actual source layout (orchestrator/ package, web/routes/, config/, tools/providers/, observability/, output/); expanded test file list to all 22 files; fixed ADR-0018 status to Accepted; bumped VERSION to 1.6.0; added CHANGES.md entries for post-1.5.0 work. |
 | 1.7 | 2026-06-25 | Added ADR-0020 (Remove llmfit Dependency — Adopt llama-server `-hf` Flag and Python Hardware Detection) to ADR index. Backfilled ADR-0019 (Frontend Reactivity Strategy) to ADR index and ADR README. |
 | 1.6 | 2026-06-25 | Backfilled ADR-0017, ADR-0018, ADR-0019, ADR-0020 in ADR README index. |
