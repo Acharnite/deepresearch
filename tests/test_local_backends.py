@@ -298,7 +298,9 @@ class TestBackendHardware:
         data = resp.json()
         assert "available" in data
 
-    def test_hardware_contains_hardware_key_when_no_llmfit(self, client: TestClient) -> None:
+    def test_hardware_contains_hardware_key_when_no_llmfit(
+        self, client: TestClient
+    ) -> None:
         """GET /api/hardware returns hardware data even without llmfit."""
         with patch("shutil.which", return_value=None):
             resp = client.get("/api/hardware")

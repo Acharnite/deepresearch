@@ -1093,9 +1093,7 @@ class TestLlamacppStatusPhase2:
         assert data["running"] is True
         assert "active_model" in data
         assert data["active_model"]["name"] == "qwen"
-        assert (
-            data["active_model"]["path"] == "/home/user/.cache/gguf/models/qwen.gguf"
-        )
+        assert data["active_model"]["path"] == "/home/user/.cache/gguf/models/qwen.gguf"
         assert data["port"] == 8080
         assert data["pid"] == 12345
         assert data["gpu_layers"] == 0
@@ -1832,7 +1830,10 @@ class TestHardwareDetection:
         smi_output = "NVIDIA GeForce RTX 4090, 24576, 535.154.05\nNVIDIA A100, 40960, 525.85.12\n"
 
         with (
-            patch("shutil.which", side_effect=lambda c: "/usr/bin/" + c if c == "nvidia-smi" else None),
+            patch(
+                "shutil.which",
+                side_effect=lambda c: "/usr/bin/" + c if c == "nvidia-smi" else None,
+            ),
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(
@@ -1879,7 +1880,10 @@ GPU 0: AMD Radeon RX 7900 XTX
 GPU 1: AMD Instinct MI250X
 """
         with (
-            patch("shutil.which", side_effect=lambda c: "/usr/bin/" + c if c == "rocm-smi" else None),
+            patch(
+                "shutil.which",
+                side_effect=lambda c: "/usr/bin/" + c if c == "rocm-smi" else None,
+            ),
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(
@@ -1946,7 +1950,10 @@ class TestLlamacppStatusHF:
             # First call is --version, second is --help
             mock_run.side_effect = [
                 MagicMock(stdout="b9739\n", stderr=""),
-                MagicMock(stdout="  -hf    --huggingface    Load model from Hugging Face\n", stderr=""),
+                MagicMock(
+                    stdout="  -hf    --huggingface    Load model from Hugging Face\n",
+                    stderr="",
+                ),
             ]
             resp = client.get("/api/local-backends/llamacpp/status")
 
