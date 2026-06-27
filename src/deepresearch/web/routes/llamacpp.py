@@ -38,6 +38,25 @@ class LlamacppConfigRequest(BaseModel):
     batch_size: int | None = None
 
 
+def _hf_supported() -> bool:
+    """Check if the installed llama-server binary supports -hf flag."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("llama-server"):
+        return False
+    try:
+        result = subprocess.run(
+            ["llama-server", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return "-hf" in result.stdout or "-hf" in result.stderr
+    except Exception:
+        return False
+
+
 @router.get("/local-backends/llamacpp/status")
 async def get_llamacpp_status() -> JSONResponse:
     """Check if llama-server is installed and running."""
@@ -68,6 +87,7 @@ async def get_llamacpp_status() -> JSONResponse:
         "installed": installed,
         "running": running,
         "version": version,
+        "hf_supported": _hf_supported() if installed else False,
     }
 
     if running:
@@ -873,6 +893,260 @@ async def serve_llamacpp_model(request: Request) -> EventSourceResponse:
                                     {
                                         "status": "success",
                                         "model": _os.path.basename(model_path),
+                                        "port": port,
+                                    }
+                                ),
+                            }
+                            return
+                except Exception:
+                    continue
+
+            yield {
+                "event": "install_error",
+                "data": json.dumps(
+                    {
+                        "status": "error",
+                        "message": "llama-server started but health check failed",
+                        "code": "HEALTH_CHECK_FAILED",
+                    }
+                ),
+            }
+
+        except Exception as e:
+            yield {
+                "event": "install_error",
+                "data": json.dumps(
+                    {
+                        "status": "error",
+                        "message": str(e),
+                        "code": "UNEXPECTED_ERROR",
+                    }
+                ),
+            }
+
+    return EventSourceResponse(generate(), ping=15)
+
+
+class ServeHFRequest(BaseModel):
+    """Request body for POST /api/local-backends/llamacpp/serve-hf."""
+
+    hf_repo: str
+    quant: str = "Q4_K_M"
+    port: int = 8080
+    gpu_layers: int = 0
+    context_size: int = 8192
+    flash_attn: bool = False
+    batch_size: int = 512
+
+
+@router.post("/local-backends/llamacpp/serve-hf")
+async def serve_llamacpp_hf(request: Request) -> EventSourceResponse:
+    """Start llama-server with a Hugging Face model. Streams progress via SSE."""
+    import shutil
+    import subprocess
+
+    try:
+        body = await request.json()
+    except Exception:
+        return EventSourceResponse(
+            install_error_generator("Invalid JSON body", "BAD_REQUEST")
+        )
+
+    hf_repo = body.get("hf_repo", "")
+    quant = body.get("quant", "Q4_K_M")
+    port = int(body.get("port", 8080))
+    gpu_layers = int(body.get("gpu_layers", 0))
+    context_size = int(body.get("context_size", 8192))
+    flash_attn = body.get("flash_attn", False)
+    batch_size = int(body.get("batch_size", 512))
+
+    if not shutil.which("llama-server"):
+        return EventSourceResponse(
+            install_error_generator("llama.cpp is not installed", "NOT_INSTALLED")
+        )
+
+    if not hf_repo:
+        return EventSourceResponse(
+            install_error_generator("No Hugging Face repo specified", "NO_HF_REPO")
+        )
+
+    # Check -hf support
+    try:
+        help_result = subprocess.run(
+            ["llama-server", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if "-hf" not in (help_result.stdout + help_result.stderr):
+            return EventSourceResponse(
+                install_error_generator(
+                    "This llama-server version does not support -hf flag",
+                    "HF_NOT_SUPPORTED",
+                )
+            )
+    except Exception as e:
+        return EventSourceResponse(
+            install_error_generator(
+                f"Failed to check llama-server capabilities: {e}",
+                "CHECK_FAILED",
+            )
+        )
+
+    model_ref = f"{hf_repo}:{quant}"
+
+    # Stop existing process if running
+    if _srv._llamacpp_process is not None and _srv._llamacpp_process.returncode is None:
+        _srv._llamacpp_process.terminate()
+        try:
+            await asyncio.wait_for(_srv._llamacpp_process.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            _srv._llamacpp_process.kill()
+            await _srv._llamacpp_process.wait()
+        _srv._llamacpp_process = None
+
+    if not _srv._is_port_available(port):
+        return EventSourceResponse(
+            install_error_generator(f"Port {port} is already in use", "PORT_IN_USE")
+        )
+
+    cmd = [
+        "llama-server",
+        "-hf",
+        model_ref,
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+    ]
+    if gpu_layers != 0:
+        cmd.extend(["-ngl", str(gpu_layers)])
+    cmd.extend(["-c", str(context_size)])
+    if flash_attn and gpu_layers > 0:
+        cmd.extend(["--flash-attn", "1"])
+    if batch_size != 512:
+        cmd.extend(["-ub", str(batch_size)])
+
+    async def generate() -> AsyncGenerator[str, None]:
+        try:
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {
+                        "step": "start",
+                        "message": f"Starting llama-server with HF model {model_ref}...",
+                        "progress": 5,
+                    }
+                ),
+            }
+
+            _srv._llamacpp_process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            _srv._llamacpp_serving_model = model_ref
+
+            yield {
+                "event": "install_log",
+                "data": json.dumps(
+                    {"step": "loading", "message": "Loading model...", "progress": 10}
+                ),
+            }
+
+            assert _srv._llamacpp_process.stderr is not None
+            progress = 10
+            async for raw_line in _srv._llamacpp_process.stderr:
+                line = raw_line.decode("utf-8", errors="replace").rstrip()
+                if not line:
+                    continue
+
+                if "loading model from" in line.lower():
+                    progress = max(progress, 15)
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps(
+                            {
+                                "step": "loading",
+                                "message": "Loading model into memory...",
+                                "progress": progress,
+                            }
+                        ),
+                    }
+                elif "offloading" in line.lower() and "layers" in line.lower():
+                    progress = min(progress + 15, 60)
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps(
+                            {
+                                "step": "gpu",
+                                "message": line.strip(),
+                                "progress": progress,
+                            }
+                        ),
+                    }
+                elif "buffer size" in line.lower() or "model buffer" in line.lower():
+                    progress = min(progress + 20, 80)
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps(
+                            {
+                                "step": "loaded",
+                                "message": line.strip(),
+                                "progress": progress,
+                            }
+                        ),
+                    }
+                elif "listening on" in line.lower():
+                    progress = 95
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps(
+                            {
+                                "step": "ready",
+                                "message": line.strip(),
+                                "progress": progress,
+                            }
+                        ),
+                    }
+                else:
+                    progress = min(progress + 2, 90)
+                    yield {
+                        "event": "install_log",
+                        "data": json.dumps(
+                            {
+                                "step": "loading",
+                                "message": line.strip(),
+                                "progress": progress,
+                            }
+                        ),
+                    }
+
+                if await request.is_disconnected():
+                    _srv._llamacpp_process.terminate()
+                    return
+
+            await _srv._llamacpp_process.wait()
+
+            for _attempt in range(5):
+                await asyncio.sleep(1)
+                try:
+                    async with httpx.AsyncClient(timeout=2) as client:
+                        resp = await client.get(f"http://localhost:{port}/v1/models")
+                        if resp.status_code == 200:
+                            _srv._llamacpp_config["installed"] = True
+                            local_backend_manager.set_address(
+                                "llama-cpp", f"localhost:{port}"
+                            )
+                            asyncio.ensure_future(_srv.monitor_llamacpp_process())
+                            yield {
+                                "event": "hf_serve_complete",
+                                "data": json.dumps(
+                                    {
+                                        "status": "success",
+                                        "hf_repo": hf_repo,
+                                        "quant": quant,
                                         "port": port,
                                     }
                                 ),

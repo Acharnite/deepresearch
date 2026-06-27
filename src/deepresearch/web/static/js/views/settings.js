@@ -16,7 +16,8 @@ import {
   deleteOllamaModel,
   fetchLlamaCppStatus, getLlamaCppInstallURL, getLlamaCppUninstallURL,
   startLlamaCpp, stopLlamaCpp, restartLlamaCpp,
-  fetchGgufModels, serveGgufModel, stopLlamacppServing, updateLlamacppConfig
+  fetchGgufModels, serveGgufModel, stopLlamacppServing, updateLlamacppConfig,
+  serveHfFromHF
 } from '../api.js';
 import { ModelPicker } from '../model-picker.js';
 
@@ -154,12 +155,66 @@ async function loadEndpointList() {
   }
 }
 
-// ── Hardware (llmfit) ────────────────────────────────
+// ── Hardware (Python detection / llmfit) ────────────
 async function loadHardwareInfo() {
   const statusEl = document.getElementById('llmfitStatus');
   const infoEl = document.getElementById('hardwareInfo');
   if (!infoEl) return;
 
+  // Try Python hardware detection first (new)
+  try {
+    const pyHw = await fetchHardwareInfo();
+    if (pyHw && (pyHw.platform || pyHw.cpu_model)) {
+      // Python detection succeeded
+      if (statusEl) statusEl.textContent = '✅ Python';
+
+      let html = '<div style="padding:8px 12px;font-size:13px;line-height:1.8;">';
+
+      // Platform
+      html += '💻 <strong>Platform:</strong> ' + esc(pyHw.platform || '?');
+      if (pyHw.architecture) html += ' (' + esc(pyHw.architecture) + ')';
+      html += '<br>';
+
+      // GPU
+      if (pyHw.gpu && pyHw.gpu.name) {
+        const vram = pyHw.gpu.vram_mb ? ' (' + (pyHw.gpu.vram_mb / 1024).toFixed(1) + 'GB VRAM)' : '';
+        html += '🖥️ <strong>GPU:</strong> ' + esc(pyHw.gpu.name) + vram;
+        if (pyHw.gpu.vendor) html += ' <span class="text-muted">(' + esc(pyHw.gpu.vendor) + ')</span>';
+        html += '<br>';
+      } else {
+        html += '🖥️ <strong>GPU:</strong> <span class="text-muted">No GPU detected</span><br>';
+      }
+
+      // CPU
+      html += '🧠 <strong>CPU:</strong> ' + esc(pyHw.cpu_model || 'Unknown') +
+        ' (' + (pyHw.cpu_cores || '?') + ' cores)<br>';
+
+      // RAM
+      html += '💾 <strong>RAM:</strong> ' + formatNumber(pyHw.ram_total_gb) + 'GB total' +
+        ' (' + formatNumber(pyHw.ram_available_gb) + 'GB available)<br>';
+
+      // Torch availability
+      if (pyHw.torch_available != null) {
+        html += '🔥 <strong>PyTorch:</strong> ' + (pyHw.torch_available ? '✅ Available' : '❌ Not available');
+        if (pyHw.torch_cuda_available) html += ' (CUDA ✅)';
+        html += '<br>';
+      }
+
+      html += '</div>';
+      infoEl.innerHTML = html;
+
+      // Keep llmfit actions hidden / show minimal state
+      const llmfitActions = document.getElementById('llmfitActions');
+      if (llmfitActions) {
+        llmfitActions.innerHTML = '<span class="text-muted" style="font-size:11px;">Hardware detection: Python</span>';
+      }
+      return;
+    }
+  } catch (e) {
+    // Python detection not available — fall through to llmfit
+  }
+
+  // Fallback: existing llmfit-based detection
   try {
     // Check tool status
     const tools = await fetchToolStatus();
@@ -630,6 +685,12 @@ async function checkLlamaCppStatus() {
       const configSection = document.getElementById('llamacppConfigSection');
       if (configSection) configSection.style.display = 'block';
 
+      // Show HF badge
+      const hfBadge = document.getElementById('llamacppHfBadge');
+      if (hfBadge) {
+        hfBadge.textContent = status.hf_supported ? '🤗 HF Ready' : '';
+      }
+
       // Load GGUF models
       loadGgufModels();
 
@@ -954,6 +1015,61 @@ window.stopLlamacppServe = async function() {
     checkLlamaCppStatus();
     loadGgufModels();
   }, 1000);
+};
+
+// ── HuggingFace Serve Action ─────────────────────────
+window.serveHfAction = async function() {
+  const repo = document.getElementById('hfRepoInput')?.value.trim();
+  if (!repo) { showToast('Please enter a HuggingFace repo name', 'error'); return; }
+
+  const quant = document.getElementById('hfQuantSelect')?.value || 'Q4_K_M';
+  const port = parseInt(document.getElementById('llamacppPortInput')?.value) || 8080;
+  const gpuLayers = parseInt(document.getElementById('llamacppGpuLayersInput')?.value) ?? 0;
+  const contextSize = parseInt(document.getElementById('llamacppCtxInput')?.value) || 8192;
+  const flashAttn = false;
+  const batchSize = parseInt(document.getElementById('llamacppBatchInput')?.value) || 512;
+
+  const logEl = document.getElementById('hfServeLog');
+  if (logEl) logEl.innerHTML = '';
+
+  const addLog = (msg, cls) => {
+    if (!logEl) return;
+    const line = document.createElement('div');
+    line.className = 'log-line' + (cls ? ' ' + cls : '');
+    line.innerHTML = msg;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  };
+
+  addLog('<span class="log-icon">⏳</span> Starting HF serve for <strong>' + esc(repo) + '</strong> (' + esc(quant) + ')...');
+
+  try {
+    await serveHfFromHF({
+      hfRepo: repo,
+      quant,
+      port,
+      gpuLayers,
+      contextSize,
+      flashAttn,
+      batchSize,
+      onEvent: (event, data) => {
+        if (event === 'install_log') {
+          const icon = data.progress >= 80 ? '✅' : data.progress >= 50 ? '⏳' : '⬇️';
+          addLog('<span class="log-icon">' + icon + '</span> ' + esc(data.message || ''));
+        } else if (event === 'install_complete') {
+          addLog('<span class="log-icon">✅</span> <strong>' + esc(repo) + ' is now serving!</strong>', 'log-success');
+          setTimeout(() => { checkLlamaCppStatus(); loadGgufModels(); }, 1000);
+        } else if (event === 'install_error') {
+          addLog('<span class="log-icon">❌</span> <strong>Error:</strong> ' + esc(data.message || 'Serve failed'), 'log-error');
+        }
+      },
+      onError: (errMsg) => {
+        addLog('<span class="log-icon">❌</span> <strong>Error:</strong> ' + esc(errMsg), 'log-error');
+      },
+    });
+  } catch (err) {
+    addLog('<span class="log-icon">❌</span> <strong>Error:</strong> ' + esc(err.message || 'Network error'), 'log-error');
+  }
 };
 
 // ── Config ───────────────────────────────────────────

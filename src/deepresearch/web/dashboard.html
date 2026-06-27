@@ -15,6 +15,12 @@
 #ollamaInstallLog .log-error { color: #f44336; }
 #ollamaInstallLog .log-retry { padding: 8px 0; }
 
+#hfServeLog .log-line { padding: 2px 0; line-height: 1.5; }
+#hfServeLog .log-icon { display: inline-block; width: 20px; text-align: center; }
+#hfServeLog .log-msg { color: #ccc; }
+#hfServeLog .log-success { color: #4caf50; }
+#hfServeLog .log-error { color: #f44336; }
+
 /* Local Backends tab */
 .backend-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
 .backend-card { background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:14px; display:flex; flex-direction:column; gap:8px; font-size:13px; }
@@ -339,9 +345,10 @@
       </div>
 
       <!-- llama.cpp card -->
-      <div class="card-header" style="border:1px solid var(--border);border-radius:6px;margin:12px 0 8px;">
-        <span>🔧 llama.cpp</span>
+      <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin:12px 0 8px;">
+        <span style="font-weight:600;">🔧 llama.cpp</span>
         <span id="llamacppStatus" style="font-size:12px;font-weight:400;margin-left:8px;"></span>
+        <span id="llamacppHfBadge" style="margin-left:auto;font-size:11px;"></span>
       </div>
       <div id="llamacppActions" style="padding:8px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);">
         <button id="installLlamaCppBtn" class="btn btn-primary btn-sm" style="display:none;" onclick="window.installLlamaCpp()">⬇ Install llama.cpp</button>
@@ -356,6 +363,35 @@
         </div>
       </div>
 
+      <!-- HF Serve section -->
+      <div class="hf-serve-section" style="padding:8px 12px;border-bottom:1px solid var(--border);">
+        <div style="font-size:12px;font-weight:600;margin-bottom:8px;">🤗 Serve from HuggingFace</div>
+        <p class="text-muted" style="font-size:12px;margin:0 0 12px 0;">
+          Download and serve a model directly from HuggingFace Hub.
+          Requires <code>llama-server</code> with <code>-hf</code> support (curl-enabled build).
+        </p>
+        <div class="hf-serve-form" style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;">
+          <div style="flex:2;min-width:200px;">
+            <label style="font-size:11px;color:var(--text-muted);">HF Model Repo</label>
+            <input type="text" id="hfRepoInput" placeholder="e.g. bartowski/Llama-3.2-3B-Instruct-GGUF"
+                   style="width:100%;padding:6px 8px;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;color:var(--text);">
+          </div>
+          <div style="flex:1;min-width:100px;">
+            <label style="font-size:11px;color:var(--text-muted);">Quantization</label>
+            <select id="hfQuantSelect" style="width:100%;padding:6px 8px;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;color:var(--text);">
+              <option value="Q4_K_M">Q4_K_M (recommended)</option>
+              <option value="Q5_K_M">Q5_K_M</option>
+              <option value="Q6_K">Q6_K</option>
+              <option value="Q8_0">Q8_0</option>
+              <option value="Q3_K_M">Q3_K_M (smaller)</option>
+              <option value="Q2_K">Q2_K (smallest)</option>
+            </select>
+          </div>
+          <button class="btn btn-sm btn-success" onclick="window.serveHfAction()">▶ Serve from HF</button>
+        </div>
+        <div id="hfServeLog" style="margin-top:8px;font-size:12px;max-height:200px;overflow-y:auto;font-family:monospace;color:var(--text-secondary);"></div>
+      </div>
+
       <!-- llama.cpp Config -->
       <div id="llamacppConfigSection" style="padding:8px 12px;border-bottom:1px solid var(--border);display:none;">
         <div style="font-size:12px;font-weight:600;margin-bottom:6px;">⚙️ Configuration</div>
@@ -365,6 +401,19 @@
           <label>Context: <input type="number" id="llamacppCtxInput" value="8192" min="512" max="131072" step="1024" style="width:80px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
           <label>Batch: <input type="number" id="llamacppBatchInput" value="512" min="64" max="4096" step="64" style="width:80px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
           <button class="btn btn-sm btn-outline" onclick="window.saveLlamacppConfig()">💾 Save</button>
+        </div>
+      </div>
+
+      <!-- HF Guidance card -->
+      <div style="padding:8px 12px;border-bottom:1px solid var(--border);">
+        <div style="padding:12px;background:var(--surface-2);border-radius:6px;font-size:12px;">
+          <strong>🤗 Need models?</strong>
+          <ul style="margin:8px 0 0 0;padding-left:16px;">
+            <li><a href="https://huggingface.co/models?library=gguf" target="_blank" rel="noopener">Browse GGUF Models on HuggingFace</a></li>
+            <li>Enter a HuggingFace repo above (e.g., <code>user/model</code>) and click <strong>Serve from HF</strong></li>
+            <li>Use the <code>:quant</code> suffix to pick a quantization (default: <code>Q4_K_M</code>)</li>
+            <li><code>llama-server --fit</code> auto-tunes context and GPU layers to your hardware</li>
+          </ul>
         </div>
       </div>
 

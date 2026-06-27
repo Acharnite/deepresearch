@@ -233,6 +233,7 @@ export async function fetchToolStatus() {
 
 export async function fetchHardwareInfo() {
   const resp = await fetch('/api/hardware');
+  if (!resp.ok) throw new Error('Failed to fetch hardware info');
   return resp.json();
 }
 
@@ -240,6 +241,58 @@ export async function fetchModelRecommendations() {
   const resp = await fetch('/api/tools/recommendations');
   if (!resp.ok) return { available: false };
   return await resp.json();
+}
+
+// ── HuggingFace Serve (llama-server -hf) ─────────────────
+export async function serveHfFromHF({ hfRepo, quant, port, gpuLayers, contextSize, flashAttn, batchSize, onEvent, onError }) {
+  const resp = await fetch('/api/local-backends/llamacpp/serve-hf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      hf_repo: hfRepo,
+      quant: quant || 'Q4_K_M',
+      port: port || 8080,
+      gpu_layers: gpuLayers ?? 0,
+      context_size: contextSize || 8192,
+      flash_attn: flashAttn || false,
+      batch_size: batchSize || 512,
+    }),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    if (onError) onError(err.detail || 'Failed to start HF serve');
+    return;
+  }
+
+  // Read SSE stream from POST response body
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let currentEvent = 'message';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        currentEvent = line.slice(7).trim();
+        continue;
+      }
+      if (line.startsWith('data: ')) {
+        try {
+          const payload = JSON.parse(line.slice(6));
+          if (onEvent) onEvent(currentEvent, payload);
+        } catch (e) { /* skip malformed JSON */ }
+        currentEvent = 'message';
+      }
+    }
+  }
 }
 
 // ── Ollama Install ────────────────────────────────────

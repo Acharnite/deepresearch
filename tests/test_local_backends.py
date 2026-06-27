@@ -15,6 +15,8 @@ Covers:
 from __future__ import annotations
 
 
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -144,6 +146,7 @@ class TestBackendRoutes:
             "/api/local-backends/llamacpp/start",
             "/api/local-backends/llamacpp/stop",
             "/api/local-backends/llamacpp/restart",
+            "/api/local-backends/llamacpp/serve-hf",
             "/api/tools/status",
             "/api/tools/recommendations",
             "/api/hardware",
@@ -357,6 +360,35 @@ class TestBackendHardware:
         assert resp.status_code == 200
         data = resp.json()
         assert "available" in data
+
+    def test_hardware_contains_hardware_key_when_no_llmfit(self, client: TestClient) -> None:
+        """GET /api/hardware returns hardware data even without llmfit."""
+        with patch("shutil.which", return_value=None):
+            resp = client.get("/api/hardware")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["available"] is True
+        assert "hardware" in data
+        assert "platform" in data["hardware"]
+        assert "cpu_count" in data["hardware"]
+        assert "gpus" in data["hardware"]
+
+    def test_hardware_fallback_structure(self, client: TestClient) -> None:
+        """The hardware fallback dict has expected top-level keys."""
+        from unittest.mock import patch
+
+        with patch("shutil.which", return_value=None):
+            resp = client.get("/api/hardware")
+        assert resp.status_code == 200
+        data = resp.json()
+        hw = data["hardware"]
+        # Tier 1 fields always present
+        assert "platform" in hw
+        assert "machine" in hw
+        assert "cpu_count" in hw
+        assert "memory" in hw
+        assert "gpus" in hw
+        assert "cuda_available" in hw
 
 
 # ── llama.cpp Binary Lifecycle Endpoint Tests ──────────────────────────

@@ -826,7 +826,7 @@ class TestRouteRegistration:
     """llama.cpp endpoints are registered on the FastAPI app."""
 
     def test_llamacpp_routes_registered(self, client: TestClient):
-        """All 9 llamacpp lifecycle routes are registered."""
+        """All 10 llamacpp lifecycle routes are registered."""
         routes = get_all_paths(app)
         expected = [
             "/api/local-backends/llamacpp/status",
@@ -837,6 +837,7 @@ class TestRouteRegistration:
             "/api/local-backends/llamacpp/restart",
             "/api/local-backends/models/gguf",
             "/api/local-backends/llamacpp/serve",
+            "/api/local-backends/llamacpp/serve-hf",
             "/api/local-backends/llamacpp/config",
         ]
         for route in expected:
@@ -1762,3 +1763,449 @@ class TestDetectLlamacppAddress:
             LLMClient._resolve_api_base("llama-cpp")
 
         mock_mgr.set_address.assert_called_once_with("llama-cpp", "localhost:8080")
+
+
+# ─── U. Hardware Detection Tests ──────────────────────────────────────────
+
+
+class TestHardwareDetection:
+    """get_hardware_info() tiered detection."""
+
+    def test_tier1_platform_info(self):
+        """Tier 1 fields present without any optional deps."""
+        from deepresearch.hardware import get_hardware_info
+
+        with (
+            patch("deepresearch.hardware._get_memory_info", return_value=None),
+            patch("deepresearch.hardware._detect_gpus", return_value=[]),
+            patch("deepresearch.hardware._check_torch_cuda", return_value=None),
+        ):
+            info = get_hardware_info()
+
+        assert "platform" in info
+        assert "machine" in info
+        assert "cpu_count" in info
+        assert isinstance(info["cpu_count"], int)
+
+    def test_memory_psutil_not_installed(self):
+        """Memory returns None when psutil is not installed."""
+        from deepresearch.hardware import _get_memory_info
+
+        with patch("deepresearch.hardware.psutil", None) if False else patch(
+            "deepresearch.hardware.logger"
+        ):
+            pass
+
+        # Simulate ImportError by patching __import__
+        import builtins
+
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "psutil":
+                raise ImportError("No psutil")
+            return original_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", side_effect=mock_import):
+            result = _get_memory_info()
+        assert result is None
+
+    def test_memory_psutil_installed(self):
+        """Memory returns total/available/percent when psutil available."""
+        from deepresearch.hardware import _get_memory_info
+
+        mock_mem = MagicMock()
+        mock_mem.total = 34359738368
+        mock_mem.available = 17179869184
+        mock_mem.percent = 50.0
+
+        mock_psutil = MagicMock()
+        mock_psutil.virtual_memory.return_value = mock_mem
+
+        with patch.dict("sys.modules", {"psutil": mock_psutil}):
+            result = _get_memory_info()
+
+        assert result is not None
+        assert result["total"] == 34359738368
+        assert result["available"] == 17179869184
+        assert result["percent_used"] == 50.0
+
+    def test_nvidia_gpu_detection(self):
+        """nvidia-smi output parsed into GPU dicts."""
+        from deepresearch.hardware import _detect_gpus
+
+        smi_output = "NVIDIA GeForce RTX 4090, 24576, 535.154.05\nNVIDIA A100, 40960, 525.85.12\n"
+
+        with (
+            patch("shutil.which", side_effect=lambda c: "/usr/bin/" + c if c == "nvidia-smi" else None),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout=smi_output, stderr=""
+            )
+            gpus = _detect_gpus()
+
+        assert len(gpus) == 2
+        assert gpus[0]["name"] == "NVIDIA GeForce RTX 4090"
+        assert gpus[0]["memory_total_mb"] == 24576
+        assert gpus[0]["driver_version"] == "535.154.05"
+        assert gpus[0]["backend"] == "nvidia"
+        assert gpus[1]["name"] == "NVIDIA A100"
+        assert gpus[1]["memory_total_mb"] == 40960
+
+    def test_no_nvidia_smi(self):
+        """Empty list when nvidia-smi not in PATH."""
+        from deepresearch.hardware import _detect_gpus
+
+        with patch("shutil.which", return_value=None):
+            gpus = _detect_gpus()
+        assert gpus == []
+
+    def test_nvidia_smi_error(self):
+        """Empty list when nvidia-smi fails."""
+        from deepresearch.hardware import _detect_gpus
+
+        with (
+            patch("shutil.which", return_value="/usr/bin/nvidia-smi"),
+            patch("subprocess.run", side_effect=FileNotFoundError("not found")),
+        ):
+            gpus = _detect_gpus()
+        assert gpus == []
+
+    def test_rocm_gpu_detection(self):
+        """rocm-smi output parsed into GPU dicts."""
+        from deepresearch.hardware import _detect_gpus
+
+        rocm_output = """
+===================================
+ROCm System Management Interface
+===================================
+GPU 0: AMD Radeon RX 7900 XTX
+GPU 1: AMD Instinct MI250X
+"""
+        with (
+            patch("shutil.which", side_effect=lambda c: "/usr/bin/" + c if c == "rocm-smi" else None),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout=rocm_output, stderr=""
+            )
+            gpus = _detect_gpus()
+
+        # Should find 2 GPUs from the "GPU X: Name" lines
+        gpu_names = [g["name"] for g in gpus if g["backend"] == "rocm"]
+        assert "AMD Radeon RX 7900 XTX" in gpu_names
+        assert "AMD Instinct MI250X" in gpu_names
+
+    def test_torch_cuda_available(self):
+        """CUDA available when torch is installed and CUDA is available."""
+        from deepresearch.hardware import _check_torch_cuda
+
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_available.return_value = True
+
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            result = _check_torch_cuda()
+        assert result is True
+
+    def test_torch_cuda_unavailable(self):
+        """CUDA unavailable when torch is installed but no CUDA."""
+        from deepresearch.hardware import _check_torch_cuda
+
+        mock_torch = MagicMock()
+        mock_torch.cuda.is_available.return_value = False
+
+        with patch.dict("sys.modules", {"torch": mock_torch}):
+            result = _check_torch_cuda()
+        assert result is False
+
+    def test_torch_not_installed(self):
+        """Returns None when torch is not installed."""
+        import builtins
+        from deepresearch.hardware import _check_torch_cuda
+
+        original_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "torch":
+                raise ImportError("No torch")
+            return original_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", side_effect=mock_import):
+            result = _check_torch_cuda()
+        assert result is None
+
+
+# ─── V. Status: hf_supported field ────────────────────────────────────────
+
+
+class TestLlamacppStatusHF:
+    """GET /api/local-backends/llamacpp/status — hf_supported field."""
+
+    def test_hf_supported_true_when_flag_present(self, client: TestClient):
+        """hf_supported is True when --help output contains -hf."""
+        with (
+            patch("shutil.which", return_value="/usr/bin/llama-server"),
+            patch("subprocess.run") as mock_run,
+        ):
+            # First call is --version, second is --help
+            mock_run.side_effect = [
+                MagicMock(stdout="b9739\n", stderr=""),
+                MagicMock(stdout="  -hf    --huggingface    Load model from Hugging Face\n", stderr=""),
+            ]
+            resp = client.get("/api/local-backends/llamacpp/status")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["hf_supported"] is True
+
+    def test_hf_supported_false_when_flag_missing(self, client: TestClient):
+        """hf_supported is False when --help output lacks -hf."""
+        with (
+            patch("shutil.which", return_value="/usr/bin/llama-server"),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.side_effect = [
+                MagicMock(stdout="b9739\n", stderr=""),
+                MagicMock(stdout="  --version    Show version\n", stderr=""),
+            ]
+            resp = client.get("/api/local-backends/llamacpp/status")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["hf_supported"] is False
+
+    def test_hf_supported_false_when_not_installed(self, client: TestClient):
+        """hf_supported is False when llama-server not installed."""
+        with patch("shutil.which", return_value=None):
+            resp = client.get("/api/local-backends/llamacpp/status")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["installed"] is False
+        assert data["hf_supported"] is False
+
+
+# ─── W. Serve-HF Endpoint Tests ──────────────────────────────────────────
+
+
+class TestLlamacppServeHF:
+    """POST /api/local-backends/llamacpp/serve-hf."""
+
+    def test_serve_hf_not_installed(self, client: TestClient):
+        """Returns SSE error when llama-server not installed."""
+        with patch("shutil.which", return_value=None):
+            resp = client.post(
+                "/api/local-backends/llamacpp/serve-hf",
+                json={"hf_repo": "user/model"},
+            )
+        assert resp.status_code == 200
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events
+        assert "not installed" in error_events[0]["data"].lower()
+
+    def test_serve_hf_no_repo(self, client: TestClient):
+        """Returns SSE error when no hf_repo provided."""
+        with patch("shutil.which", return_value="/usr/bin/llama-server"):
+            resp = client.post(
+                "/api/local-backends/llamacpp/serve-hf",
+                json={"hf_repo": ""},
+            )
+        assert resp.status_code == 200
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events
+        assert "no hugging face repo" in error_events[0]["data"].lower()
+
+    def test_serve_hf_flag_not_supported(self, client: TestClient):
+        """Returns SSE error when -hf flag is not supported."""
+        with (
+            patch("shutil.which", return_value="/usr/bin/llama-server"),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(
+                stdout="  --version    Show version\n", stderr=""
+            )
+            resp = client.post(
+                "/api/local-backends/llamacpp/serve-hf",
+                json={"hf_repo": "user/model"},
+            )
+        assert resp.status_code == 200
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events
+        assert "not support" in error_events[0]["data"].lower()
+
+    def test_serve_hf_stops_existing_process(self, client: TestClient):
+        """Stops existing process before starting new one."""
+        import deepresearch.web.server as srv
+
+        old_proc = MagicMock()
+        old_proc.returncode = None
+        old_proc.wait = AsyncMock()
+        srv._llamacpp_process = old_proc
+
+        new_proc = MagicMock()
+        new_proc.returncode = None
+        never_set = asyncio.Event()
+        new_proc.wait = AsyncMock(side_effect=never_set.wait)
+        new_proc.stderr = None
+
+        with (
+            patch("shutil.which", return_value="/usr/bin/llama-server"),
+            patch("subprocess.run") as mock_run,
+            patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec,
+            patch("deepresearch.web.server._is_port_available", return_value=True),
+        ):
+            mock_run.return_value = MagicMock(
+                stdout="  -hf    --huggingface    Load model from Hugging Face\n",
+                stderr="",
+            )
+            mock_exec.return_value = new_proc
+            client.post(
+                "/api/local-backends/llamacpp/serve-hf",
+                json={"hf_repo": "user/model", "quant": "Q4_K_M"},
+            )
+
+        old_proc.terminate.assert_called_once()
+
+    def test_serve_hf_port_conflict(self, client: TestClient):
+        """Port already in use returns SSE error."""
+        with (
+            patch("shutil.which", return_value="/usr/bin/llama-server"),
+            patch("subprocess.run") as mock_run,
+            patch("deepresearch.web.server._is_port_available", return_value=False),
+        ):
+            mock_run.return_value = MagicMock(
+                stdout="  -hf    --huggingface    Load model from Hugging Face\n",
+                stderr="",
+            )
+            resp = client.post(
+                "/api/local-backends/llamacpp/serve-hf",
+                json={"hf_repo": "user/model"},
+            )
+        assert resp.status_code == 200
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events
+        assert "already in use" in error_events[0]["data"].lower()
+
+    def test_serve_hf_builds_correct_command(self, client: TestClient):
+        """Command includes -hf flag with model ref and optional flags."""
+        import deepresearch.web.server as srv
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = None
+        never_set = asyncio.Event()
+        mock_proc.wait = AsyncMock(side_effect=never_set.wait)
+        mock_proc.stderr = None
+
+        with (
+            patch("shutil.which", return_value="/usr/bin/llama-server"),
+            patch("subprocess.run") as mock_run,
+            patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec,
+            patch("deepresearch.web.server._is_port_available", return_value=True),
+        ):
+            mock_run.return_value = MagicMock(
+                stdout="  -hf    --huggingface    Load model from Hugging Face\n",
+                stderr="",
+            )
+            mock_exec.return_value = mock_proc
+            client.post(
+                "/api/local-backends/llamacpp/serve-hf",
+                json={
+                    "hf_repo": "user/model",
+                    "quant": "Q4_K_M",
+                    "port": 8081,
+                    "gpu_layers": 32,
+                    "context_size": 16384,
+                    "flash_attn": True,
+                    "batch_size": 256,
+                },
+            )
+
+        call_args = mock_exec.call_args[0]
+        assert "llama-server" in call_args
+        assert "-hf" in call_args
+        assert "user/model:Q4_K_M" in call_args
+        assert "--host" in call_args
+        assert "127.0.0.1" in call_args
+        assert "--port" in call_args
+        assert "8081" in call_args
+        assert "-ngl" in call_args
+        assert "32" in call_args
+        assert "-c" in call_args
+        assert "16384" in call_args
+        assert "--flash-attn" in call_args
+        assert "-ub" in call_args
+        assert "256" in call_args
+
+    def test_serve_hf_sse_events(self, client: TestClient):
+        """SSE stream emits progress events."""
+        mock_proc = MagicMock()
+        mock_proc.returncode = None
+        mock_proc.wait = AsyncMock()
+
+        async def mock_stderr_line():
+            yield b"loading model from HF repo\n"
+            yield b"offloading 32 layers to GPU\n"
+            yield b"buffer size: 1024 MB\n"
+            yield b"listening on 127.0.0.1:8081\n"
+
+        mock_proc.stderr = mock_stderr_line()
+
+        with (
+            patch("shutil.which", return_value="/usr/bin/llama-server"),
+            patch("subprocess.run") as mock_run,
+            patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec,
+            patch("deepresearch.web.server._is_port_available", return_value=True),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+            patch("httpx.AsyncClient") as mock_httpx,
+        ):
+            mock_run.return_value = MagicMock(
+                stdout="  -hf    --huggingface    Load model from Hugging Face\n",
+                stderr="",
+            )
+            mock_exec.return_value = mock_proc
+            mock_health_resp = MagicMock()
+            mock_health_resp.status_code = 500
+            mock_health_resp.__aenter__ = AsyncMock(return_value=mock_health_resp)
+            mock_health_resp.__aexit__ = AsyncMock()
+            mock_client = MagicMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock()
+            mock_client.get = AsyncMock(return_value=mock_health_resp)
+            mock_httpx.return_value = mock_client
+
+            resp = client.post(
+                "/api/local-backends/llamacpp/serve-hf",
+                json={"hf_repo": "user/model"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        events = _parse_sse_events(resp.text)
+        event_types = [e["event"] for e in events]
+        assert "install_log" in event_types
+
+    def test_serve_hf_invalid_json(self, client: TestClient):
+        """Invalid JSON body returns SSE error."""
+        with patch("shutil.which", return_value="/usr/bin/llama-server"):
+            resp = client.post(
+                "/api/local-backends/llamacpp/serve-hf",
+                content=b"not json",
+                headers={"content-type": "application/json"},
+            )
+
+        assert resp.status_code == 200
+        events = _parse_sse_events(resp.text)
+        error_events = [e for e in events if e["event"] == "install_error"]
+        assert error_events
+        assert "invalid json" in error_events[0]["data"].lower()

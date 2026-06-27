@@ -173,27 +173,35 @@ async def get_tools_status() -> JSONResponse:
 
 @router.get("/hardware")
 async def get_hardware_info() -> JSONResponse:
-    """Return hardware specs via llmfit system --json (if installed)."""
+    """Return hardware specs. Tries llmfit first, then falls back to built-in detection."""
     import shutil
     import subprocess
 
-    if not shutil.which("llmfit"):
-        return JSONResponse({"available": False, "message": "llmfit not installed"})
-    try:
-        result = subprocess.run(
-            ["llmfit", "system", "--json"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            data = json.loads(result.stdout)
-            return JSONResponse({"available": True, "hardware": data.get("system", {})})
-        return JSONResponse({"available": False, "error": result.stderr.strip()})
-    except FileNotFoundError:
-        return JSONResponse({"available": False, "message": "llmfit not found"})
-    except subprocess.TimeoutExpired:
-        return JSONResponse({"available": False, "message": "llmfit timed out"})
+    # Try llmfit first (Phase 1 backward compat)
+    if shutil.which("llmfit"):
+        try:
+            result = subprocess.run(
+                ["llmfit", "system", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                return JSONResponse(
+                    {"available": True, "hardware": data.get("system", {})}
+                )
+            return JSONResponse({"available": False, "error": result.stderr.strip()})
+        except FileNotFoundError:
+            pass
+        except subprocess.TimeoutExpired:
+            pass
+
+    # Fall back to built-in hardware detection
+    from deepresearch.hardware import get_hardware_info as _detect
+
+    hw = _detect()
+    return JSONResponse({"available": True, "hardware": hw})
 
 
 @router.get("/tools/recommendations")
