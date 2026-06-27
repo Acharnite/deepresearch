@@ -2090,7 +2090,6 @@ class TestLlamacppServeHF:
 
     def test_serve_hf_builds_correct_command(self, client: TestClient):
         """Command includes -hf flag with model ref and optional flags."""
-        import deepresearch.web.server as srv
 
         mock_proc = MagicMock()
         mock_proc.returncode = None
