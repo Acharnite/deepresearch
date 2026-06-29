@@ -2,10 +2,10 @@
 
 ## Status
 
-Proposed
+Accepted
 
-**Version:** 1.1
-**Last Updated:** 2026-06-24
+**Version:** 1.2
+**Last Updated:** 2026-06-29
 
 ## Context
 
@@ -116,6 +116,43 @@ Alpine.js is the boring, pragmatic choice. It's 15KB, has no build step, and can
 ### Ladder Compliance (ADR-0049)
 
 Alpine.js is a new dependency (rung 5). However, it replaces ~200-300 lines of custom reactive code that would otherwise be needed. The net effect is less total code, not more. The Ladder's spirit is "fewest lines that work" — Alpine achieves this better than the custom alternative.
+
+## Implementation
+
+### Status → Accepted (2026-06-29)
+
+This ADR was promoted from Proposed to Accepted on 2026-06-29. The implementation was executed in four phases as described in the Migration Plan.
+
+### Phase 1: Foundation (Completed 2026-06-29)
+
+- Added Alpine.js v3.14.8 CDN script to `dashboard.html`
+- Created `alpine-init.js` with `Alpine.store('app')`, `Alpine.store('sessions')`, `Alpine.store('settings')` store definitions and `Alpine.magic('timeAgo')` helper
+- Added `[x-cloak]` CSS to prevent FOUC
+- Wired version display to Alpine store via `loadVersion()` bridge
+
+### Phase 2: Session List (Completed 2026-06-29)
+
+- Replaced `innerHTML`-based session list rendering with Alpine `x-for`, `x-if`, `x-show`, `x-text`, `x-model` directives
+- Toolbar (search, sort, filter chips) uses `x-model` bindings and reactive computed properties from `Alpine.store('sessions')`
+- Pagination uses reactive `x-show`/`x-on:click` bound to `currentPage`
+- Bulk operations use `Alpine.store('sessions').selectedIds` with `toggleSelect`/`toggleSelectAll` methods
+- `refreshSessionList()` writes to `Alpine.store('sessions').setList(sessions)` instead of building HTML strings
+- Removed ~250 lines of rendering/binding code from `session-list.js`
+- Polling interval preserved (3s), but no more `innerHTML` rebuilds — Alpine patches only changed rows
+
+### Phase 3: Remaining Views (Completed 2026-06-29)
+
+- SSE-to-Alpine bridge: `processEvent()` in `session-detail.js` writes state updates to `Alpine.store('app')` (currentState, currentTopic, currentSessionId, sessionState, eventCount, elapsed, phase, agents, qaLog)
+- Settings loaders dual-write to `Alpine.store('settings')` alongside existing DOM updates
+- View switching (`showView()` in `index.js`) updates `Alpine.store('app').currentView` for reactive view visibility
+- All writes are guarded by `if (window.Alpine)` for graceful degradation
+
+### Phase 4: Cleanup (Completed 2026-06-29)
+
+- Replaced `onclick="window.*"` in `dashboard.html` with `@click="$store.app.*"` where applicable
+- Removed `.hidden` class toggling in `index.js` — view visibility now controlled by `x-show` bound to `Alpine.store('app').currentView`
+- Window globals reduced from ~15 to ~0 (all cross-module communication through Alpine stores)
+- Removed unused DOM helper utilities replaced by Alpine directives
 
 ## Documentation
 
@@ -250,5 +287,6 @@ Each phase is independently rollbackable, with caveats:
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-06-29 | 1.2 | Implementation complete (Phases 1-4). Status → Accepted. |
 | 2026-06-24 | 1.1 | Addressed review: added Documentation section, Ladder compliance, htmx comparison, SSE-Alpine bridge, split Phase 2, pinned version, fixed rollback strategy, grounded code claims |
 | 2026-06-24 | 1.0 | Initial version |

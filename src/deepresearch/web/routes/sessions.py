@@ -47,7 +47,7 @@ class RunResponse(BaseModel):
     model_mode: str
 
 
-@router.post("/run", status_code=201)
+@router.post("/run", status_code=201, response_model=RunResponse)
 async def start_research(req: RunRequest) -> JSONResponse:
     """Start a new research session in the background."""
     sem = get_session_semaphore()
@@ -276,7 +276,15 @@ async def get_session_cost(session_id: str) -> JSONResponse:
     return JSONResponse(tracker.to_dict())
 
 
-@router.get("/sessions/{session_id}/events")
+@router.get(
+    "/sessions/{session_id}/events",
+    responses={
+        200: {
+            "description": "SSE event stream",
+            "content": {"text/event-stream": {}},
+        }
+    },
+)
 async def session_event_stream(
     session_id: str, request: Request
 ) -> EventSourceResponse:

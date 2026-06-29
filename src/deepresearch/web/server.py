@@ -184,7 +184,15 @@ async def dashboard() -> str:
     return html_path.read_text(encoding="utf-8")
 
 
-@app.get("/api/events")
+@app.get(
+    "/api/events",
+    responses={
+        200: {
+            "description": "SSE event stream",
+            "content": {"text/event-stream": {}},
+        }
+    },
+)
 async def event_stream(request: Request) -> EventSourceResponse:
     """Global SSE endpoint: streams all orchestrator events."""
     queue = await global_event_bus.subscribe()

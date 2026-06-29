@@ -41,6 +41,15 @@
 - [x] Bumped VERSION.md to 1.6.0
 - [x] Updated design doc to v1.8 with changelog entry
 
+## Completed (2026-06-29)
+- [x] ADR-0019 implementation: Alpine.js frontend reactivity (Phases 1–4)
+- [x] Alpine.js vendored locally (removed CDN dependency for offline support)
+- [x] Bug #104: Fixed model picker transparent background (added --surface-1 CSS variable)
+- [x] Bug #103: Model lists now refresh after GGUF model serve/stop
+- [x] Bug #110: API cleanup — response_model, SSE content-type schema, auth docs
+- [x] Bug #101: Closed as outdated (llmfit removed by ADR-0020)
+- [x] Tests: 8 new tests for time budget edge cases + SSE reconnection (668 total)
+
 ## Next Testing Session
 
 ### Priority 1: Verify latest fixes

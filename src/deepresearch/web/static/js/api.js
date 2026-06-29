@@ -8,10 +8,16 @@ export async function loadVersion() {
       const data = await resp.json();
       const el = document.getElementById('versionDisplay');
       if (el) el.textContent = data.version || '?';
+      // Also update Alpine store if available
+      if (window.Alpine) {
+        Alpine.store('app').version = data.version || '?';
+      }
+      return data.version || '?';
     }
   } catch (e) {
     console.warn('Failed to load version:', e);
   }
+  return '?';
 }
 
 export async function loadAgentProfiles() {

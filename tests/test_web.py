@@ -24,7 +24,15 @@ from fastapi.testclient import TestClient
 from deepresearch.web.event_bus import EventBus
 from deepresearch.web.server import app
 from tests.conftest import get_all_paths
-from deepresearch.web.sessions import MultiSessionManager, SessionInfo
+from deepresearch.web.sessions import (
+    MultiSessionManager,
+    SessionInfo,
+    MEANINGFUL_OUTPUT_EXTENSIONS,
+    _has_meaningful_output,
+    _remove_output_dir,
+    cleanup_output_dirs,
+    SESSION_DB_PATH,
+)
 from deepresearch.web.settings_manager import SettingsManager
 from deepresearch.web.state import update_status
 
@@ -135,6 +143,93 @@ class TestEventBus:
                 await event_bus.unsubscribe(queue)
 
         asyncio.run(test_event())
+
+    @pytest.mark.asyncio
+    async def test_event_history_records_published_events(self) -> None:
+        """Published events are recorded in the history list in order."""
+        history: list[dict] = []
+        bus = EventBus(history=history)
+
+        await bus.publish({"event_type": "event_1", "data": "first"})
+        await bus.publish({"event_type": "event_2", "data": "second"})
+        await bus.publish({"event_type": "event_3", "data": "third"})
+
+        assert len(history) == 3
+        assert history[0]["event_type"] == "event_1"
+        assert history[0]["data"] == "first"
+        assert history[1]["event_type"] == "event_2"
+        assert history[1]["data"] == "second"
+        assert history[2]["event_type"] == "event_3"
+        assert history[2]["data"] == "third"
+        # Each event gets a _server_timestamp
+        assert "_server_timestamp" in history[0]
+        assert "_server_timestamp" in history[1]
+        assert "_server_timestamp" in history[2]
+
+    @pytest.mark.asyncio
+    async def test_event_history_capacity_limit(self) -> None:
+        """EventBus stores all published events in history (no built-in cap).
+
+        The EventBus itself does not impose a history capacity limit. All
+        published events are appended. Downstream consumers (e.g.,
+        save_all_sessions) cap at the last 100 during persistence.
+        """
+        history: list[dict] = []
+        bus = EventBus(history=history)
+
+        count = 200
+        for i in range(count):
+            await bus.publish({"event_type": f"event_{i}", "seq": i})
+
+        # All events are retained — no built-in pruning
+        assert len(history) == count
+        assert history[0]["seq"] == 0
+        assert history[-1]["seq"] == count - 1
+
+    @pytest.mark.asyncio
+    async def test_replay_restores_state_after_reconnect(self) -> None:
+        """Subscriber receives all historical events when replayed on reconnect.
+
+        Simulates the pattern used by the SSE endpoint: after a disconnect,
+        the new subscriber first replays the event_history, then receives
+        new live events.
+        """
+        history: list[dict] = []
+        bus = EventBus(history=history)
+
+        # Phase 1: publish events while client is connected
+        q1 = await bus.subscribe()
+        await bus.publish({"event_type": "session_start", "seq": 1})
+        await bus.publish({"event_type": "round_start", "seq": 2})
+        await bus.publish({"event_type": "agent_start", "seq": 3})
+
+        # Verify q1 got all 3 events
+        for expected_seq in (1, 2, 3):
+            ev = await asyncio.wait_for(q1.get(), timeout=1.0)
+            assert ev["seq"] == expected_seq
+
+        # Phase 2: disconnect, then reconnect (simulating SSE client reconnect)
+        await bus.unsubscribe(q1)
+
+        # A new subscriber joins — replays history, then gets new events
+        q2 = await bus.subscribe()
+
+        # Replay: feed history events to the new subscriber
+        replayed = []
+        for event in history:
+            replayed.append(event)
+
+        assert len(replayed) == 3
+        assert replayed[0]["seq"] == 1
+        assert replayed[1]["seq"] == 2
+        assert replayed[2]["seq"] == 3
+
+        # Phase 3: after replay, new events still go to the subscriber
+        await bus.publish({"event_type": "session_end", "seq": 4})
+        live = await asyncio.wait_for(q2.get(), timeout=1.0)
+        assert live["seq"] == 4
+
+        await bus.unsubscribe(q2)
 
 
 # ─── FastAPI Endpoint Tests (via TestClient) ────────────────────────────
@@ -292,6 +387,9 @@ class TestDashboardEndpoints:
         resp = client.post(f"/api/sessions/{session_id}/cancel")
         assert resp.status_code == 200
 
+        resp = client.delete(f"/api/sessions/{session_id}")
+        assert resp.status_code == 204
+
 
 class TestSessionEndpoints:
     """Multi-session API endpoint tests."""
@@ -434,6 +532,7 @@ class TestSettingsEndpoints:
         resp = client.delete("/api/settings/keys/openai")
         assert resp.status_code == 204
 
+
         resp = client.get("/api/settings/keys")
         data = resp.json()
         assert data["openai"]["configured"] is False
@@ -467,6 +566,7 @@ class TestSettingsEndpoints:
 
         resp = client.delete("/api/settings/local-endpoints/test-llama")
         assert resp.status_code == 204
+
 
 
 # ─── MultiSessionManager Unit Tests ─────────────────────────────────────
@@ -628,6 +728,74 @@ class TestMultiSessionManager:
         with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(q2.get(), timeout=0.3)
 
+    # ── Time budget edge cases ─────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_time_budget_zero_seconds(self) -> None:
+        """time_budget_seconds=0 is accepted and stored as 0."""
+        mgr = MultiSessionManager(max_sessions=10)
+        info = await mgr.create_session(
+            topic="Zero Budget",
+            time_budget="custom",
+            time_budget_seconds=0,
+        )
+        assert info.time_budget_seconds == 0
+        assert info.time_budget == "custom"
+        await mgr.cancel_session(info.session_id)
+        await asyncio.sleep(0.1)
+
+    @pytest.mark.asyncio
+    async def test_time_budget_negative_seconds(self) -> None:
+        """time_budget_seconds=-1 is accepted (no validation at dataclass level)."""
+        mgr = MultiSessionManager(max_sessions=10)
+        info = await mgr.create_session(
+            topic="Negative Budget",
+            time_budget="custom",
+            time_budget_seconds=-1,
+        )
+        assert info.time_budget_seconds == -1
+        await mgr.cancel_session(info.session_id)
+        await asyncio.sleep(0.1)
+
+    @pytest.mark.asyncio
+    async def test_time_budget_large_seconds(self) -> None:
+        """time_budget_seconds=3600 (1 hour) is accepted."""
+        mgr = MultiSessionManager(max_sessions=10)
+        info = await mgr.create_session(
+            topic="Large Budget",
+            time_budget="custom",
+            time_budget_seconds=3600,
+        )
+        assert info.time_budget_seconds == 3600
+        await mgr.cancel_session(info.session_id)
+        await asyncio.sleep(0.1)
+
+    @pytest.mark.asyncio
+    async def test_time_budget_invalid_keyword(self) -> None:
+        """An unknown time_budget keyword raises ValueError."""
+        mgr = MultiSessionManager(max_sessions=10)
+        with pytest.raises(ValueError, match="Unknown time budget"):
+            await mgr.create_session(
+                topic="Invalid Keyword",
+                time_budget="invalid",
+            )
+
+    @pytest.mark.asyncio
+    async def test_time_budget_none_with_valid_keyword(self) -> None:
+        """time_budget_seconds=None falls back to the keyword-based budget."""
+        mgr = MultiSessionManager(max_sessions=10)
+        info = await mgr.create_session(
+            topic="None Budget",
+            time_budget="quick",
+            time_budget_seconds=None,
+        )
+        # Falls through to TimeBudget.from_keyword("quick") → 240s, 2 rounds
+        assert info.time_budget == "quick"
+        assert info.time_budget_seconds == 240
+        assert info.max_rounds == 2
+        await mgr.cancel_session(info.session_id)
+        await asyncio.sleep(0.1)
+
 
 # ─── SessionManager Unit Tests (legacy compat) ──────────────────────────
 
@@ -764,3 +932,337 @@ class TestOrchestratorCustomBudget:
 
         assert config.time_budget_seconds == 600
         assert config.topic.time_budget == "custom"
+
+
+# ─── Output Cleanup Tests ──────────────────────────────────────────────
+
+
+class TestOutputCleanup:
+    """Tests for output directory cleanup logic (issue #116)."""
+
+    # ── _has_meaningful_output ──────────────────────────────────────────
+
+    def test_empty_dir_has_no_meaningful_output(self, tmp_path: Path) -> None:
+        """Empty directory returns False."""
+        sid = "a1b2c3d4"
+        # Simulate SESSION_DB_PATH.parent structure
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+        session_dir = output_base / sid
+        session_dir.mkdir()
+
+        with _patch_session_db_path(output_base):
+            assert _has_meaningful_output(sid) is False
+
+    def test_dir_with_only_trivial_files_has_no_meaningful_output(
+        self, tmp_path: Path
+    ) -> None:
+        """Directory with only .log / .tmp / state files returns False."""
+        sid = "b2c3d4e5"
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+        session_dir = output_base / sid
+        session_dir.mkdir()
+        (session_dir / "agent_state.json").write_text('{"status": "interrupted"}')
+        (session_dir / "trace.log").write_text("some log data")
+
+        with _patch_session_db_path(output_base):
+            assert _has_meaningful_output(sid) is False
+
+    def test_dir_with_pdf_has_meaningful_output(self, tmp_path: Path) -> None:
+        """Directory with a .pdf file returns True."""
+        sid = "c3d4e5f6"
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+        session_dir = output_base / sid
+        session_dir.mkdir()
+        (session_dir / "research.pdf").write_bytes(b"%PDF-1.4 fake pdf content")
+
+        with _patch_session_db_path(output_base):
+            assert _has_meaningful_output(sid) is True
+
+    def test_dir_with_html_has_meaningful_output(self, tmp_path: Path) -> None:
+        """Directory with a .html file returns True."""
+        sid = "d4e5f6a7"
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+        session_dir = output_base / sid
+        session_dir.mkdir()
+        (session_dir / "research.html").write_text("<html><body>Research</body></html>")
+
+        with _patch_session_db_path(output_base):
+            assert _has_meaningful_output(sid) is True
+
+    def test_nonexistent_dir_has_no_meaningful_output(self, tmp_path: Path) -> None:
+        """Non-existent directory returns False."""
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+
+        with _patch_session_db_path(output_base):
+            assert _has_meaningful_output("nonexistent") is False
+
+    def test_uppercase_extensions_are_detected(self, tmp_path: Path) -> None:
+        """Case-insensitive extension matching works (.PDF, .HTML)."""
+        sid = "e5f6a7b8"
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+        session_dir = output_base / sid
+        session_dir.mkdir()
+        (session_dir / "RESEARCH.PDF").write_bytes(b"%PDF-1.4")
+
+        with _patch_session_db_path(output_base):
+            assert _has_meaningful_output(sid) is True
+
+    # ── _remove_output_dir ──────────────────────────────────────────────
+
+    def test_remove_empty_dir_succeeds(self, tmp_path: Path) -> None:
+        """Empty directory is removed."""
+        sid = "f6a7b8c9"
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+        session_dir = output_base / sid
+        session_dir.mkdir()
+
+        with _patch_session_db_path(output_base):
+            assert _remove_output_dir(sid) is True
+            assert session_dir.exists() is False
+
+    def test_remove_trivial_dir_succeeds(self, tmp_path: Path) -> None:
+        """Directory with only trivial files is removed."""
+        sid = "a7b8c9d0"
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+        session_dir = output_base / sid
+        session_dir.mkdir()
+        (session_dir / "agent_state.json").write_text("{}")
+
+        with _patch_session_db_path(output_base):
+            assert _remove_output_dir(sid) is True
+            assert session_dir.exists() is False
+
+    def test_remove_dir_with_pdf_does_nothing(self, tmp_path: Path) -> None:
+        """Directory with PDF is NOT removed."""
+        sid = "b8c9d0e1"
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+        session_dir = output_base / sid
+        session_dir.mkdir()
+        pdf_file = session_dir / "paper.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4")
+
+        with _patch_session_db_path(output_base):
+            assert _remove_output_dir(sid) is False
+            assert session_dir.exists() is True
+            assert pdf_file.exists() is True
+
+    def test_remove_dir_with_html_does_nothing(self, tmp_path: Path) -> None:
+        """Directory with HTML is NOT removed."""
+        sid = "c9d0e1f2"
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+        session_dir = output_base / sid
+        session_dir.mkdir()
+        html_file = session_dir / "paper.html"
+        html_file.write_text("<html></html>")
+
+        with _patch_session_db_path(output_base):
+            assert _remove_output_dir(sid) is False
+            assert session_dir.exists() is True
+            assert html_file.exists() is True
+
+    def test_remove_nonexistent_dir_returns_false(self, tmp_path: Path) -> None:
+        """Non-existent dir returns False."""
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+
+        with _patch_session_db_path(output_base):
+            assert _remove_output_dir("nonexistent") is False
+
+    # ── cleanup_output_dirs ─────────────────────────────────────────────
+
+    def test_cleanup_output_dirs_removes_empty(self, tmp_path: Path) -> None:
+        """cleanup_output_dirs removes empty session directories."""
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+
+        # Create two empty session dirs
+        for sid in ("a1111111", "b2222222"):
+            (output_base / sid).mkdir()
+
+        # Create a non-session dir that should be ignored
+        (output_base / "not_a_session").mkdir()
+
+        with _patch_session_db_path(output_base):
+            count, removed = cleanup_output_dirs(dry_run=False)
+
+        assert count == 2
+        assert sorted(removed) == ["a1111111", "b2222222"]
+        assert (output_base / "a1111111").exists() is False
+        assert (output_base / "b2222222").exists() is False
+        # Non-session dir should be preserved
+        assert (output_base / "not_a_session").exists() is True
+
+    def test_cleanup_output_dirs_preserves_pdf(self, tmp_path: Path) -> None:
+        """cleanup_output_dirs preserves directories with PDF output."""
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+
+        sid = "c3333333"
+        session_dir = output_base / sid
+        session_dir.mkdir()
+        (session_dir / "paper.pdf").write_bytes(b"%PDF-1.4")
+
+        with _patch_session_db_path(output_base):
+            count, removed = cleanup_output_dirs(dry_run=False)
+
+        assert count == 0
+        assert session_dir.exists() is True
+
+    def test_cleanup_output_dirs_preserves_html(self, tmp_path: Path) -> None:
+        """cleanup_output_dirs preserves directories with HTML output."""
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+
+        sid = "d4444444"
+        session_dir = output_base / sid
+        session_dir.mkdir()
+        (session_dir / "paper.html").write_text("<html></html>")
+
+        with _patch_session_db_path(output_base):
+            count, removed = cleanup_output_dirs(dry_run=False)
+
+        assert count == 0
+        assert session_dir.exists() is True
+
+    def test_cleanup_output_dirs_dry_run(self, tmp_path: Path) -> None:
+        """Dry run reports but does not delete."""
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+
+        sid = "e5555555"
+        session_dir = output_base / sid
+        session_dir.mkdir()
+
+        with _patch_session_db_path(output_base):
+            count, removed = cleanup_output_dirs(dry_run=True)
+
+            assert count == 1
+            assert removed == ["e5555555"]
+            assert session_dir.exists() is True  # Not deleted
+
+            # Now actually delete — still inside the patched context
+            count, removed = cleanup_output_dirs(dry_run=False)
+            assert count == 1
+            assert session_dir.exists() is False
+
+    def test_cleanup_output_dirs_mixed(self, tmp_path: Path) -> None:
+        """Mixed state: only empty/trivial dirs are removed."""
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+
+        # Dir with PDF — should be preserved
+        pdf_sid = "f6666666"
+        (output_base / pdf_sid).mkdir()
+        (output_base / pdf_sid / "paper.pdf").write_bytes(b"%PDF-1.4")
+
+        # Empty dir — should be removed
+        empty_sid = "a7777777"
+        (output_base / empty_sid).mkdir()
+
+        # Dir with trivial files — should be removed
+        trivial_sid = "b8888888"
+        (output_base / trivial_sid).mkdir()
+        (output_base / trivial_sid / "agent_state.json").write_text("{}")
+
+        with _patch_session_db_path(output_base):
+            count, removed = cleanup_output_dirs(dry_run=False)
+
+        assert count == 2
+        assert sorted(removed) == [empty_sid, trivial_sid]
+        assert (output_base / pdf_sid).exists() is True
+        assert (output_base / empty_sid).exists() is False
+        assert (output_base / trivial_sid).exists() is False
+
+    # ── clear_completed cleanup behavior ────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_clear_completed_cleans_empty_dir(
+        self, tmp_path: Path
+    ) -> None:
+        """clear_completed() removes empty output dirs while preserving dirs with PDF."""
+        output_base = tmp_path / "output"
+        output_base.mkdir()
+        (output_base / "sessions_db.json").write_text("{}")
+
+        with _patch_session_db_path(output_base):
+            mgr = MultiSessionManager(max_sessions=10)
+
+            # Create two session dirs on disk
+            empty_sid = "a8888888"
+            empty_dir = output_base / empty_sid
+            empty_dir.mkdir()
+
+            pdf_sid = "b9999999"
+            pdf_dir = output_base / pdf_sid
+            pdf_dir.mkdir()
+            (pdf_dir / "paper.pdf").write_bytes(b"%PDF-1.4 valid output")
+
+            # Manually inject sessions into the manager
+            from datetime import datetime
+
+            for sid, status in [(empty_sid, "cancelled"), (pdf_sid, "complete")]:
+                mgr._sessions[sid] = SessionInfo(
+                    session_id=sid,
+                    topic=f"Session {sid}",
+                    time_budget="quick",
+                    time_budget_seconds=240,
+                    model_mode="same",
+                    status=status,
+                    created_at=datetime.now().isoformat(),
+                    completed_at=datetime.now().isoformat(),
+                )
+
+            count = mgr.clear_completed()
+
+            assert count == 2
+            # Empty dir should be removed
+            assert empty_dir.exists() is False
+            # PDF dir should remain
+            assert pdf_dir.exists() is True
+            assert (pdf_dir / "paper.pdf").exists() is True
+
+
+# ── Helpers ────────────────────────────────────────────────────────────
+
+
+def _patch_session_db_path(output_base: Path):
+    """Context manager: patch SESSION_DB_PATH so cleanup helpers use ``output_base``.
+
+    Usage::
+
+        with _patch_session_db_path(tmp_path / "output"):
+            assert _has_meaningful_output("abc12345")
+    """
+    from unittest.mock import patch as _mock_patch
+
+    fake_db = output_base / "sessions_db.json"
+    return _mock_patch(
+        "deepresearch.web.sessions.SESSION_DB_PATH",
+        fake_db,
+    )

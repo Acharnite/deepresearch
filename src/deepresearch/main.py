@@ -79,6 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Quick mode — fastest results (short time budget)",
     )
     run_parser.add_argument(
+        "--medium",
+        action="store_true",
+        help="Medium mode — balanced time budget",
+    )
+    run_parser.add_argument(
         "--deep",
         action="store_true",
         help="Deep mode — most thorough investigation",
@@ -194,6 +199,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     models_sub.add_parser("list", help="List available LLM models")
 
+    # --- cleanup subcommand ---
+    cleanup_parser = subparsers.add_parser(
+        "cleanup", help="Clean up output directories and temporary files"
+    )
+    cleanup_sub = cleanup_parser.add_subparsers(
+        dest="cleanup_command", help="Cleanup commands"
+    )
+    cleanup_output_parser = cleanup_sub.add_parser(
+        "output", help="Remove empty/incomplete session output directories"
+    )
+    cleanup_output_parser.add_argument(
+        "--dry-run",
+        "-n",
+        action="store_true",
+        help="Only list directories that would be removed, without deleting",
+    )
+
     # --- service subcommand ---
     service_parser = subparsers.add_parser(
         "service", help="Manage system service (install/start/stop)"
@@ -216,12 +238,15 @@ def build_parser() -> argparse.ArgumentParser:
 def _resolve_time_budget(args: argparse.Namespace) -> str:
     """Convert CLI flags to a time-budget keyword.
 
-    Precedence: ``--minutes N`` > ``--quick`` / ``--deep`` > ``--time N`` > default.
+    Precedence: ``--minutes N`` > ``--quick`` / ``--medium`` / ``--deep`` >
+    ``--time N`` > default (deep).
     """
     if args.minutes is not None:
         return "custom"
     if args.quick:
         return "quick"
+    if args.medium:
+        return "medium"
     if args.deep:
         return "deep"
     # Map minutes to budget keyword.
@@ -535,6 +560,39 @@ def cmd_service(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_cleanup_output(args: argparse.Namespace) -> int:
+    """Clean up empty or trivial session output directories.
+
+    Scans ``output/`` for session directories that contain no meaningful
+    research output (no PDF or HTML files) and removes them.
+    """
+    from deepresearch.web.sessions import cleanup_output_dirs
+
+    count, removed = cleanup_output_dirs(dry_run=args.dry_run)
+
+    if args.dry_run:
+        if count == 0:
+            console.print("[green]No empty/incomplete session directories found.[/green]")
+        else:
+            console.print(
+                f"[yellow]Dry run: {count} director{'y' if count == 1 else 'ies'} "
+                f"would be removed[/yellow]"
+            )
+            for sid in removed:
+                console.print(f"  [dim]{sid}[/dim]")
+    else:
+        if count == 0:
+            console.print("[green]No empty/incomplete session directories to clean.[/green]")
+        else:
+            console.print(
+                f"[green]Cleaned up {count} empty/incomplete session "
+                f"director{'y' if count == 1 else 'ies'}.[/green]"
+            )
+            for sid in removed:
+                console.print(f"  [dim]{sid}[/dim]")
+    return 0
+
+
 def main() -> int:
     """Main entry point."""
     parser = build_parser()
@@ -544,6 +602,12 @@ def main() -> int:
         return cmd_run(args)
     elif args.command == "serve":
         return cmd_serve(args)
+    elif args.command == "cleanup":
+        if args.cleanup_command == "output":
+            return cmd_cleanup_output(args)
+        else:
+            parser.parse_args(["cleanup", "--help"])
+            return 1
     elif args.command == "profiles":
         if args.profiles_command == "list":
             return cmd_profiles_list(args)

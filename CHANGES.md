@@ -2,6 +2,56 @@
 
 All notable changes to DeepeResearch will be documented in this file.
 
+## [1.8.0] - 2026-06-29
+## [1.9.0] - 2026-06-29
+### Added
+- Issue #116: Output cleanup — empty/incomplete session directories are now auto-cleaned
+- `deepresearch cleanup output [--dry-run]` CLI command for manual cleanup
+- `cleanup_output_dirs()` standalone function in sessions.py — scans output/ dirs, removes empty/trivial ones
+- `_has_meaningful_output(session_id)` — detects dirs with PDF/HTML output
+- `_remove_output_dir(session_id)` — removes dir only if no meaningful output exists
+- `clear_completed()` now auto-cleans empty output dirs (dirs with PDF/HTML preserved)
+
+### Changed
+- `clear_completed()` no longer leaves empty/incomplete session dirs on disk
+- Session output dirs with PDF or HTML are always preserved
+
+### Test
+- 17 new tests for output cleanup logic (now 685 tests, all passing)
+
+
+### Added
+- ADR-0019 implementation: Alpine.js frontend reactivity (Phases 1–4)
+- Alpine.js v3.14.8 via CDN for reactive DOM patching (replaces innerHTML builds)
+- `Alpine.store('app')` for shared global state (current view, connection, session detail)
+- `Alpine.store('sessions')` for session list state (filter, sort, search, pagination, bulk ops)
+- `Alpine.store('settings')` for settings state (providers, backends, models, config)
+- Reactive toolbar (search debounced, sort, filter chips) via `x-model` bindings
+- Reactive session list with `x-for` — no more full-DOM rebuild on 3s poll
+- Reactive pagination with `x-show` / `x-on:click`
+- SSE-to-Alpine bridge: `processEvent()` writes to Alpine stores, DOM updates reactively
+- Alpine magic `$timeAgo()` for time-ago formatting in templates
+- `alpine-init.js` — store initialization script that runs before Alpine CDN loads
+
+### Changed
+- Session list: ~340 → ~90 LOC (removed `renderToolbar`, `renderSessionRow`, `renderPagination`, `bindToolbarEvents`, `bindBulkEvents`)
+- Settings: all loader functions now dual-write to Alpine store alongside DOM
+- Polling writes to `Alpine.store('sessions').list` instead of `innerHTML`
+- View switching uses `Alpine.store('app').currentView` with `x-show` (alongside legacy `.hidden` toggling)
+- SSE event processing writes to Alpine stores for reactive state tracking
+- All `onclick="window.*"` replaced with `@click="$store.app.*"` in header navigation
+
+### Removed
+- Manual DOM manipulation code: `document.getElementById().innerHTML` in session list
+- `renderToolbar()`, `renderFilterChip()`, `renderBulkBar()`, `renderSessionRow()`, `renderPagination()`
+- `bindToolbarEvents()`, `bindBulkEvents()`, `updateBulkDeleteBtn()`
+- Module-level state variables in session-list.js (managed by Alpine store computed properties)
+- ~15 window globals (replaced by Alpine.store and exported functions)
+
+### Documentation
+- ADR-0019 status: Proposed → Accepted
+- ADR-0019 added Implementation section with complete phase manifest
+
 ## [1.7.0] - 2026-06-27
 ### Added
 - ADR-0020: Remove llmfit dependency — Phase 1 and Phase 2 implementation complete

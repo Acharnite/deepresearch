@@ -32,6 +32,11 @@ SESSION_DB_PATH = (
     Path(__file__).resolve().parent.parent.parent.parent / "output" / "sessions_db.json"
 )
 
+# File extensions that count as "meaningful" research output.
+# Directories containing only files with other extensions (e.g., agent state
+# logs) are considered trivial and safe to delete during cleanup.
+MEANINGFUL_OUTPUT_EXTENSIONS: set[str] = {".pdf", ".html"}
+
 
 def _load_session_db() -> dict[str, dict]:
     """Load persisted session metadata from disk."""
@@ -67,6 +72,86 @@ def _slugify(text: str, max_len: int = 50) -> str:
     slug = re.sub(r"[^a-zA-Z0-9_-]", "_", text.lower().strip())
     slug = re.sub(r"_+", "_", slug).strip("_")
     return slug[:max_len]
+
+
+# ── Output directory cleanup helpers ────────────────────────────────
+
+
+def _has_meaningful_output(session_id: str) -> bool:
+    """Check if a session's output directory contains PDF or HTML output.
+
+    Directories containing only trivial files (agent state logs, etc.)
+    return False and are candidates for cleanup.
+    """
+    output_dir = SESSION_DB_PATH.parent / session_id
+    if not output_dir.exists():
+        return False
+    try:
+        for f in output_dir.iterdir():
+            if f.suffix.lower() in MEANINGFUL_OUTPUT_EXTENSIONS and f.is_file():
+                return True
+    except (OSError, PermissionError):
+        logger.warning("Cannot read output dir %s — treating as safe", output_dir)
+        return True  # Treat unreadable as meaningful (safe default)
+    return False
+
+
+def _remove_output_dir(session_id: str) -> bool:
+    """Remove a session's output directory if it has no meaningful output.
+
+    Returns True if the directory was removed, False otherwise
+    (directory didn't exist, has meaningful content, or removal failed).
+    """
+    output_dir = SESSION_DB_PATH.parent / session_id
+    if not output_dir.exists():
+        return False
+    if _has_meaningful_output(session_id):
+        return False
+    try:
+        shutil.rmtree(output_dir)
+        logger.info("Removed empty/trivial output dir: %s", output_dir)
+        return True
+    except (OSError, PermissionError) as e:
+        logger.warning("Failed to remove output dir %s: %s", output_dir, e)
+        return False
+
+
+def cleanup_output_dirs(dry_run: bool = False) -> tuple[int, list[str]]:
+    """Scan ``output/`` for session directories with no meaningful output.
+
+    Removes directories that are empty or contain only trivial files
+    (e.g., agent state logs). Directories containing a ``.pdf`` or
+    ``.html`` file are preserved.
+
+    Args:
+        dry_run: If True, only report what would be removed.
+
+    Returns:
+        Tuple of (count_removed, list_of_removed_session_ids).
+    """
+    output_base = SESSION_DB_PATH.parent
+    if not output_base.exists():
+        return 0, []
+
+    removed: list[str] = []
+    for entry in sorted(output_base.iterdir()):
+        if not entry.is_dir():
+            continue
+        # Session IDs are 8-char hex strings from uuid4 (e.g., "a1b2c3d4").
+        session_id = entry.name
+        if not re.match(r"^[a-f0-9]{8}$", session_id):
+            continue
+        if _has_meaningful_output(session_id):
+            continue
+        removed.append(session_id)
+        if not dry_run:
+            try:
+                shutil.rmtree(entry)
+                logger.info("Cleaned up output dir: %s", entry)
+            except (OSError, PermissionError) as e:
+                logger.warning("Failed to clean up %s: %s", entry, e)
+
+    return len(removed), removed
 
 
 @dataclass
@@ -707,14 +792,21 @@ class MultiSessionManager:
                 shutil.rmtree(output_dir)
 
     def clear_completed(self) -> int:
-        """Remove all completed/error/cancelled sessions from DB only. Returns count removed."""
+        """Remove all completed/error/cancelled sessions.
+
+        Output directories without meaningful output (PDF/HTML) are
+        cleaned up automatically. Directories containing research output
+        are preserved. Returns count removed.
+        """
         to_remove = [
             sid
             for sid, s in self._sessions.items()
             if s.status in ("complete", "error", "cancelled")
         ]
         for sid in to_remove:
-            self._remove_session(sid, delete_files=False)  # Keep files!
+            self._remove_session(sid, delete_files=False)
+            # Clean up output dir if it has no meaningful output
+            _remove_output_dir(sid)
         return len(to_remove)
 
     async def save_all_sessions(self) -> None:

@@ -94,12 +94,20 @@ function startElapsedTimer(startTime) {
   if (elapsedTimer) clearInterval(elapsedTimer);
   elapsedTimer = setInterval(updateElapsed, 1000);
   updateElapsed();
+  // Sync elapsed to Alpine store
+  if (window.Alpine) {
+    Alpine.store('app').elapsed = document.getElementById('elapsedDisplay')?.textContent || '00:00';
+  }
 }
 
 function stopElapsedTimer() {
   if (elapsedTimer) {
     clearInterval(elapsedTimer);
     elapsedTimer = null;
+  }
+  // Sync elapsed to Alpine store
+  if (window.Alpine) {
+    Alpine.store('app').elapsed = document.getElementById('elapsedDisplay')?.textContent || '00:00';
   }
 }
 
@@ -110,6 +118,10 @@ function updateElapsed() {
   const secs = String(elapsed % 60).padStart(2, '0');
   const el = document.getElementById('elapsedDisplay');
   if (el) el.textContent = mins + ':' + secs;
+  // Sync elapsed to Alpine store
+  if (window.Alpine) {
+    Alpine.store('app').elapsed = document.getElementById('elapsedDisplay')?.textContent || '00:00';
+  }
 }
 
 // ── State badge update ──────────────────────────────
@@ -139,6 +151,11 @@ export function updateState(stateName) {
   const phaseDisplay = document.getElementById('phaseDisplay');
   if (phaseDisplay) {
     phaseDisplay.textContent = STATE_LABELS[state.currentState] || state.currentState;
+  }
+  // Sync state to Alpine store
+  if (window.Alpine) {
+    Alpine.store('app').currentState = state.currentState;
+    Alpine.store('app').stateBadgeClass = STATE_BADGE_CLASSES[state.currentState] || 'badge-idle';
   }
 }
 
@@ -191,6 +208,13 @@ export function showDetail(sessionId) {
   renderAgents();
   renderQA();
   stopElapsedTimer();
+
+  // Sync to Alpine store
+  if (window.Alpine) {
+    Alpine.store('app').currentSessionId = sessionId;
+    Alpine.store('app').currentTopic = state.currentTopic || '';
+    Alpine.store('app').sessionState = 'loading';
+  }
 
   // Set replay flag BEFORE SSE connects — prevents destructive side effects during event replay
   state._replaying = true;
@@ -360,6 +384,12 @@ export function processEvent(data) {
   if (topic) state.currentTopic = topic;
   updateState(stateName);
 
+  // Sync state to Alpine store
+  if (window.Alpine) {
+    Alpine.store('app').currentState = stateName;
+    if (topic) Alpine.store('app').currentTopic = topic;
+  }
+
   // During SSE replay on reconnect, skip events that would wipe restored state
   const isReplaying = state._replaying === true;
 
@@ -385,6 +415,11 @@ export function processEvent(data) {
       state.sessionConfig.max_rounds = data.max_rounds;
       buildPipelineStates(data.max_rounds);
     }
+    // Sync session state to Alpine store
+    if (window.Alpine) {
+      Alpine.store('app').currentSessionId = data.session_id;
+      Alpine.store('app').sessionState = 'running';
+    }
   }
 
   if (eventType === 'session_end') {
@@ -394,6 +429,10 @@ export function processEvent(data) {
     stopElapsedTimer();
     fetchSessionDetail(state.currentSessionId);
     refreshSessionList();
+    // Sync session state to Alpine store
+    if (window.Alpine) {
+      Alpine.store('app').sessionState = 'complete';
+    }
   }
 
   if (eventType === 'session_error') {
@@ -402,6 +441,10 @@ export function processEvent(data) {
     stopElapsedTimer();
     showError(data.error || 'Unknown error');
     refreshSessionList();
+    // Sync session state to Alpine store
+    if (window.Alpine) {
+      Alpine.store('app').sessionState = 'error';
+    }
   }
 
   if (eventType === 'models_assigned' && data.assignments) {
@@ -410,6 +453,9 @@ export function processEvent(data) {
       if (!state.agents[id]) state.agents[id] = { status: 'waiting', state: 'waiting' };
     });
     renderAgents();
+    if (window.Alpine) {
+      Alpine.store('app').agents = { ...state.agents };
+    }
   }
 
   if (eventType === 'round_start') {
@@ -452,6 +498,9 @@ export function processEvent(data) {
         state.agents[id] = { status: 'waiting', state: 'waiting' };
       });
       renderAgents();
+      if (window.Alpine) {
+        Alpine.store('app').agents = { ...state.agents };
+      }
     }
   }
 
@@ -462,6 +511,9 @@ export function processEvent(data) {
     state.agents[aid].status = 'running';
     state.agents[aid].state = data.agent_state || 'researching';
     renderAgents();
+    if (window.Alpine) {
+      Alpine.store('app').agents = { ...state.agents };
+    }
   }
 
   if (eventType === 'agent_complete') {
@@ -474,6 +526,9 @@ export function processEvent(data) {
       state.agents[aid].state = 'waiting';
     }
     renderAgents();
+    if (window.Alpine) {
+      Alpine.store('app').agents = { ...state.agents };
+    }
   }
 
   if (eventType === 'agent_retry') {
@@ -483,12 +538,18 @@ export function processEvent(data) {
       state.agents[aid].state = 'retrying';
     }
     renderAgents();
+    if (window.Alpine) {
+      Alpine.store('app').agents = { ...state.agents };
+    }
   }
 
   if (eventType === 'agent_failed') {
     const aid = data.agent_id;
     if (state.agents[aid]) { state.agents[aid].status = 'failed'; state.agents[aid].state = 'failed'; }
     renderAgents();
+    if (window.Alpine) {
+      Alpine.store('app').agents = { ...state.agents };
+    }
   }
 
   if (eventType === 'agent_output' && data.agent_state) {
@@ -496,6 +557,9 @@ export function processEvent(data) {
     if (aid && state.agents[aid]) {
       state.agents[aid].state = data.agent_state;
       renderAgents();
+      if (window.Alpine) {
+        Alpine.store('app').agents = { ...state.agents };
+      }
     }
   }
 
@@ -527,6 +591,10 @@ export function processEvent(data) {
       }
     });
     renderGraph();
+    // Sync Q&A log to Alpine store
+    if (window.Alpine) {
+      Alpine.store('app').qaLog = [...state.qaLog];
+    }
   }
 
   if (eventType === 'agent_output') {
@@ -568,6 +636,9 @@ export function processEvent(data) {
         state.agents[id].state = 'waiting';
       });
       renderAgents();
+      if (window.Alpine) {
+        Alpine.store('app').agents = { ...state.agents };
+      }
     }
   }
 
@@ -577,11 +648,17 @@ export function processEvent(data) {
     });
     state.scribeInfo = { status: 'running', state: 'writing' };
     renderAgents();
+    if (window.Alpine) {
+      Alpine.store('app').agents = { ...state.agents };
+    }
   }
 
   if (eventType === 'scribe_end') {
     state.scribeInfo = { status: 'done', state: 'done' };
     renderAgents();
+    if (window.Alpine) {
+      Alpine.store('app').agents = { ...state.agents };
+    }
   }
 
   if (eventType === 'scribe_clarifying' && data.step && data.step.startsWith('asking_agent:')) {
@@ -606,6 +683,9 @@ export function processEvent(data) {
     const phaseDisplay = document.getElementById('phaseDisplay');
     if (phaseDisplay) phaseDisplay.textContent = STATE_LABELS['REFINING'] || 'Refining';
     renderAgents();
+    if (window.Alpine) {
+      Alpine.store('app').agents = { ...state.agents };
+    }
   }
 
   if (eventType === 'refinement_complete') {
@@ -613,6 +693,11 @@ export function processEvent(data) {
   }
 
   addEvent(eventType, data);
+
+  // Sync phase to Alpine store
+  if (window.Alpine) {
+    Alpine.store('app').phase = STATE_LABELS[state.currentState] || state.currentState;
+  }
 }
 
 // Helper import for refreshSessionList to avoid circular dep
@@ -706,3 +791,8 @@ window.cancelResearch = async function() {
     console.warn('Cancel failed:', err);
   }
 };
+
+// Wire Alpine store stub to actual implementation
+if (window.Alpine) {
+  Alpine.store('app').cancelResearch = window.cancelResearch;
+}

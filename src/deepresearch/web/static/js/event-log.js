@@ -13,6 +13,14 @@ export function addEvent(eventType, data) {
   if (eventCountEl) {
     eventCountEl.textContent = state.eventCount + ' event' + (state.eventCount !== 1 ? 's' : '');
   }
+  // Sync eventCount to Alpine store
+  if (window.Alpine) {
+    Alpine.store('app').eventCount = state.eventCount;
+    const elapsedEl = document.getElementById('elapsedDisplay');
+    if (elapsedEl) {
+      Alpine.store('app').elapsed = elapsedEl.textContent || '00:00';
+    }
+  }
 
   const icon = EVENT_ICONS[eventType] || '📌';
   const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : timestamp();

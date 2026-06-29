@@ -18,7 +18,7 @@ import {
   fetchGgufModels, serveGgufModel, stopLlamacppServing, updateLlamacppConfig,
   serveHfFromHF
 } from '../api.js';
-import { ModelPicker } from '../model-picker.js';
+import { ModelPicker, loadAvailableModels } from '../model-picker.js';
 
 // ── API Keys tab ────────────────────────────────────
 async function loadProviderList() {
@@ -45,6 +45,10 @@ async function loadProviderList() {
     }
     const list = $('providerList');
     if (list) list.innerHTML = html;
+    // Sync providers to Alpine store
+    if (window.Alpine) {
+      Alpine.store('settings').providers = Object.entries(data).map(([id, info]) => ({ id, ...info }));
+    }
   } catch (err) {
     const list = $('providerList');
     if (list) list.innerHTML = '<div class="text-muted" style="padding:12px;">Failed to load providers.</div>';
@@ -106,6 +110,10 @@ async function loadDiscoveredModels() {
     }
     const el = $('discoveredModels');
     if (el) el.innerHTML = html;
+    // Sync discovered models to Alpine store
+    if (window.Alpine) {
+      Alpine.store('settings').discoveredModels = ollamaModels || [];
+    }
   } catch (err) {
     const el = $('discoveredModels');
     if (el) el.innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">Could not scan for local models.</div>';
@@ -148,6 +156,10 @@ async function loadEndpointList() {
     }
     const el = $('endpointList');
     if (el) el.innerHTML = html;
+    // Sync endpoints to Alpine store
+    if (window.Alpine) {
+      Alpine.store('settings').localEndpoints = saved || [];
+    }
   } catch (err) {
     const el = $('endpointList');
     if (el) el.innerHTML = '<div class="text-muted" style="padding:12px;font-size:13px;">Failed to load endpoints.</div>';
@@ -203,6 +215,10 @@ async function loadHardwareInfo() {
 
       html += '</div>';
       infoEl.innerHTML = html;
+      // Sync hardware info to Alpine store
+      if (window.Alpine) {
+        Alpine.store('settings').hardwareInfo = hw || null;
+      }
       return;
     }
   } catch (e) {
@@ -243,6 +259,12 @@ async function checkOllamaStatus() {
           (status.running ? '\u2705 Running on port 11434' : '\u26A0\uFE0F Not running') +
           '</span>';
       }
+      // Sync Ollama status to Alpine store
+      if (window.Alpine) {
+        Alpine.store('settings').ollamaInstalled = true;
+        Alpine.store('settings').ollamaRunning = status.running;
+        Alpine.store('settings').ollamaVersion = status.version || null;
+      }
     } else {
       if (statusEl) statusEl.textContent = '\u274C Not installed';
       if (installBtn) {
@@ -253,6 +275,12 @@ async function checkOllamaStatus() {
       }
       const ollamaHint = document.getElementById('ollamaActionHint');
       if (ollamaHint) ollamaHint.textContent = 'Install Ollama to get started.';
+      // Sync Ollama status to Alpine store
+      if (window.Alpine) {
+        Alpine.store('settings').ollamaInstalled = false;
+        Alpine.store('settings').ollamaRunning = false;
+        Alpine.store('settings').ollamaVersion = null;
+      }
     }
   } catch (err) {
     console.warn('Failed to check Ollama status:', err);
@@ -512,6 +540,11 @@ async function checkLlamaCppStatus() {
       if (configSection) configSection.style.display = 'none';
       if (ggufSection) ggufSection.style.display = 'none';
     }
+    // Sync llama.cpp status to Alpine store
+    if (window.Alpine) {
+      Alpine.store('settings').llamacppInstalled = status.installed;
+      Alpine.store('settings').llamacppRunning = status.running;
+    }
   } catch (err) {
     console.warn('Failed to check llama.cpp status:', err);
   }
@@ -753,9 +786,8 @@ window.serveGgufModel = async function(modelName) {
         logLine.className = 'log-line log-success';
         logLine.innerHTML = '<span class="log-icon">✅</span> <strong>' + esc(modelName) + ' is now serving!</strong>';
         logOutput.appendChild(logLine);
-      } catch (err) {}
-      eventSource.close();
       setTimeout(() => {
+        loadAvailableModels();
         checkLlamaCppStatus();
         loadGgufModels();
       }, 1000);
@@ -773,8 +805,8 @@ window.serveGgufModel = async function(modelName) {
     });
 
     eventSource.onerror = function() {
-      eventSource.close();
       setTimeout(() => {
+        loadAvailableModels();
         checkLlamaCppStatus();
         loadGgufModels();
       }, 1000);
@@ -795,12 +827,11 @@ window.stopLlamacppServe = async function() {
     }
   } catch (err) {
     showToast('Network error', 'error');
-  }
   setTimeout(() => {
+    loadAvailableModels();
     checkLlamaCppStatus();
     loadGgufModels();
   }, 1000);
-};
 
 // ── HuggingFace Serve Action ─────────────────────────
 window.serveHfAction = async function() {
@@ -966,6 +997,10 @@ async function loadScribeModel() {
       scribeModelPicker.setValue('');
       if (statusEl) statusEl.textContent = '';
     }
+    // Sync scribe model to Alpine store
+    if (window.Alpine) {
+      Alpine.store('settings').scribeModel = savedModel || null;
+    }
   } catch (e) {
     console.warn('Failed to load scribe model:', e);
   }
@@ -1005,6 +1040,10 @@ async function loadMaxTokens() {
     if (input) input.value = value;
     const statusEl = $('maxTokensStatus');
     if (statusEl) statusEl.textContent = 'Current: ' + value + ' tokens';
+    // Sync max tokens to Alpine store
+    if (window.Alpine) {
+      Alpine.store('settings').maxTokens = value || 4096;
+    }
   } catch (e) {
     console.warn('Failed to load max tokens:', e);
   }
@@ -1072,6 +1111,10 @@ async function loadContextWindows() {
     }
     const el = $('contextWindowList');
     if (el) el.innerHTML = html;
+    // Sync context windows to Alpine store
+    if (window.Alpine) {
+      Alpine.store('settings').contextWindows = overrides || {};
+    }
 
     // Init model picker for the add form.
     if (!ctxModelPicker) {
@@ -1209,6 +1252,10 @@ async function loadLocalBackends() {
     html += '</div>';
 
     container.innerHTML = html;
+    // Sync backends to Alpine store
+    if (window.Alpine) {
+      Alpine.store('settings').backends = backends || [];
+    }
   } catch (err) {
     console.warn('Failed to load local backends:', err);
     container.innerHTML = '<div class="text-muted" style="text-align:center;padding:20px;">Failed to load backends.</div>';
@@ -1332,6 +1379,9 @@ function stopProgressPolling() {
 
 // ── Exports for index.js ────────────────────────────
 export function loadSettingsView() {
+  if (window.Alpine) {
+    Alpine.store('app').currentView = 'settingsView';
+  }
   loadProviderList();
   loadHardwareInfo();
   loadDiscoveredModels();

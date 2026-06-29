@@ -17,9 +17,19 @@ export function showView(view) {
     if (el) el.classList.add('hidden');
   });
   if (view) view.classList.remove('hidden');
+
+  // Update Alpine store for reactive view switching (x-show bindings)
+  if (window.Alpine && view) {
+    var _prev = Alpine.store('app').currentView;
+    Alpine.store('app').previousView = _prev;
+    Alpine.store('app').currentView = view.id;
+  }
 }
 
 window.showSessions = function() {
+  if (window.Alpine) {
+    Alpine.store('app').currentView = 'sessionListView';
+  }
   showView(document.getElementById('sessionListView'));
   const cancelBtn = document.getElementById('cancelBtn');
   const statusBar = document.getElementById('statusBar');
@@ -29,6 +39,9 @@ window.showSessions = function() {
 };
 
 window.showNewResearch = function() {
+  if (window.Alpine) {
+    Alpine.store('app').currentView = 'newResearchView';
+  }
   showView(document.getElementById('newResearchView'));
   const cancelBtn = document.getElementById('cancelBtn');
   const statusBar = document.getElementById('statusBar');
@@ -37,6 +50,9 @@ window.showNewResearch = function() {
 };
 
 window.showSettings = function() {
+  if (window.Alpine) {
+    Alpine.store('app').currentView = 'settingsView';
+  }
   showView(document.getElementById('settingsView'));
   const cancelBtn = document.getElementById('cancelBtn');
   const statusBar = document.getElementById('statusBar');
@@ -46,8 +62,19 @@ window.showSettings = function() {
 };
 
 window.showSystemLogView = function() {
+  if (window.Alpine) {
+    Alpine.store('app').currentView = 'systemLogView';
+  }
   showView(document.getElementById('systemLogView'));
   startSystemLogAutoRefresh();
 };
 
 window.showDetail = showDetail;
+
+// ── Wire Alpine store action stubs to actual implementations ──
+if (window.Alpine) {
+  Alpine.store('app').showSessions = window.showSessions;
+  Alpine.store('app').showNewResearch = window.showNewResearch;
+  Alpine.store('app').showSettings = window.showSettings;
+  Alpine.store('app').showSystemLogView = window.showSystemLogView;
+}

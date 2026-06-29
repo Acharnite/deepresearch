@@ -11,8 +11,14 @@ import './views/settings.js';        // registers window.saveApiKey, deleteApiKe
 import './views/system-log.js';     // registers window.clearSystemLog, refreshSystemLog
 import './qa-graph.js';             // registers window.addQAInteraction, renderQAGraph
 
+// ── Alpine.js version bridge ──────────────────────
+loadVersion().then(v => {
+  if (window.Alpine) {
+    Alpine.store('app').version = v;
+  }
+});
+
 // ── Init ─────────────────────────────────────────────
 loadAgentProfiles();
 loadAvailableModels();
-loadVersion();
 startSessionListPolling();

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DeepeResearch — Research Dashboard</title>
 <link rel="stylesheet" href="/static/dashboard.css">
+<style>[x-cloak] { display: none !important; }</style>
 <style>
 #ollamaInstallLog { white-space: pre-wrap; word-break: break-all; }
 #ollamaInstallLog .log-line { padding: 2px 0; line-height: 1.5; }
@@ -94,22 +95,138 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════
-     View: Session List (default)
+     View: Session List (default) — Alpine-reactive
      ══════════════════════════════════════════════════════ -->
-<div id="sessionListView" class="container">
+<div id="sessionListView" class="container"
+     x-data
+     x-show="$store.app.currentView === 'sessionListView'"
+     x-cloak>
   <div class="card">
     <div class="card-header">
-      <span>📋 Sessions</span>
+      <span>📋 Sessions <span class="text-muted" x-text="`(${$store.sessions.totalCount})`"></span></span>
       <div style="display:flex;align-items:center;gap:8px;">
         <button class="btn btn-sm btn-secondary" onclick="window.clearAllSessions()" style="font-size:11px;padding:3px 8px;">🗑 Clear All</button>
-        <span id="sessionCount" class="text-muted">0 sessions</span>
+        <span id="sessionCount" class="text-muted" x-text="`${$store.sessions.totalCount} session${$store.sessions.totalCount !== 1 ? 's' : ''}`">0 sessions</span>
       </div>
     </div>
-    <div class="session-list" id="sessionList">
-      <div class="session-empty">
-        <h3>No research sessions yet</h3>
-        <p>Click "+ New Research" to start your first session.</p>
+
+    <!-- Toolbar (Alpine-driven) -->
+    <div class="session-toolbar" id="sessionToolbar">
+      <div class="session-toolbar-row">
+        <input type="text" class="session-search-input" id="sessionSearchInput"
+               placeholder="Search sessions..."
+               x-model="$store.sessions.searchQuery"
+               x-on:input.debounce.250ms="$store.sessions.currentPage = 0">
+        <select class="session-sort-select" id="sessionSortSelect"
+                x-model="$store.sessions.sortBy"
+                x-on:change="$store.sessions.currentPage = 0">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="status">By status</option>
+        </select>
       </div>
+
+      <!-- Filter chips -->
+      <div class="session-filter-chips" id="sessionFilterChips">
+        <template x-for="chip in [
+          { value: 'all', label: 'All', count: $store.sessions.totalCount },
+          { value: 'running', label: 'Running', count: $store.sessions.statusCounts.running || 0 },
+          { value: 'complete', label: 'Complete', count: $store.sessions.statusCounts.complete || 0 },
+          { value: 'error', label: 'Error', count: $store.sessions.statusCounts.error || 0 },
+          { value: 'cancelled', label: 'Cancelled', count: $store.sessions.statusCounts.cancelled || 0 },
+          { value: 'interrupted', label: 'Interrupted', count: $store.sessions.statusCounts.interrupted || 0 },
+        ]" :key="chip.value">
+          <button class="filter-chip"
+                  :class="{ active: $store.sessions.statusFilter === chip.value }"
+                  x-on:click="$store.sessions.statusFilter = chip.value; $store.sessions.currentPage = 0">
+            <span x-text="chip.label"></span>
+            <span class="chip-count" x-show="chip.count > 0" x-text="chip.count"></span>
+          </button>
+        </template>
+      </div>
+
+      <!-- Bulk bar -->
+      <div class="bulk-bar" id="bulkBar" x-show="$store.sessions.hasDeletableSessions" x-cloak>
+        <label class="bulk-select-all">
+          <input type="checkbox" id="bulkSelectAll"
+                 :checked="$store.sessions.selectedIds.length > 0 && $store.sessions.selectedIds.length === $store.sessions.pagedSessions.filter(s => ['complete','error','cancelled','interrupted'].includes(s.status)).length"
+                 x-on:change="$store.sessions.toggleSelectAll()">
+          Select All on Page
+        </label>
+        <button class="btn btn-sm btn-danger" id="bulkDeleteBtn"
+                :disabled="$store.sessions.selectedIds.length === 0"
+                x-text="`Delete Selected (${$store.sessions.selectedIds.length})`"
+                x-on:click="window.bulkDeleteFromAlpine()">
+          Delete Selected
+        </button>
+      </div>
+    </div>
+
+    <!-- Session rows or empty state -->
+    <div class="session-list" id="sessionList">
+      <template x-if="$store.sessions.filtered.length === 0">
+        <div class="session-empty">
+          <h3>No research sessions yet</h3>
+          <p>Click "+ New Research" to start your first session.</p>
+        </div>
+      </template>
+
+      <template x-if="$store.sessions.filtered.length > 0">
+        <div>
+          <template x-for="s in $store.sessions.pagedSessions" :key="s.session_id">
+            <div class="session-row" x-on:click="window.showDetail(s.session_id)">
+              <!-- Bulk checkbox -->
+              <span class="session-bulk-check">
+                <input type="checkbox" class="bulk-checkbox"
+                       :checked="$store.sessions.selectedIds.includes(s.session_id)"
+                       x-on:click.stop
+                       x-on:change="$store.sessions.toggleSelect(s.session_id)"
+                       x-show="['complete','error','cancelled','interrupted'].includes(s.status)">
+              </span>
+
+              <!-- Status indicator dot -->
+              <span class="session-indicator" :class="s.status"></span>
+
+              <!-- Topic -->
+              <span class="session-topic" x-text="s.topic"></span>
+
+              <!-- Status badge -->
+              <span class="session-status-badge" :class="s.status" x-text="s.status"></span>
+
+              <!-- Time ago -->
+              <span class="session-meta" x-text="$timeAgo(s.completed_at || s.created_at)"></span>
+
+              <!-- Time budget -->
+              <span class="session-meta" x-text="(s.time_budget || '') + (s.time_budget_seconds ? ' (' + s.time_budget_seconds + 's)' : '')"></span>
+
+              <!-- Actions -->
+              <div class="session-actions">
+                <button class="btn btn-sm btn-success" x-show="s.status === 'complete'" x-on:click.stop="window.downloadSessionPDF(s.session_id)">📕 PDF</button>
+                <button class="btn btn-sm btn-primary" x-show="s.status === 'complete' && s.result && s.result.html_path" x-on:click.stop="window.downloadSessionHTML(s.session_id)">📄 HTML</button>
+                <button class="btn btn-sm btn-danger" x-show="s.status === 'complete'" x-on:click.stop="window.deleteSession(s.session_id)">🗑 Delete</button>
+                <button class="btn btn-sm btn-danger" x-show="s.status === 'running'" x-on:click.stop="window.cancelSessionId(s.session_id)">✕ Cancel</button>
+                <button class="btn btn-sm btn-secondary" x-show="['error','cancelled','interrupted'].includes(s.status)" x-on:click.stop="window.showDetail(s.session_id)">👁 View</button>
+                <button class="btn btn-sm btn-danger" x-show="['error','cancelled','interrupted'].includes(s.status)" x-on:click.stop="window.deleteSession(s.session_id)">🗑 Delete</button>
+              </div>
+            </div>
+          </template>
+
+          <!-- Pagination -->
+          <div class="session-pagination" id="sessionPagination" x-show="$store.sessions.totalPages > 1">
+            <button class="btn btn-sm btn-secondary pagination-prev"
+                    :disabled="$store.sessions.currentPage === 0"
+                    x-on:click="$store.sessions.currentPage = Math.max(0, $store.sessions.currentPage - 1)">
+              ← Prev
+            </button>
+            <span class="pagination-info" x-text="`Page ${$store.sessions.currentPage + 1} of ${$store.sessions.totalPages}`"></span>
+            <button class="btn btn-sm btn-secondary pagination-next"
+                    :disabled="$store.sessions.currentPage >= $store.sessions.totalPages - 1"
+                    x-on:click="$store.sessions.currentPage = Math.min($store.sessions.totalPages - 1, $store.sessions.currentPage + 1)">
+              Next →
+            </button>
+          </div>
+        </div>
+      </template>
     </div>
   </div>
 </div>
@@ -554,7 +671,28 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════
-     ES Module entry point
+     Alpine.js — store init (plain script, runs first)
+     ══════════════════════════════════════════════════════ -->
+<script src="/static/js/alpine-init.js"></script>
+
+<!-- ══════════════════════════════════════════════════════
+     Alpine.js — local vendored copy
+     ══════════════════════════════════════════════════════ -->
+<script defer src="/static/vendor/alpine.min.js"></script>
+
+<!-- Alpine.js fallback: show content if Alpine fails to load (e.g., offline) -->
+<script>
+  setTimeout(function() {
+    if (typeof Alpine === "undefined") {
+      document.querySelectorAll("[x-cloak]").forEach(function(el) {
+        el.removeAttribute("x-cloak");
+      });
+    }
+  }, 3000);
+</script>
+
+<!-- ══════════════════════════════════════════════════════
+     ES Module entry point (deferred by default, runs last)
      ══════════════════════════════════════════════════════ -->
 <script type="module" src="/static/js/dashboard.js"></script>
 </body>

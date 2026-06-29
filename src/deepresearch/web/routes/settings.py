@@ -61,7 +61,14 @@ async def get_settings_keys() -> JSONResponse:
 
 @router.post("/settings/keys")
 async def set_settings_key(req: SetKeyRequest) -> JSONResponse:
-    """Save an API key for a provider."""
+    """Save an API key for a provider.
+
+    Note: Auth is deliberately omitted — this is a local-only API
+    bound to localhost. No authentication is needed because the
+    server is not exposed to the network. If the server is ever
+    deployed behind a reverse proxy, authentication should be added
+    at the proxy level (e.g., HTTP Basic Auth or OAuth2 Proxy).
+    """
     try:
         settings_manager.set_key(req.provider, req.key)
         return JSONResponse({"status": "ok", "provider": req.provider})
