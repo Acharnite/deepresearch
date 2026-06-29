@@ -272,6 +272,102 @@ class TestDashboardEndpoints:
         assert "providerList" in html
         assert "dashboard.css" in html
 
+    def test_local_backends_tab_has_lifecycle_controls(self, client: TestClient) -> None:
+        """GET / returns dashboard with backend lifecycle controls in correct tabs.
+
+        Ollama and llama.cpp lifecycle controls (install, start, stop, uninstall)
+        must appear in the Local Backends tab, NOT the Local Models tab.
+        """
+        resp = client.get("/")
+        assert resp.status_code == 200
+        html = resp.text
+
+        # Locate tab section boundaries
+        local_models_start = html.index('id="tab-local-models"')
+        local_backends_start = html.index('id="tab-local-backends"')
+
+        # Compute section end boundaries by finding the next tab or end
+        # We search for the next id="tab-*" after each section start
+        def section_contains(section_start: int, element_id: str) -> bool:
+            """Check if element_id appears between section_start and the next tab."""
+            # Find the element position
+            pos = html.find(f'id="{element_id}"')
+            if pos == -1:
+                return False  # Element not found at all
+            # Check if it falls within the section boundaries
+            return pos > section_start
+
+        def section_does_not_contain(section_start: int, element_id: str) -> bool:
+            """Check if element_id appears before section_start or not at all."""
+            pos = html.find(f'id="{element_id}"')
+            if pos == -1:
+                return True  # Element not found — consider it "not in section"
+            return pos < section_start
+
+        # ── Lifecycle controls MUST be in Local Backends tab ──
+        lifecycle_ids = [
+            "ollamaStatus",
+            "installOllamaBtn",
+            "ollamaActions",
+            "ollamaActionHint",
+            "llamacppStatus",
+            "installLlamaCppBtn",
+            "llamacppActions",
+            "llamacppActionHint",
+            "backendInstallLog",
+            "backendInstallOutput",
+        ]
+        for eid in lifecycle_ids:
+            assert section_contains(local_backends_start, eid), (
+                f"Lifecycle element '{eid}' should be in Local Backends tab"
+            )
+
+        # ── Lifecycle controls must NOT be in Local Models tab ──
+        # (Allow them to be absent or only in Local Backends)
+        not_in_local_models = [
+            "installOllamaBtn",
+            "ollamaActions",
+            "installLlamaCppBtn",
+            "llamacppActions",
+        ]
+        for eid in not_in_local_models:
+            pos = html.find(f'id="{eid}"')
+            if pos != -1:
+                assert section_contains(local_backends_start, eid), (
+                    f"Lifecycle element '{eid}' must be in Local Backends, not Local Models"
+                )
+
+        # ── Model/serve/config elements MUST stay in Local Models tab ──
+        model_tab_ids = [
+            "discoveredModels",
+            "ggufModelsSection",
+            "ggufModelList",
+            "llamacppConfigSection",
+            "llamacppPortInput",
+            "llamacppGpuLayersInput",
+            "llamacppCtxInput",
+            "llamacppBatchInput",
+            "ollamaInstallLog",
+            "ollamaInstallOutput",
+            "hfServeLog",
+            "hfRepoInput",
+            "hardwareInfo",
+            "endpointList",
+        ]
+        for eid in model_tab_ids:
+            assert section_contains(local_models_start, eid), (
+                f"Model/config element '{eid}' should be in Local Models tab"
+            )
+
+        # ── Backend connectivity list must be in Local Backends tab ──
+        backend_tab_ids = [
+            "localBackendsList",
+        ]
+        for eid in backend_tab_ids:
+            assert section_contains(local_backends_start, eid), (
+                f"Backend element '{eid}' should be in Local Backends tab"
+            )
+
     def test_get_status_default(self, client: TestClient) -> None:
         """GET /api/status returns default state."""
         resp = client.get("/api/status")

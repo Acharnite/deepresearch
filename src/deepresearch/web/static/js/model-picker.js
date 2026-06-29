@@ -176,6 +176,20 @@ export async function loadAvailableModels() {
   if (defaultModel) {
     modelPicker.setValue(defaultModel.id);
   }
+
+  // Update model backend status indicator
+  const statusEl = document.getElementById('modelBackendStatus');
+  if (statusEl) {
+    const localModels = models.filter(m => m.local || m.provider === 'llama-cpp' || m.provider === 'ollama');
+    if (localModels.length > 0) {
+      const names = localModels.map(m => m.display_name || m.id).join(', ');
+      statusEl.textContent = '\uD83D\uDFE2 ' + localModels.length + ' local' + (localModels.length > 1 ? 's' : '');
+      statusEl.title = 'Local models available: ' + names;
+    } else {
+      statusEl.textContent = '';
+      statusEl.title = '';
+    }
+  }
 }
 
 // ── Model mode radio handlers ───────────────────────

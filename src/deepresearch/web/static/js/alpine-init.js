@@ -23,6 +23,7 @@ document.addEventListener('alpine:init', () => {
     agents: {},
     scribeInfo: { status: 'waiting', state: 'waiting' },
     qaLog: [],
+    graphMode: true,
     settingsTab: 'api-keys',
 
     // Stub action methods (overridden by view modules)

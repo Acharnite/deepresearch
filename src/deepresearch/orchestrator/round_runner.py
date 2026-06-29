@@ -266,13 +266,16 @@ class RoundRunner:
                     )
 
                 # Publish retry start event so the dashboard shows "Retrying..."
+                agent_model = "unknown"
+                if self._config and hasattr(self._config, "agent_models"):
+                    agent_model = self._config.agent_models.get(agent_id, "unknown")
                 if self._event_bus:
                     await self._event_bus.publish(
                         {
                             "event_type": "agent_start",
                             "agent_id": agent_id,
                             "round": round_num,
-                            "model": "unknown",
+                            "model": agent_model,
                             "timeout": timeout,
                             "agent_state": "retrying",
                         },
@@ -522,7 +525,9 @@ class RoundRunner:
                             "event_type": "agent_start",
                             "agent_id": agent_id,
                             "round": round_num,
-                            "model": "unknown",
+                            "model": self._config.agent_models.get(agent_id, "unknown")
+                            if self._config
+                            else "unknown",
                             "timeout": timeout,
                             "agent_state": "retrying",
                         },

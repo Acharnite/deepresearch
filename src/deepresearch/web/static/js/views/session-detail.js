@@ -73,11 +73,45 @@ function updatePipelineDisplay(currentState) {
   });
 }
 
+// ── Graph mode state ─────────────────────────────────
+let _graphMode = true; // true = graph view, false = list view
+
+export function setGraphMode(mode) {
+  _graphMode = mode;
+  const graphEl = document.getElementById('qaGraph');
+  const listEl = document.getElementById('qaLog');
+  if (graphEl) graphEl.style.display = mode ? 'block' : 'none';
+  if (listEl) listEl.style.display = mode ? 'none' : 'block';
+  if (window.Alpine) {
+    Alpine.store('app').graphMode = mode;
+  }
+  // Re-render active view
+  if (mode && window.renderQAGraph && graphEl) {
+    window.renderQAGraph(graphEl, window._qaInteractions || []);
+  } else if (!mode) {
+    renderQA();
+  }
+}
+
+window.setGraphMode = setGraphMode;
+
+// ── Toggle Q&A view ─────────────────────────────────
+function toggleQAMode() {
+  setGraphMode(!_graphMode);
+}
+
+window.toggleQAMode = toggleQAMode;
+
 // ── Render Q&A graph (wraps qa-graph module) ─────────
 function renderGraph() {
-  const qaGraphEl = document.getElementById('qaGraph');
-  if (qaGraphEl && window.renderQAGraph) {
-    window.renderQAGraph(qaGraphEl, window._qaInteractions || []);
+  if (_graphMode) {
+    const qaGraphEl = document.getElementById('qaGraph');
+    if (qaGraphEl && window.renderQAGraph) {
+      window.renderQAGraph(qaGraphEl, window._qaInteractions || []);
+    }
+  } else {
+    // List view is rendered automatically by renderQA()
+    renderQA();
   }
 }
 
@@ -208,6 +242,13 @@ export function showDetail(sessionId) {
   renderAgents();
   renderQA();
   stopElapsedTimer();
+
+  // ── Init Q&A graph state ──────────────────────────
+  window._qaInteractions = [];
+  setGraphMode(true);
+  // Ensure toggle button reflects current mode
+  const toggleBtn = document.getElementById('qaModeToggle');
+  if (toggleBtn) toggleBtn.textContent = '📊 Graph';
 
   // Sync to Alpine store
   if (window.Alpine) {
@@ -453,6 +494,7 @@ export function processEvent(data) {
       if (!state.agents[id]) state.agents[id] = { status: 'waiting', state: 'waiting' };
     });
     renderAgents();
+    renderGraph(); // Re-render graph with agent nodes now available
     if (window.Alpine) {
       Alpine.store('app').agents = { ...state.agents };
     }

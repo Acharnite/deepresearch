@@ -351,12 +351,76 @@ a:hover { text-decoration: underline; }
   margin: 0 0 8px 0;
   border-bottom: 1px solid var(--border);
   padding-bottom: 4px;
+  min-height: 180px;
+  position: relative;
 }
 .qa-graph svg {
   display: block;
 }
 .qa-graph text {
   font-family: inherit;
+  user-select: none;
+}
+
+/* ── Q&A Graph: Interactive Nodes ───────────────── */
+.qa-graph .qa-node { cursor: pointer; }
+.qa-graph .qa-node-circle {
+  transition: stroke-width 0.2s, filter 0.2s;
+  cursor: pointer;
+}
+.qa-graph .qa-node:hover .qa-node-circle {
+  stroke-width: 3;
+  filter: url(#node-glow);
+}
+.qa-graph .qa-node-emoji { pointer-events: none; }
+.qa-graph .qa-node-label { pointer-events: none; }
+
+/* ── Q&A Graph: Edges ───────────────────────────── */
+.qa-graph .qa-edge { cursor: pointer; }
+.qa-graph .qa-edge-line {
+  transition: stroke-width 0.2s, opacity 0.2s;
+}
+.qa-graph .qa-edge:hover .qa-edge-line {
+  stroke-width: 3;
+  opacity: 1 !important;
+}
+.qa-graph .qa-edge-hitarea { cursor: pointer; }
+
+/* ── Q&A Graph: New edge animation ──────────────── */
+@keyframes fadeInEdge {
+  0% { stroke-dashoffset: 200; opacity: 0; }
+  60% { opacity: 1; }
+  100% { stroke-dashoffset: 0; }
+}
+.qa-graph .edge-new .qa-edge-line {
+  stroke-dasharray: 200;
+  animation: fadeInEdge 0.6s ease-out forwards;
+}
+
+/* ── Q&A Graph: Glow for latest interaction ─────── */
+@keyframes edgePulse {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+.qa-graph .edge-new {
+  animation: edgePulse 2s ease-in-out 3;
+}
+
+/* ── Q&A Mode Toggle ────────────────────────────── */
+.qa-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.qa-toggle-btn {
+  min-width: 90px;
+  text-align: center;
+  font-size: 11px !important;
+  padding: 4px 10px !important;
+}
+.qa-toggle-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* ── Agent Section (collapsible wrapper) ────────────── */

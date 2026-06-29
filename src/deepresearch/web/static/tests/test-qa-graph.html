@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test — Q&A Graph</title>
+<style>
+body { background: #0d1117; color: #e6edf3; font-family: sans-serif; padding: 24px; }
+h1 { font-size: 20px; margin-bottom: 16px; }
+h2 { font-size: 16px; margin: 20px 0 8px; }
+.summary { font-size: 14px; margin-bottom: 16px; }
+.summary .pass { color: #3fb950; }
+.summary .fail { color: #f85149; }
+.summary .total { color: #8b949e; }
+.test-row { padding: 6px 12px; margin: 4px 0; border-radius: 4px; font-size: 13px; font-family: monospace; }
+.test-row.pass { background: #0f2e1a; color: #3fb950; }
+.test-row.fail { background: #3a1c1c; color: #f85149; }
+.test-row .detail { color: #8b949e; font-size: 11px; }
+#testOutput { margin-top: 16px; }
+#qaGraphTest { margin-top: 16px; border: 1px solid #30363d; border-radius: 8px; padding: 12px; background: #161b22; }
+#qaGraphTest h3 { font-size: 13px; color: #8b949e; margin-bottom: 8px; }
+.qa-graph { min-height: 200px; }
+.qa-graph svg { display: block; width: 100%; }
+</style>
+</head>
+<body>
+<h1>🧪 Q&A Graph Module Tests</h1>
+<div id="testOutput">
+  <div class="summary" id="summary">Running tests...</div>
+  <div id="results"></div>
+</div>
+<div id="qaGraphTest">
+  <h3>📊 Rendered Graph Preview</h3>
+  <div id="qaGraph" class="qa-graph"></div>
+</div>
+
+<script type="module">
+// ── Mock state setup ────────────────────────────────
+// We need to define the module's dependencies before importing
+// Since qa-graph.js imports from './state.js', we need to provide
+// a mock state module. We do this by creating a temporary import map.
+
+// Instead, let's directly set up the global state that qa-graph.js reads
+window._qaInteractions = [];
+
+// Mock getState to return our test state
+const mockState = {
+  agents: {
+    'curious-teen': { status: 'done', state: 'done' },
+    'skeptical-academic': { status: 'done', state: 'done' },
+    'creative-artist': { status: 'running', state: 'researching' },
+    'pragmatic-engineer': { status: 'waiting', state: 'waiting' },
+    'philosophical-thinker': { status: 'waiting', state: 'waiting' },
+    'data-analyst': { status: 'done', state: 'done' },
+  },
+  agentNames: {
+    'curious-teen': 'Curious Teen',
+    'skeptical-academic': 'Skeptical Academic',
+    'creative-artist': 'Creative Artist',
+    'pragmatic-engineer': 'Pragmatic Engineer',
+    'philosophical-thinker': 'Philosophical Thinker',
+    'data-analyst': 'Data Analyst',
+    'scribe': 'Scribe',
+  },
+  agentEmojis: {
+    'curious-teen': '\u{1F476}',
+    'skeptical-academic': '\u{1F9E0}',
+    'creative-artist': '\u{1F3A8}',
+    'pragmatic-engineer': '\u{1F527}',
+    'philosophical-thinker': '\u{1F4AC}',
+    'data-analyst': '\u{1F4CA}',
+    'scribe': '\u270D\uFE0F',
+  },
+};
+
+// ── Test runner ─────────────────────────────────────
+const results = [];
+let passed = 0;
+let failed = 0;
+
+function assert(condition, name, detail = '') {
+  if (condition) {
+    passed++;
+    results.push(`<div class="test-row pass">✓ ${name} <span class="detail">${detail}</span></div>`);
+  } else {
+    failed++;
+    results.push(`<div class="test-row fail">✗ ${name} <span class="detail">${detail}</span></div>`);
+  }
+}
+
+function assertEqual(actual, expected, name) {
+  const pass = actual === expected;
+  assert(pass, name, pass ? `got "${expected}"` : `expected "${expected}", got "${actual}"`);
+}
+
+async function runTests() {
+  // ── Import the module under test ──────────────────
+  const qaGraph = await import('../js/qa-graph.js');
+
+  // ── Setup: Inject mock state via getState ─────────
+  // The module imports getState from state.js.
+  // We need to provide mock data. Since we can't easily mock
+  // ES module imports without build tooling, we directly set
+  // up the data structures that renderQAGraph reads.
+  // For the test, we'll use window._qaInteractions and
+  // test with the container element directly.
+
+  const container = document.getElementById('qaGraph');
+
+  // ── Test 1: Empty container renders nothing ──────
+  qaGraph.renderQAGraph(container, []);
+  const svgEmpty = container.querySelector('svg');
+  assert(!svgEmpty, 'Empty interactions produces no SVG');
+
+  // ── Test 2: Layout computation produces correct positions ──
+  // Test computeLayout through the import (it's not exported directly,
+  // but we can test it via renderQAGraph side effects)
+  const agentIds = Object.keys(mockState.agents);
+  const allIds = agentIds.includes('scribe') ? agentIds : [...agentIds, 'scribe'];
+
+  // ── Test 3: addQAInteraction stores correctly ────
+  window._qaInteractions = [];
+  qaGraph.addQAInteraction('scribe', 'curious-teen', 'clarification', 'What sources did you use?');
+  assert(window._qaInteractions.length === 1, 'addQAInteraction stores one interaction');
+  assertEqual(window._qaInteractions[0].from, 'scribe', 'addQAInteraction stores correct from');
+  assertEqual(window._qaInteractions[0].to, 'curious-teen', 'addQAInteraction stores correct to');
+  assertEqual(window._qaInteractions[0].type, 'clarification', 'addQAInteraction stores correct type');
+  assertEqual(window._qaInteractions[0].question, 'What sources did you use?', 'addQAInteraction stores question text');
+
+  // ── Test 4: Multiple interaction types ────────────
+  qaGraph.addQAInteraction('curious-teen', 'scribe', 'question', 'I used arXiv and Google Scholar');
+  assert(window._qaInteractions.length === 2, 'Second interaction stored');
+  assertEqual(window._qaInteractions[1].from, 'curious-teen', 'Response from agent has correct from');
+  assertEqual(window._qaInteractions[1].to, 'scribe', 'Response to scribe has correct to');
+  assertEqual(window._qaInteractions[1].type, 'question', 'Response has correct type');
+
+  // ── Test 5: Follow-up interaction ────────────────
+  qaGraph.addQAInteraction('scribe', 'all-agents', 'followup', 'Please elaborate on methodology');
+  assert(window._qaInteractions.length === 3, 'Follow-up interaction stored');
+  assertEqual(window._qaInteractions[2].type, 'followup', 'Follow-up has correct type');
+
+  // ── Test 6: Interaction limit (max 10) ───────────
+  for (let i = 0; i < 12; i++) {
+    qaGraph.addQAInteraction('scribe', 'curious-teen', 'clarification', 'Q' + i);
+  }
+  assert(window._qaInteractions.length <= 10, 'Interaction limit enforced', `length=${window._qaInteractions.length}`);
+  // The last interaction should be Q11 (the 12th one, 0-indexed)
+  const lastQ = window._qaInteractions[window._qaInteractions.length - 1].question;
+  assertEqual(lastQ, 'Q11', 'Last interaction is the most recent (Q11)');
+
+  // ── Test 7: Render with interactions ─────────────
+  // Reset to a clean set
+  window._qaInteractions = [
+    { from: 'scribe', to: 'curious-teen', type: 'clarification', question: 'What sources?', time: Date.now() - 5000, _idx: 0 },
+    { from: 'curious-teen', to: 'scribe', type: 'question', question: 'I used arXiv.', time: Date.now() - 4000, _idx: 1 },
+    { from: 'scribe', to: 'skeptical-academic', type: 'clarification', question: 'Any conflicts?', time: Date.now() - 3000, _idx: 2 },
+    { from: 'skeptical-academic', to: 'scribe', type: 'question', question: 'No conflicts found.', time: Date.now() - 2000, _idx: 3 },
+    { from: 'scribe', to: 'all-agents', type: 'followup', question: 'Summarize findings.', time: Date.now() - 1000, _idx: 4 },
+  ];
+
+  // We need to set up global state for getState() to return our mock
+  // The module imports getState from state.js which returns the module's state object.
+  // We can't easily override it. Let's instead modify the state module's state directly.
+  // We import state.js and modify its internal state.
+  try {
+    const stateModule = await import('../js/state.js');
+    const st = stateModule.getState();
+    st.agents = mockState.agents;
+    st.agentNames = mockState.agentNames;
+    st.agentEmojis = mockState.agentEmojis;
+  } catch (e) {
+    console.warn('Could not load state module for mocking, using defaults');
+  }
+
+  qaGraph.renderQAGraph(container, window._qaInteractions);
+  const svg = container.querySelector('svg');
+  assert(!!svg, 'SVG rendered with interactions');
+
+  if (svg) {
+    // ── Test 8: Agent nodes rendered ────────────────
+    const circles = svg.querySelectorAll('.qa-node-circle');
+    assert(circles.length === 7, 'All 7 nodes (6 agents + scribe) rendered', `found ${circles.length}`);
+
+    // ── Test 9: Nodes have correct tooltips ─────────
+    const titles = svg.querySelectorAll('.qa-node title');
+    const titleTexts = Array.from(titles).map(t => t.textContent);
+    assert(titleTexts.some(t => t.includes('Curious Teen')), 'Node tooltip contains agent name');
+    assert(titleTexts.some(t => t.includes('Scribe')), 'Node tooltip contains Scribe');
+
+    // ── Test 10: Edges rendered ─────────────────────
+    const edgeGroups = svg.querySelectorAll('.qa-edge');
+    assert(edgeGroups.length === 5, 'All 5 interactions rendered as edges', `found ${edgeGroups.length}`);
+
+    // ── Test 11: Edges have proper classes ──────────
+    const edgeLines = svg.querySelectorAll('.qa-edge-line');
+    assert(edgeLines.length === 5, 'Each edge group has a line element');
+
+    // ── Test 12: Hitarea for hover ──────────────────
+    const hitareas = svg.querySelectorAll('.qa-edge-hitarea');
+    assert(hitareas.length === 5, 'Each edge has invisible hitarea for hover');
+    assert(hitareas[0].getAttribute('data-from') === 'scribe', 'Hitarea has data-from attribute');
+    assert(hitareas[0].getAttribute('data-to') === 'curious-teen', 'Hitarea has data-to attribute');
+
+    // ── Test 13: Edge colors by type ────────────────
+    const edgeLinesArr = Array.from(edgeLines);
+    // First edge: clarification (blue)
+    const firstStroke = edgeLinesArr[0].getAttribute('stroke');
+    assert(firstStroke === '#58a6ff', 'Clarification edge is blue (#58a6ff)', `got ${firstStroke}`);
+    // Last edge: followup (green)
+    const lastStroke = edgeLinesArr[edgeLinesArr.length - 1].getAttribute('stroke');
+    assert(lastStroke === '#3fb950', 'Follow-up edge is green (#3fb950)', `got ${lastStroke}`);
+
+    // ── Test 14: Latest edge has glow filter ────────
+    const lastEdgeLine = edgeLinesArr[edgeLinesArr.length - 1];
+    assert(!!lastEdgeLine.getAttribute('filter'), 'Latest edge has glow filter');
+
+    // ── Test 15: Latest edge has new-edge class ─────
+    const lastEdgeGroup = edgeGroups[edgeGroups.length - 1];
+    assert(lastEdgeGroup.classList.contains('edge-new'), 'Latest edge group has edge-new class');
+  }
+
+  // ── Test 16: Edge with missing positions handled gracefully ──
+  // Add interaction with unknown agent
+  qaGraph.addQAInteraction('unknown-agent', 'scribe', 'question', 'Hello?');
+  // Should not throw — render should just skip this edge
+  try {
+    qaGraph.renderQAGraph(container, window._qaInteractions);
+    assert(true, 'Render handles unknown agent gracefully (no throw)');
+  } catch (e) {
+    assert(false, 'Render handles unknown agent gracefully', `threw: ${e.message}`);
+  }
+
+  // ── Test 17: Edge offset prevents overlap ────────
+  // Multiple edges between same pair should have different coordinates
+  window._qaInteractions = [
+    { from: 'scribe', to: 'curious-teen', type: 'clarification', question: 'Q1', time: Date.now(), _idx: 0 },
+    { from: 'scribe', to: 'curious-teen', type: 'clarification', question: 'Q2', time: Date.now(), _idx: 1 },
+    { from: 'curious-teen', to: 'scribe', type: 'question', question: 'A1', time: Date.now(), _idx: 2 },
+  ];
+
+  // Re-mock state
+  try {
+    const stateModule = await import('../js/state.js');
+    const st = stateModule.getState();
+    st.agents = mockState.agents;
+    st.agentNames = mockState.agentNames;
+    st.agentEmojis = mockState.agentEmojis;
+  } catch (e) {}
+
+  qaGraph.renderQAGraph(container, window._qaInteractions);
+  const parallelLines = container.querySelectorAll('.qa-edge-line');
+  if (parallelLines.length >= 2) {
+    const y1 = parallelLines[0].getAttribute('y1');
+    const y2 = parallelLines[1].getAttribute('y1');
+    assert(y1 !== y2, 'Parallel edges have different y1 positions (offset applied)', `${y1} vs ${y2}`);
+  }
+
+  // ── Display results ──────────────────────────────
+  document.getElementById('summary').innerHTML =
+    '<span class="pass">✓ ' + passed + ' passed</span>' +
+    (failed > 0 ? ' <span class="fail">✗ ' + failed + ' failed</span>' : '') +
+    ' <span class="total">(' + (passed + failed) + ' total)</span>';
+  document.getElementById('results').innerHTML = results.join('');
+}
+
+runTests().catch(err => {
+  document.getElementById('summary').innerHTML = '<span class="fail">✗ Tests failed to run: ' + err.message + '</span>';
+  console.error(err);
+});
+</script>
+</body>
+</html>

@@ -272,7 +272,7 @@
     </div>
 
     <div class="form-group" id="modelSelectorGroup">
-      <label>Model</label>
+      <label>Model <span id="modelBackendStatus" class="model-backend-status" style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:6px;"></span></label>
       <div class="model-picker" id="modelPicker">
         <div class="model-picker-trigger" tabindex="0" role="combobox" aria-expanded="false">
           <input type="text" class="model-picker-input" id="modelPickerInput"
@@ -397,9 +397,17 @@
       </div>
 
       <!-- Q&A Panel -->
-      <div class="card mb-8">
+      <div class="card mb-8"
+           x-data="{ graphMode: $store.app.graphMode !== undefined ? $store.app.graphMode : true }">
         <div class="card-header">
           <span>💬 Questions & Answers</span>
+          <div class="qa-mode-toggle">
+            <button class="btn btn-sm btn-secondary qa-toggle-btn" id="qaModeToggle"
+                    x-on:click="window.toggleQAMode(); graphMode = !graphMode"
+                    x-text="graphMode ? '📊 Graph' : '📋 List'">
+              📊 Graph
+            </button>
+          </div>
         </div>
         <div id="qaPanel" class="qa-panel" style="display:none;">
           <div id="qaGraph" class="qa-graph"></div>
@@ -440,36 +448,17 @@
     <!-- Local Models Tab -->
     <div id="tab-local-models" class="settings-section">
       <p class="text-muted" style="margin-bottom:16px;font-size:13px;">
-        Configure local model endpoints (Ollama, llama.cpp, vLLM, or any OpenAI-compatible server). 
-        Auto-discovered Ollama models appear automatically.
+        Discovered models, GGUF downloads, and llama.cpp configuration. 
+        Model lifecycle controls are in the <strong>Local Backends</strong> tab.
       </p>
 
-      <div class="card-header" style="border:1px solid var(--border);border-radius:6px;margin-bottom:12px;">
-        <span>🔍 Auto-Discovered (Ollama)</span>
-        <span id="ollamaStatus" style="font-size:12px;font-weight:400;margin-left:8px;"></span>
-      </div>
       <div id="discoveredModels">
         <div class="text-muted" style="padding:12px;font-size:13px;">Scanning for local models...</div>
       </div>
-      <div id="ollamaActions" style="padding:8px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);">
-        <button id="installOllamaBtn" class="btn btn-primary btn-sm" style="display:none;" onclick="window.installOllama()">⬇ Install Ollama</button>
-        <span class="text-muted" style="font-size:11px;" id="ollamaActionHint">Checking Ollama status...</span>
-      </div>
 
-      <!-- Shared Log Viewer (install, uninstall, model pull) -->
-      <div id="ollamaInstallLog" class="hidden" style="margin:8px 12px;border:1px solid var(--border);border-radius:6px;background:#1a1a2e;color:#e0e0e0;font-family:monospace;font-size:12px;max-height:300px;overflow-y:auto;padding:8px;white-space:pre-wrap;word-break:break-all;">
+      <!-- Shared Log Viewer (serve, model pull, download) -->
+      <div id="ollamaInstallLog" class="hidden" style="margin:8px 0;border:1px solid var(--border);border-radius:6px;background:#1a1a2e;color:#e0e0e0;font-family:monospace;font-size:12px;max-height:300px;overflow-y:auto;padding:8px;white-space:pre-wrap;word-break:break-all;">
         <div id="ollamaInstallOutput"></div>
-      </div>
-
-      <!-- llama.cpp card -->
-      <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin:12px 0 8px;">
-        <span style="font-weight:600;">🔧 llama.cpp</span>
-        <span id="llamacppStatus" style="font-size:12px;font-weight:400;margin-left:8px;"></span>
-        <span id="llamacppHfBadge" style="margin-left:auto;font-size:11px;"></span>
-      </div>
-      <div id="llamacppActions" style="padding:8px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);">
-        <button id="installLlamaCppBtn" class="btn btn-primary btn-sm" style="display:none;" onclick="window.installLlamaCpp()">⬇ Install llama.cpp</button>
-        <span class="text-muted" style="font-size:11px;" id="llamacppActionHint">Checking llama.cpp status...</span>
       </div>
 
       <!-- GGUF Models -->
@@ -633,9 +622,39 @@
     <!-- Local Backends Tab -->
     <div id="tab-local-backends" class="settings-section">
       <p class="text-muted" style="margin-bottom:16px;font-size:13px;">
-        Manage local AI backends including Ollama, llama.cpp, vLLM, LM Studio, and LocalAI.
-        Each backend's connectivity is auto-detected. You can set custom addresses for non-standard setups.
+        Manage local AI backends — install, start, stop, and uninstall Ollama and llama.cpp.
+        Connectivity is auto-detected. Set custom addresses for non-standard setups.
       </p>
+
+      <!-- Ollama lifecycle card -->
+      <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin:0 0 4px;">
+        <span style="font-weight:600;">🔍 Ollama</span>
+        <span id="ollamaStatus" style="font-size:12px;font-weight:400;margin-left:8px;"></span>
+      </div>
+      <div id="ollamaActions" style="padding:8px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);">
+        <button id="installOllamaBtn" class="btn btn-primary btn-sm" style="display:none;" onclick="window.installOllama()">⬇ Install Ollama</button>
+        <span class="text-muted" style="font-size:11px;" id="ollamaActionHint">Checking Ollama status...</span>
+      </div>
+
+      <!-- llama.cpp lifecycle card -->
+      <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin:12px 0 4px;">
+        <span style="font-weight:600;">🔧 llama.cpp</span>
+        <span id="llamacppStatus" style="font-size:12px;font-weight:400;margin-left:8px;"></span>
+        <span id="llamacppHfBadge" style="margin-left:auto;font-size:11px;"></span>
+      </div>
+      <div id="llamacppActions" style="padding:8px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid var(--border);">
+        <button id="installLlamaCppBtn" class="btn btn-primary btn-sm" style="display:none;" onclick="window.installLlamaCpp()">⬇ Install llama.cpp</button>
+        <span class="text-muted" style="font-size:11px;" id="llamacppActionHint">Checking llama.cpp status...</span>
+      </div>
+
+      <!-- Backend lifecycle log viewer (install, uninstall) -->
+      <div id="backendInstallLog" class="hidden" style="margin:8px 0;border:1px solid var(--border);border-radius:6px;background:#1a1a2e;color:#e0e0e0;font-family:monospace;font-size:12px;max-height:300px;overflow-y:auto;padding:8px;white-space:pre-wrap;word-break:break-all;">
+        <div id="backendInstallOutput"></div>
+      </div>
+
+      <div class="card-header" style="border:1px solid var(--border);border-radius:6px;margin:12px 0 8px;">
+        <span>🔌 Backend Connectivity</span>
+      </div>
       <div id="localBackendsList">
         <div class="text-muted" style="text-align:center;padding:20px;">Loading backends...</div>
       </div>

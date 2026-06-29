@@ -537,7 +537,7 @@ class Orchestrator:
                         "total_reports_chars": sum(
                             len(str(r)) for r in all_reports.values()
                         ),
-                        "model": "unknown",
+                        "model": getattr(getattr(scribe, 'llm', None), 'model', 'unknown'),
                     },
                     state=self.state,
                 )

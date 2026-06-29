@@ -220,6 +220,93 @@ class TestModelRouting:
                 )
 
 
+# ── Token Tracking Tests ────────────────────────────────────────────────
+
+
+class TestTokenTracking:
+    """Model name preservation in TokenTracker."""
+
+    def test_tracker_records_full_model_id_not_stripped(self) -> None:
+        """``_track_usage`` records ``self.model`` (full ID), not ``self.actual_model`` (stripped).
+
+        Regression: endpoint-routed providers (e.g. ``opencode/go/deepseek-v4-flash``)
+        must preserve the full model ID in the TokenTracker so that provider
+        provenance is not lost.
+        """
+        from deepresearch.llm.tracker import TokenTracker
+
+        tracker = TokenTracker()
+        client = LLMClient(model="opencode/go/deepseek-v4-flash", timeout=10)
+        client.tracker = tracker
+
+        # Sanity: confirm the model ID was parsed correctly.
+        assert client.model == "opencode/go/deepseek-v4-flash"
+        assert client.actual_model == "deepseek-v4-flash"
+
+        # Simulate a response with token usage data.
+        mock_response = _mock_nonstreaming_response(
+            content="test response",
+            prompt_tokens=100,
+            completion_tokens=50,
+        )
+
+        client._track_usage(mock_response)
+
+        # The tracker MUST contain the FULL model ID (with provider prefix).
+        per_model = tracker.per_model()
+        assert "opencode/go/deepseek-v4-flash" in per_model, (
+            f"Expected full model ID in tracker, got keys: {list(per_model.keys())}"
+        )
+        assert "deepseek-v4-flash" not in per_model, (
+            "Stripped model name should NOT appear in tracker keys"
+        )
+
+        # Verify token counts are correct.
+        entry = per_model["opencode/go/deepseek-v4-flash"]
+        assert entry["prompt_tokens"] == 100
+        assert entry["completion_tokens"] == 50
+
+    def test_tracker_records_full_model_for_standard_models(self) -> None:
+        """Standard (non-endpoint-routed) models also preserve their full ID."""
+        from deepresearch.llm.tracker import TokenTracker
+
+        tracker = TokenTracker()
+        client = LLMClient(model="anthropic/claude-sonnet-4-20250514", timeout=10)
+        client.tracker = tracker
+
+        assert client.model == "anthropic/claude-sonnet-4-20250514"
+        assert client.actual_model == "anthropic/claude-sonnet-4-20250514"
+
+        mock_response = _mock_nonstreaming_response(
+            content="test",
+            prompt_tokens=50,
+            completion_tokens=25,
+        )
+
+        client._track_usage(mock_response)
+
+        per_model = tracker.per_model()
+        assert "anthropic/claude-sonnet-4-20250514" in per_model
+
+    def test_scribe_agent_model_id_preserved(self) -> None:
+        """ScribeAgent created with a full model ID preserves it on ``.llm.model``.
+
+        This verifies the full pipeline: factory → create_scribe_agent → LLMClient.
+        """
+        from deepresearch.agents.scribe_agent import ScribeAgent
+
+        client = LLMClient(model="opencode/go/deepseek-v4-flash", timeout=300)
+        scribe = ScribeAgent(llm_client=client)
+
+        # The scribe's LLM client must have the full model ID.
+        assert scribe.llm.model == "opencode/go/deepseek-v4-flash", (
+            f"Scribe model was stripped: {scribe.llm.model}"
+        )
+
+        # Confirm the stripped version is available for LiteLLM routing.
+        assert scribe.llm.actual_model == "deepseek-v4-flash"
+
+
 # ── Tool Calling Fallback Tests ──────────────────────────────────────────
 
 

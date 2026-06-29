@@ -291,8 +291,8 @@ window.installOllama = async function() {
   if (ollamaInstallState === 'INSTALLING') return;
 
   const btn = document.getElementById('installOllamaBtn');
-  const logContainer = document.getElementById('ollamaInstallLog');
-  const logOutput = document.getElementById('ollamaInstallOutput');
+  const logContainer = document.getElementById('backendInstallLog');
+  const logOutput = document.getElementById('backendInstallOutput');
   const statusEl = document.getElementById('ollamaStatus');
 
   if (!logContainer || !logOutput) return;
@@ -417,8 +417,8 @@ window.manageOllama = async function(action) {
 window.confirmUninstallOllama = function() {
   if (!confirm('\u26A0\uFE0F Are you sure you want to uninstall Ollama? This will remove the binary, service, and all downloaded models.')) return;
 
-  const logContainer = document.getElementById('ollamaInstallLog');
-  const logOutput = document.getElementById('ollamaInstallOutput');
+  const logContainer = document.getElementById('backendInstallLog');
+  const logOutput = document.getElementById('backendInstallOutput');
   if (!logContainer || !logOutput) return;
 
   logContainer.classList.remove('hidden');
@@ -554,8 +554,8 @@ window.installLlamaCpp = async function() {
   if (llamacppInstallState === 'INSTALLING') return;
 
   const btn = document.getElementById('installLlamaCppBtn');
-  const logContainer = document.getElementById('ollamaInstallLog');
-  const logOutput = document.getElementById('ollamaInstallOutput');
+  const logContainer = document.getElementById('backendInstallLog');
+  const logOutput = document.getElementById('backendInstallOutput');
   if (!logContainer || !logOutput) return;
 
   logContainer.classList.remove('hidden');
@@ -620,8 +620,8 @@ window.installLlamaCpp = async function() {
 window.confirmUninstallLlamaCpp = function() {
   if (!confirm('\u26A0\uFE0F Are you sure you want to uninstall llama.cpp? This will remove the binary from ~/.local/bin/.')) return;
 
-  const logContainer = document.getElementById('ollamaInstallLog');
-  const logOutput = document.getElementById('ollamaInstallOutput');
+  const logContainer = document.getElementById('backendInstallLog');
+  const logOutput = document.getElementById('backendInstallOutput');
   if (!logContainer || !logOutput) return;
 
   logContainer.classList.remove('hidden');
@@ -689,7 +689,15 @@ window.manageLlamaCpp = async function(action) {
     showToast('Network error', 'error');
   }
 
-  setTimeout(checkLlamaCppStatus, 1500);
+  if (action === 'stop') {
+    setTimeout(() => {
+      loadAvailableModels();
+      checkLlamaCppStatus();
+      loadGgufModels();
+    }, 1500);
+  } else {
+    setTimeout(checkLlamaCppStatus, 1500);
+  }
 };
 
 // ── GGUF Model List ──────────────────────────────────
@@ -786,6 +794,9 @@ window.serveGgufModel = async function(modelName) {
         logLine.className = 'log-line log-success';
         logLine.innerHTML = '<span class="log-icon">✅</span> <strong>' + esc(modelName) + ' is now serving!</strong>';
         logOutput.appendChild(logLine);
+      } catch (err) {}
+      eventSource.close();
+      showToast('llama.cpp model served and connected — ready in model dropdown', 'success');
       setTimeout(() => {
         loadAvailableModels();
         checkLlamaCppStatus();
@@ -821,17 +832,19 @@ window.stopLlamacppServe = async function() {
     const resp = await stopLlamacppServing();
     const data = await resp.json();
     if (resp.ok) {
-      showToast(data.message || 'Stopped serving', 'success');
+      showToast('llama.cpp model stopped — removed from model dropdown', 'success');
     } else {
       showToast('Error: ' + (data.message || 'Stop failed'), 'error');
     }
   } catch (err) {
     showToast('Network error', 'error');
+  }
   setTimeout(() => {
     loadAvailableModels();
     checkLlamaCppStatus();
     loadGgufModels();
   }, 1000);
+};
 
 // ── HuggingFace Serve Action ─────────────────────────
 window.serveHfAction = async function() {
@@ -874,7 +887,8 @@ window.serveHfAction = async function() {
           addLog('<span class="log-icon">' + icon + '</span> ' + esc(data.message || ''));
         } else if (event === 'hf_serve_complete') {
           addLog('<span class="log-icon">✅</span> <strong>' + esc(repo) + ' is now serving!</strong>', 'log-success');
-          setTimeout(() => { checkLlamaCppStatus(); loadGgufModels(); }, 1000);
+          showToast('llama.cpp HF model served and connected — ready in model dropdown', 'success');
+          setTimeout(() => { loadAvailableModels(); checkLlamaCppStatus(); loadGgufModels(); }, 1000);
         } else if (event === 'install_error') {
           addLog('<span class="log-icon">❌</span> <strong>Error:</strong> ' + esc(data.message || 'Serve failed'), 'log-error');
         }
@@ -1208,23 +1222,6 @@ async function loadLocalBackends() {
         statusText = 'Not detected';
       }
 
-      // Determine action buttons based on backend name
-      let actionsHtml = '';
-      const nameLower = (b.name || '').toLowerCase();
-
-      if (nameLower === 'ollama') {
-        // Reuse existing Ollama action buttons tied to the local models tab
-        actionsHtml =
-          '<div class="backend-actions">' +
-          '<span class="text-muted" style="font-size:11px;">Manage in Ollama section above</span>' +
-          '</div>';
-      } else {
-        actionsHtml =
-          '<div class="backend-actions">' +
-          '<span class="text-muted" style="font-size:11px;">Manual setup — configure in Local Models tab</span>' +
-          '</div>';
-      }
-
       // Test button + address row are common to all backends
       const testBtnId = 'test-backend-' + esc(b.name);
       const addrInputId = 'addr-input-' + esc(b.name);
@@ -1239,7 +1236,6 @@ async function loadLocalBackends() {
           '<div class="backend-desc">' + esc(b.description || '') + '</div>' +
           (b.port ? '<div class="backend-detail">Port: ' + b.port + '</div>' : '') +
           '<div class="backend-status-text ' + statusDotClass + '">' + statusText + '</div>' +
-          actionsHtml +
           '<div class="backend-actions">' +
             '<button class="btn btn-sm btn-secondary" id="' + testBtnId + '" onclick="window.testLocalBackendAction(\'' + esc(b.name) + '\')">Test Connection</button>' +
           '</div>' +

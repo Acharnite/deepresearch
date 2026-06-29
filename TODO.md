@@ -59,10 +59,14 @@
 - [x] **Scribe row in dashboard** — 📝 scribe row with live output under agents
 - [x] **Dynamic rounds** — verify it loops when gaps exist, stops when resolved
 
-### Priority 2: Full Pipeline
-- [ ] CLI: `deepresearch run "topic" --quick --model "opencode/go/deepseek-v4-flash"`
-- [ ] CLI: `deepresearch run "topic" --medium --model "opencode/go/deepseek-v4-flash"`
-- [ ] Dashboard: same flows via web UI
+### Priority 2: Full Pipeline ✅
+- [x] CLI: `deepresearch run "topic" --quick --model "opencode/go/deepseek-v4-flash"` (mocked)
+- [x] CLI: `deepresearch run "topic" --medium --model "opencode/go/deepseek-v4-flash"` (mocked)
+- [x] Dashboard: same flows via web API (mocked)
+- [x] CLI and Dashboard error handling: empty topics, invalid models, concurrency limits, cancel
+- [x] SSE event stream produces expected lifecycle event types
+- [x] Session state transitions: queued → running → complete
+- [x] Tests: 24 new pipeline tests (24/24 passing, 163 combined with integration/web)
 
 ### Priority 3: Model Compatibility
 - [ ] Test with OpenAI (gpt-4o)

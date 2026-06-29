@@ -1480,7 +1480,7 @@ class LLMClient:
                 self.total_cost += cost
                 if self.tracker is not None:
                     self.tracker.record(
-                        model=self.actual_model,
+                        model=self.model,
                         prompt_tokens=prompt_tokens,
                         completion_tokens=completion_tokens,
                         cost=cost,

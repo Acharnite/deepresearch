@@ -2210,3 +2210,151 @@ class TestLlamacppServeHF:
         error_events = [e for e in events if e["event"] == "install_error"]
         assert error_events
         assert "invalid json" in error_events[0]["data"].lower()
+
+
+# ─── V. Auto-Connect & Model Dropdown Refresh Tests ──────────────────────
+
+
+class TestAutoConnectAndModelRefresh:
+    """Tests for the unified serve-and-connect flow and model dropdown refresh.
+
+    Requirements:
+    - After GGUF serve completes successfully, the model appears in /api/models
+    - After stop, the model disappears from /api/models
+    - The stop endpoint clears _llamacpp_serving_model
+    """
+
+    # ── Stop clears serving model ───────────────────────────────────────
+
+    def test_stop_clears_serving_model(self, client: TestClient):
+        """POST /stop clears _llamacpp_serving_model so model leaves /api/models."""
+        import deepresearch.web.server as srv
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = None
+        mock_proc.wait = AsyncMock()
+        srv._llamacpp_process = mock_proc
+        srv._llamacpp_serving_model = "/home/user/.cache/gguf/models/qwen.gguf"
+
+        resp = client.post("/api/local-backends/llamacpp/stop")
+        assert resp.status_code == 200
+        assert srv._llamacpp_serving_model is None, (
+            "stop() must clear _llamacpp_serving_model"
+        )
+
+    def test_stop_removes_model_from_api_models(self, client: TestClient):
+        """After stop, /api/models no longer includes the llamacpp model."""
+        import deepresearch.web.server as srv
+
+        mock_proc = MagicMock()
+        mock_proc.returncode = None
+        mock_proc.wait = AsyncMock()
+        srv._llamacpp_process = mock_proc
+        srv._llamacpp_serving_model = "/home/user/.cache/gguf/models/qwen.gguf"
+
+        # Confirm model is present before stop
+        with patch(
+            "deepresearch.web.routes.models.load_model_config", return_value=[]
+        ):
+            resp_before = client.get("/api/models")
+        assert resp_before.status_code == 200
+        ids_before = [m["id"] for m in resp_before.json()]
+        assert "llama-cpp/qwen" in ids_before, "model should be present before stop"
+
+        # Stop
+        client.post("/api/local-backends/llamacpp/stop")
+
+        # Confirm model is gone after stop
+        with patch(
+            "deepresearch.web.routes.models.load_model_config", return_value=[]
+        ):
+            resp_after = client.get("/api/models")
+        assert resp_after.status_code == 200
+        ids_after = [m["id"] for m in resp_after.json()]
+        assert not any(
+            mid.startswith("llama-cpp/") for mid in ids_after
+        ), "no llamacpp model should appear after stop"
+
+    # ── Serve → Health check → Model appears in /api/models ────────────
+
+    def test_serve_health_check_registers_model_in_api(
+        self, client: TestClient
+    ):
+        """After serve health check passes, /api/models includes the model."""
+        import deepresearch.web.server as srv
+
+        srv._llamacpp_config = {
+            "port": 8080,
+            "installed": True,
+            "gpu_layers": 0,
+            "context_size": 8192,
+            "flash_attn": False,
+        }
+        srv._llamacpp_process = None
+        srv._llamacpp_serving_model = None
+
+        model_path = "/home/user/.cache/gguf/models/test-model.gguf"
+
+        # Simulate that the serve endpoint has started and health check passed
+        # by manually setting the state that the SSE generator would set
+        srv._llamacpp_process = MagicMock()
+        srv._llamacpp_process.returncode = None
+        srv._llamacpp_process.pid = 54321
+        srv._llamacpp_serving_model = model_path
+
+        with patch(
+            "deepresearch.web.routes.models.load_model_config", return_value=[]
+        ):
+            resp = client.get("/api/models")
+        assert resp.status_code == 200
+        data = resp.json()
+        ids = [m["id"] for m in data]
+        assert "llama-cpp/test-model" in ids, (
+            "model should be registered in /api/models after health check"
+        )
+
+    # ── Frontend integration: status indicator updates ─────────────────
+
+    def test_llamacpp_status_after_stop_shows_not_running(
+        self, client: TestClient
+    ):
+        """After stop, GET /status shows running=False and no active model."""
+        import deepresearch.web.server as srv
+
+        # Start with a running process
+        mock_proc = MagicMock()
+        mock_proc.returncode = None
+        mock_proc.pid = 12345
+        mock_proc.wait = AsyncMock()
+        srv._llamacpp_process = mock_proc
+        srv._llamacpp_serving_model = "/home/user/.cache/gguf/models/qwen.gguf"
+
+        with (
+            patch("shutil.which", return_value="/usr/bin/llama-server"),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(
+                stdout="version 1.0\n", stderr=""
+            )
+            resp_before = client.get("/api/local-backends/llamacpp/status")
+        assert resp_before.status_code == 200
+        assert resp_before.json()["running"] is True
+        assert resp_before.json()["active_model"] is not None
+
+        # Stop
+        client.post("/api/local-backends/llamacpp/stop")
+
+        with (
+            patch("shutil.which", return_value="/usr/bin/llama-server"),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(
+                stdout="version 1.0\n", stderr=""
+            )
+            resp_after = client.get("/api/local-backends/llamacpp/status")
+        assert resp_after.status_code == 200
+        data = resp_after.json()
+        assert data["running"] is False
+        assert data.get("active_model") is None, (
+            "active_model should be unset after stop"
+        )

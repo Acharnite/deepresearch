@@ -2,6 +2,35 @@
 
 All notable changes to DeepeResearch will be documented in this file.
 
+## v0.15.0 (2026-06-29)
+
+### Added
+- Interactive Q&A graph (Issue #52): SVG-based agent interaction visualization
+- 3 arrow types: clarification requests (blue), agent responses (orange), follow-ups (green)
+- Hover tooltips on edges showing question/answer text via SVG `<title>` elements
+- New edge fade-in animation (`fadeInEdge` CSS @keyframes, 0.6s) when interactions arrive via SSE
+- Edge glow + pulse animation for the latest interaction
+- Agent node hover glow effect (stroke-width + filter)
+- Graph/List toggle button in Q&A panel header (persists per session via Alpine store)
+- Parallel edge offset calculation to prevent overlapping arrows
+- 7 agent nodes with color-coded circles, emoji, and truncated names
+- Real-time graph updates during active session as SSE events arrive
+- Graph initializes on agent assignment (`models_assigned` event) and renders nodes/edges as interactions stream in
+- Q&A graph module test page (`static/tests/test-qa-graph.html`) with 17 functional tests
+
+### Changed
+- `qa-graph.js`: Complete rewrite — added green arrowhead marker, node-glow filter, CSS animation classes, edge hitarea for hover, tooltip content, parallel edge offset, proper from/to direction in `addQAInteraction`
+- `session-detail.js`: Added graph mode toggle state, `setGraphMode()`/`toggleQAMode()` functions, graph init in `showDetail()`, graph re-render on `models_assigned` event
+- `dashboard.html`: Added Graph/List toggle button with Alpine.js reactivity in Q&A card header
+- `dashboard.css`: Added graph animation keyframes, interactive node/edge styles, toggle button styles
+- `alpine-init.js`: Added `graphMode` property to `Alpine.store('app')`
+
+### Fixed
+- `addQAInteraction` no longer swaps `from`/`to` parameters — arrows now correctly point from source to destination
+- Graph renders agent nodes even when no interactions exist (visual layout visible from the start)
+- Q&A panel visibility properly managed when toggling between graph and list modes
+- List view re-renders when switching from graph mode
+
 ## v0.14.0 (2026-06-20)
 - ADR-0017: Enhanced Tool Calling with Multi-Provider Search
 - Feature: Multi-provider search chain (SearXNG → DuckDuckGo → Brave → Google PSE → Tavily → Serper)

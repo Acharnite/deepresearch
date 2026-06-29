@@ -630,15 +630,23 @@ async def stop_llamacpp() -> JSONResponse:
         )
 
     _srv._llamacpp_process = None
+    _srv._llamacpp_serving_model = None
     return JSONResponse({"status": "ok", "message": "llama.cpp stopped"})
 
 
 @router.post("/local-backends/llamacpp/restart")
 async def restart_llamacpp() -> JSONResponse:
-    """Restart the managed llama-server subprocess."""
+    """Restart the managed llama-server subprocess.
+
+    Saves the current serving model before stopping (since stop now clears
+    it), then restores it so start_llamacpp() can find it again.
+    """
+    saved_model = _srv._llamacpp_serving_model
     stop_result = await stop_llamacpp()
     if stop_result.status_code != 200:
+        _srv._llamacpp_serving_model = saved_model
         return stop_result
+    _srv._llamacpp_serving_model = saved_model
     return await start_llamacpp()
 
 
