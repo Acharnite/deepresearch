@@ -79,6 +79,8 @@ class Orchestrator:
         self._session_start_time: datetime | None = None
         self._cancel_event: asyncio.Event | None = None
         self._pdf_underweight: bool = False
+        self._benchmark_times: dict[str, float] = {}
+        self._benchmark_mode: bool = False
 
         # ── Collaborators ────────────────────────────────────────────
         self.state_tracker = SessionState("", None)
@@ -206,6 +208,9 @@ class Orchestrator:
         """Run a full research session from topic to output."""
         self._cancel_event = overrides.get("cancel_event")
         self._session_start_time = datetime.now()
+        self._benchmark_mode = overrides.get("benchmark", False)
+        self._benchmark_times = {}
+        _bm = self._benchmark_times
         logger.info("Session started — topic: %s", topic)
         if self._event_bus:
             await self._event_bus.publish(
@@ -340,12 +345,15 @@ class Orchestrator:
                     )
 
                 if round_num == 1:
+                    _r1_start = time.monotonic()
                     results = await self.round_runner.run_round(
                         1,
                         {aid: agents[aid] for aid in active_agents()},
                         config.topic,
                         start_time=start_time,
                     )
+                    if self._benchmark_mode:
+                        self._benchmark_times["round_1"] = time.monotonic() - _r1_start
                 elif round_num == 2:
                     assert latest_shared is not None
                     results = await self.round_runner.run_round(
@@ -541,9 +549,14 @@ class Orchestrator:
                     },
                     state=self.state,
                 )
+            _scribe_start = time.monotonic()
             paper = await self.scribe_comp.compile(
                 all_reports, scribe, topic=config.topic.question
             )
+            if self._benchmark_mode:
+                self._benchmark_times["scribe_compilation"] = (
+                    time.monotonic() - _scribe_start
+                )
             self._current_paper = paper
 
     # ------------------------------------------------------------------

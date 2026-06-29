@@ -161,6 +161,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="[1-10]",
         help="Max concurrent sessions for web dashboard (1-10, default: 3)",
     )
+    run_parser.add_argument(
+        "--benchmark",
+        action="store_true",
+        help="Benchmark mode — track and report timing for each research phase",
+    )
 
     # --- serve subcommand ---
     serve_parser = subparsers.add_parser("serve", help="Start the web dashboard server")
@@ -415,9 +420,20 @@ def cmd_run(args: argparse.Namespace) -> int:
                 run_kwargs["selected_model"] = args.model
             if time_budget_seconds is not None:
                 run_kwargs["time_budget_seconds"] = time_budget_seconds
+            if getattr(args, 'benchmark', False):
+                run_kwargs["benchmark"] = True
             result = asyncio.run(orchestrator.run(args.topic, **run_kwargs))
 
             progress.update(session_task, completed=100, description="[green]Complete!")
+
+        if getattr(args, 'benchmark', False) and hasattr(orchestrator, "_benchmark_times"):
+            console.print("\n[bold cyan]── Benchmark Results ──[/bold cyan]")
+            bt = orchestrator._benchmark_times
+            for phase, seconds in bt.items():
+                console.print(f"  [cyan]{phase}:[/cyan] {seconds:.2f}s")
+            if bt:
+                total = sum(bt.values())
+                console.print(f"  [bold]Total:[/bold] {total:.2f}s")
 
         console.print(
             f"\n[bold green]✓ Session complete![/bold green] Output: {result}"
