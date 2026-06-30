@@ -473,9 +473,11 @@
       <div class="hf-serve-section" style="padding:8px 12px;border-bottom:1px solid var(--border);">
         <div style="font-size:12px;font-weight:600;margin-bottom:8px;">🤗 Serve from HuggingFace</div>
         <p class="text-muted" style="font-size:12px;margin:0 0 12px 0;">
-          Download and serve a model directly from HuggingFace Hub.
-          Requires <code>llama-server</code> with <code>-hf</code> support (curl-enabled build).
+          Download and serve a model directly from HuggingFace Hub into <strong>llama-server</strong>.
+          Single click: picks the model, downloads it, and starts serving — all in one step.
+          After it's ready, the model appears in the research model dropdown.
         </p>
+
         <div class="hf-serve-form" style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;">
           <div style="flex:2;min-width:200px;">
             <label style="font-size:11px;color:var(--text-muted);">HF Model Repo</label>
@@ -485,42 +487,36 @@
           <div style="flex:1;min-width:100px;">
             <label style="font-size:11px;color:var(--text-muted);">Quantization</label>
             <select id="hfQuantSelect" style="width:100%;padding:6px 8px;background:var(--surface-2);border:1px solid var(--border);border-radius:4px;color:var(--text);">
-              <option value="Q4_K_M">Q4_K_M (recommended)</option>
-              <option value="Q5_K_M">Q5_K_M</option>
-              <option value="Q6_K">Q6_K</option>
-              <option value="Q8_0">Q8_0</option>
-              <option value="Q3_K_M">Q3_K_M (smaller)</option>
-              <option value="Q2_K">Q2_K (smallest)</option>
+              <option value="Q4_K_M">Q4_K_M (recommended — good quality/speed)</option>
+              <option value="Q5_K_M">Q5_K_M (higher quality, slightly slower)</option>
+              <option value="Q6_K">Q6_K (even higher quality)</option>
+              <option value="Q8_0">Q8_0 (near-lossless, demands more RAM)</option>
+              <option value="Q3_K_M">Q3_K_M (smaller footprint, lower quality)</option>
+              <option value="Q2_K">Q2_K (smallest — use for limited RAM)</option>
             </select>
           </div>
           <button class="btn btn-sm btn-success" onclick="window.serveHfAction()">▶ Serve from HF</button>
         </div>
+
+        <!-- llama-server settings used when serving -->
+        <details style="margin-top:8px;font-size:12px;">
+          <summary style="cursor:pointer;color:var(--text-secondary);font-weight:500;">⚙️ llama-server settings (port, GPU, context size)</summary>
+          <div id="llamacppConfigSection" style="padding:8px 0 0 12px;">
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+              <label>Port: <input type="number" id="llamacppPortInput" value="8080" min="1024" max="65535" style="width:70px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
+              <label>GPU Layers: <input type="number" id="llamacppGpuLayersInput" value="0" min="-1" max="128" style="width:60px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
+              <label>Context: <input type="number" id="llamacppCtxInput" value="8192" min="512" max="131072" step="1024" style="width:80px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
+              <label>Batch: <input type="number" id="llamacppBatchInput" value="512" min="64" max="4096" step="64" style="width:80px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
+              <button class="btn btn-sm btn-outline" onclick="window.saveLlamacppConfig()">💾 Save defaults</button>
+            </div>
+            <p style="margin:6px 0 0 0;color:var(--text-muted);font-size:11px;">
+              These settings are passed to <code>llama-server</code> when you click "Serve from HF".
+              Saved defaults are pre-filled next time. <code>--fit</code> auto-tunes what it can.
+            </p>
+          </div>
+        </details>
+
         <div id="hfServeLog" style="margin-top:8px;font-size:12px;max-height:200px;overflow-y:auto;font-family:monospace;color:var(--text-secondary);"></div>
-      </div>
-
-      <!-- llama.cpp Config -->
-      <div id="llamacppConfigSection" style="padding:8px 12px;border-bottom:1px solid var(--border);display:none;">
-        <div style="font-size:12px;font-weight:600;margin-bottom:6px;">⚙️ Configuration</div>
-        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px;">
-          <label>Port: <input type="number" id="llamacppPortInput" value="8080" min="1024" max="65535" style="width:70px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
-          <label>GPU Layers: <input type="number" id="llamacppGpuLayersInput" value="0" min="-1" max="128" style="width:60px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
-          <label>Context: <input type="number" id="llamacppCtxInput" value="8192" min="512" max="131072" step="1024" style="width:80px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
-          <label>Batch: <input type="number" id="llamacppBatchInput" value="512" min="64" max="4096" step="64" style="width:80px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);" /></label>
-          <button class="btn btn-sm btn-outline" onclick="window.saveLlamacppConfig()">💾 Save</button>
-        </div>
-      </div>
-
-      <!-- HF Guidance card -->
-      <div style="padding:8px 12px;border-bottom:1px solid var(--border);">
-        <div style="padding:12px;background:var(--surface-2);border-radius:6px;font-size:12px;">
-          <strong>🤗 Need models?</strong>
-          <ul style="margin:8px 0 0 0;padding-left:16px;">
-            <li><a href="https://huggingface.co/models?library=gguf" target="_blank" rel="noopener">Browse GGUF Models on HuggingFace</a></li>
-            <li>Enter a HuggingFace repo above (e.g., <code>user/model</code>) and click <strong>Serve from HF</strong></li>
-            <li>Use the <code>:quant</code> suffix to pick a quantization (default: <code>Q4_K_M</code>)</li>
-            <li><code>llama-server --fit</code> auto-tunes context and GPU layers to your hardware</li>
-          </ul>
-        </div>
       </div>
 
       <div class="card-header" style="border:1px solid var(--border);border-radius:6px;margin-bottom:12px;">
