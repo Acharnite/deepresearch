@@ -157,31 +157,7 @@ async def get_tools_status() -> JSONResponse:
 
 @router.get("/hardware")
 async def get_hardware_info() -> JSONResponse:
-    """Return hardware specs. Tries llmfit first, then falls back to built-in detection."""
-    import shutil
-    import subprocess
-
-    # Try llmfit first (Phase 1 backward compat)
-    if shutil.which("llmfit"):
-        try:
-            result = subprocess.run(
-                ["llmfit", "system", "--json"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if result.returncode == 0:
-                data = json.loads(result.stdout)
-                return JSONResponse(
-                    {"available": True, "hardware": data.get("system", {})}
-                )
-            return JSONResponse({"available": False, "error": result.stderr.strip()})
-        except FileNotFoundError:
-            pass
-        except subprocess.TimeoutExpired:
-            pass
-
-    # Fall back to built-in hardware detection
+    """Return hardware specs via built-in Python detection (psutil + nvidia-smi)."""
     from deepresearch.hardware import get_hardware_info as _detect
 
     hw = _detect()
