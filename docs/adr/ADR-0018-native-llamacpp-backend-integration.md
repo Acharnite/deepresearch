@@ -4,8 +4,8 @@
 
 Accepted
 
-**Version:** 1.3
-**Last Updated:** 2026-06-27
+**Version:** 1.4
+**Last Updated:** 2026-06-29
 
 ## Context
 
@@ -608,7 +608,8 @@ Rationale:
 
 | Date | Version | Changes |
 |------|---------|---------|
-| 2026-06-20 | 1.0 | Initial version |
-| 2026-06-21 | 1.1 | Phase 2+3 implemented: GGUF model listing, llama-server serve endpoint, config management, /api/models registration |
+| 2026-06-29 | 1.4 | Phase 2-3 frontend completed: Lifecycle controls moved to Local Backends tab (#106). Streamlined Serve & Connect with auto-refresh model dropdown (#107). LiteLLM integration: serving model appears in /api/models dropdown automatically. Toast notifications on serve/stop state changes. |
 | 2026-06-27 | 1.3 | Resolved `-hf` deferred decision: Accepted per ADR-0020. `-hf` is now the primary model acquisition mechanism; llmfit download deprecated. |
 | 2026-06-23 | 1.2 | Added recommended model section (Llama 3.1 8B Q6_K). Documented thinking+tools conflict for Qwen3/Gemma4. |
+| 2026-06-21 | 1.1 | Phase 2+3 implemented: GGUF model listing, llama-server serve endpoint, config management, /api/models registration |
+| 2026-06-20 | 1.0 | Initial version |

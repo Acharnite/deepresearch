@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Acharnite/deepresearch/actions/workflows/ci.yml/badge.svg)](https://github.com/Acharnite/deepresearch/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![tests](https://img.shields.io/badge/tests-486%20passing-brightgreen)](https://github.com/Acharnite/deepresearch/actions/workflows/ci.yml)
+[![tests](https://img.shields.io/badge/tests-746%20passing-brightgreen)](https://github.com/Acharnite/deepresearch/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 > Six AI agents with distinct personalities collaborate to research any topic and produce a comprehensive, multi-perspective PDF paper.

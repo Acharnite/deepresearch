@@ -1,5 +1,5 @@
 # DeepeResearch — Design Document
-**Version:** 2.0
+**Version:** 2.1
 **Status:** Active
 **Design Authority:** Architects
 **Last Updated:** 2026-06-29
@@ -909,6 +909,7 @@ A single test that runs the full pipeline (with mock LLM) and validates the PDF 
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.1 | 2026-06-29 | v1.9.0: Output cleanup (#116), Scribe model prefix fix. ADR-0018 status → Accepted (Phases 2-3 implementation). Q&A interaction graph (#52), CLI/Dashboard pipeline tests (24 tests). #106: Lifecycle controls moved to Local Backends tab. #107: Streamlined Serve & Connect UX. 37 provider compatibility tests + benchmark flag. CI polish: ESLint, coverage reporting. Tests: 685 → 746 total. |
 | 2.0 | 2026-06-29 | Group 4 cleanup: ADR-0019 status → Accepted, VERSION → 1.8.0, TODO.md updated with recent work. |
 | 1.9 | 2026-06-27 | ADR-0020 promoted from Proposed → Accepted after Phase 1 + Phase 2 implementation and review. Updated ADR index. Bumped VERSION to 1.7.0. Added CHANGES.md v1.7.0 entry. |
 | 1.8 | 2026-06-26 | Documentation refresh: updated module structure diagram to reflect actual source layout (orchestrator/ package, web/routes/, config/, tools/providers/, observability/, output/); expanded test file list to all 22 files; fixed ADR-0018 status to Accepted; bumped VERSION to 1.6.0; added CHANGES.md entries for post-1.5.0 work. |
