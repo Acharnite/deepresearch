@@ -27,6 +27,8 @@ class TestProviderImports:
 
     @pytest.mark.parametrize("module_path, name", zip(PROVIDER_MODULES, PROVIDER_NAMES))
     def test_provider_importable(self, module_path: str, name: str) -> None:
+        if name == "duckduckgo":
+            pytest.importorskip("ddgs")
         import importlib
 
         mod = importlib.import_module(module_path)
@@ -37,6 +39,8 @@ class TestProviderImports:
 
     @pytest.mark.parametrize("module_path, name", zip(PROVIDER_MODULES, PROVIDER_NAMES))
     def test_provider_search_is_async(self, module_path: str, name: str) -> None:
+        if name == "duckduckgo":
+            pytest.importorskip("ddgs")
         import importlib
         import inspect
 
@@ -53,6 +57,8 @@ class TestProviderResultShape:
     async def test_provider_returns_list_of_dicts(
         self, module_path: str, name: str
     ) -> None:
+        if name == "duckduckgo":
+            pytest.importorskip("ddgs")
         import importlib
 
         mod = importlib.import_module(module_path)
@@ -100,6 +106,8 @@ class TestProviderResultShape:
     async def test_provider_result_keys_are_strings(
         self, module_path: str, name: str
     ) -> None:
+        if name == "duckduckgo":
+            pytest.importorskip("ddgs")
         import importlib
 
         mod = importlib.import_module(module_path)
@@ -247,6 +255,7 @@ class TestProviderMissingAPIKey:
         mod = importlib.import_module("deepresearch.tools.providers.searxng")
         assert not hasattr(mod, "_API_KEY")
 
+        pytest.importorskip("ddgs")
         mod = importlib.import_module("deepresearch.tools.providers.duckduckgo")
         assert not hasattr(mod, "_API_KEY")
 
@@ -487,5 +496,4 @@ class TestSearchChain:
         from deepresearch.tools.search_chain import _DEFAULT_ORDER
 
         assert "searxng" in _DEFAULT_ORDER
-        assert "duckduckgo" in _DEFAULT_ORDER
         assert len(_DEFAULT_ORDER) >= 4

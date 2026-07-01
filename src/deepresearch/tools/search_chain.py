@@ -24,7 +24,7 @@ SearchProvider = Callable[..., list[dict[str, Any]]]
 
 # ── Default provider order ─────────────────────────────────────────────────
 
-_DEFAULT_ORDER = ["searxng", "duckduckgo", "brave", "google_pse", "tavily", "serper"]
+_DEFAULT_ORDER = ["searxng", "brave", "google_pse", "tavily", "serper"]
 
 # ── Provider module lookup (lazy-imported) ─────────────────────────────────
 
@@ -42,7 +42,6 @@ def _get_provider(name: str) -> SearchProvider | None:
 
     _imports = {
         "searxng": "deepresearch.tools.providers.searxng",
-        "duckduckgo": "deepresearch.tools.providers.duckduckgo",
         "brave": "deepresearch.tools.providers.brave",
         "google_pse": "deepresearch.tools.providers.google_pse",
         "tavily": "deepresearch.tools.providers.tavily",

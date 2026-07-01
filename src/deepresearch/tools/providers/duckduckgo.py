@@ -61,7 +61,7 @@ async def search(
     def _search() -> list[dict[str, Any]]:
         with DDGS() as ddgs:
             results: list[dict[str, Any]] = []
-            kwargs: dict[str, Any] = {"keywords": query, "max_results": max_results}
+            kwargs: dict[str, Any] = {"query": query, "max_results": max_results}
             if time_range:
                 kwargs["time_range"] = time_range
             for i, r in enumerate(ddgs.text(**kwargs)):
